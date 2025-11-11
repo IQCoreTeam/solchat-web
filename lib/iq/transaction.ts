@@ -9,36 +9,80 @@ import {
   Keypair,
   sendAndConfirmTransaction,
 } from '@solana/web3.js';
+import type { SendTransactionOptions } from '@solana/wallet-adapter-base';
 import bs58 from 'bs58';
-import { createCodeInTransactionOnServer, createInitTransactionOnServer, createServerInitTransactionOnServer } from './client';
+import {
+  createCodeInTransactionOnServer,
+  createInitTransactionOnServer,
+  createServerInitTransactionOnServer,
+  buildTransactionFromServerPayload,
+  getServerPDA,
+} from './client';
+import type { ServerTransactionPayload } from './client';
 import { chunkData } from './utils';
 import { generateMerkleRoot } from './client';
+
+export type WalletExecutor = {
+  publicKey: PublicKey;
+  signTransaction?: (tx: Transaction) => Promise<Transaction>;
+  sendTransaction?: (
+    tx: Transaction,
+    connection: Connection,
+    options?: SendTransactionOptions
+  ) => Promise<string>;
+};
 
 /**
  * Sign and send a transaction
  */
+type TransactionPayload = string | Transaction | ServerTransactionPayload;
+
+const isServerPayload = (payload: unknown): payload is ServerTransactionPayload => {
+  return (
+    payload !== null &&
+    typeof payload === 'object' &&
+    Array.isArray((payload as ServerTransactionPayload).instructions)
+  );
+};
+
 export async function appTxSend(
   connection: Connection,
-  txBase64: string,
-  wallet: { publicKey: PublicKey; signTransaction: (tx: Transaction) => Promise<Transaction> }
+  txPayload: TransactionPayload,
+  wallet: WalletExecutor
 ): Promise<string> {
   try {
-    const txBuffer = Buffer.from(txBase64, 'base64');
-    const transaction = Transaction.from(txBuffer);
+    let transaction: Transaction;
+    if (typeof txPayload === 'string') {
+      const txBuffer = Buffer.from(txPayload, 'base64');
+      transaction = Transaction.from(txBuffer);
+    } else if (txPayload instanceof Transaction) {
+      transaction = txPayload;
+    } else if (isServerPayload(txPayload)) {
+      transaction = buildTransactionFromServerPayload(txPayload);
+    } else {
+      throw new Error('Unsupported transaction payload format');
+    }
 
     // Get recent blockhash
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized');
     transaction.recentBlockhash = blockhash;
     transaction.feePayer = wallet.publicKey;
 
-    // Sign transaction
-    const signedTx = await wallet.signTransaction(transaction);
-
-    // Send transaction
-    const signature = await connection.sendRawTransaction(signedTx.serialize(), {
-      skipPreflight: false,
-      preflightCommitment: 'finalized',
-    });
+    let signature: string;
+    if (wallet.sendTransaction) {
+      signature = await wallet.sendTransaction(transaction, connection, {
+        skipPreflight: false,
+        preflightCommitment: 'finalized',
+      });
+    } else if (wallet.signTransaction) {
+      const signedTx = await wallet.signTransaction(transaction);
+      signature = await connection.sendRawTransaction(signedTx.serialize(), {
+        skipPreflight: false,
+        preflightCommitment: 'finalized',
+      });
+    } else {
+      throw new Error('Wallet must support sendTransaction or signTransaction');
+    }
 
     // Confirm transaction
     await connection.confirmTransaction({
@@ -59,7 +103,7 @@ export async function appTxSend(
  */
 export async function initializeUser(
   connection: Connection,
-  wallet: { publicKey: PublicKey; signTransaction: (tx: Transaction) => Promise<Transaction> }
+  wallet: WalletExecutor
 ): Promise<string> {
   try {
     const userKey = wallet.publicKey.toBase58();
@@ -78,13 +122,14 @@ export async function initializeUser(
  */
 export async function initializeServer(
   connection: Connection,
-  wallet: { publicKey: PublicKey; signTransaction: (tx: Transaction) => Promise<Transaction> },
+  wallet: WalletExecutor,
   serverId: string
 ): Promise<{ pda: string; txid: string }> {
   try {
     const userKey = wallet.publicKey.toBase58();
-    const { transaction, pda } = await createServerInitTransactionOnServer(userKey, serverId);
+    const { transaction } = await createServerInitTransactionOnServer(userKey, serverId);
     const txid = await appTxSend(connection, transaction, wallet);
+    const pda = await getServerPDA(userKey, serverId);
     console.log('Server initialized:', { pda, txid });
     return { pda, txid };
   } catch (error) {
@@ -98,7 +143,7 @@ export async function initializeServer(
  */
 export async function codeToPDA(
   connection: Connection,
-  wallet: { publicKey: PublicKey; signTransaction: (tx: Transaction) => Promise<Transaction> },
+  wallet: WalletExecutor,
   data: string,
   transactionType: string,
   handle: string,
@@ -156,7 +201,7 @@ export async function codeToPDA(
  */
 export async function sendChat(
   connection: Connection,
-  wallet: { publicKey: PublicKey; signTransaction: (tx: Transaction) => Promise<Transaction> },
+  wallet: WalletExecutor,
   pdaString: string,
   message: string,
   handle: string = 'default-handle'
@@ -198,7 +243,7 @@ export async function requestAirdrop(
  */
 export async function sendSol(
   connection: Connection,
-  wallet: { publicKey: PublicKey; signTransaction: (tx: Transaction) => Promise<Transaction> },
+  wallet: WalletExecutor,
   to: PublicKey,
   amount: number
 ): Promise<string> {
@@ -215,8 +260,19 @@ export async function sendSol(
     transaction.recentBlockhash = blockhash;
     transaction.feePayer = wallet.publicKey;
 
-    const signed = await wallet.signTransaction(transaction);
-    const signature = await connection.sendRawTransaction(signed.serialize());
+    let signature: string;
+    if (wallet.sendTransaction) {
+      signature = await wallet.sendTransaction(transaction, connection, {
+        skipPreflight: false,
+        preflightCommitment: 'finalized',
+      });
+    } else if (wallet.signTransaction) {
+      const signed = await wallet.signTransaction(transaction);
+      signature = await connection.sendRawTransaction(signed.serialize());
+    } else {
+      throw new Error('Wallet must support sendTransaction or signTransaction');
+    }
+
     await connection.confirmTransaction(signature, 'finalized');
 
     return signature;

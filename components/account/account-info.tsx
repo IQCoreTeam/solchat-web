@@ -6,6 +6,7 @@ import { PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { useQuery } from '@tanstack/react-query';
 import { lamportsToSol, ellipsify } from '@/lib/iq/utils';
 import { sendSol, requestAirdrop } from '@/lib/iq/transaction';
+import type { WalletExecutor } from '@/lib/iq/transaction';
 import { getBonkBalance, sendBonk } from '@/lib/token/bonk';
 
 export function AccountInfo() {
@@ -59,7 +60,8 @@ export function AccountInfo() {
   });
 
   const handleSendSOL = async () => {
-    if (!wallet.publicKey || !wallet.signTransaction || !sendAddress || !sendAmount) {
+    const canTransact = !!wallet.signTransaction || !!wallet.sendTransaction;
+    if (!wallet.publicKey || !canTransact || !sendAddress || !sendAmount) {
       setMessage('Please fill in all fields');
       return;
     }
@@ -68,12 +70,13 @@ export function AccountInfo() {
       setSendingSOL(true);
       setMessage('Sending SOL...');
 
-      const txid = await sendSol(
-        connection,
-        wallet as any,
-        new PublicKey(sendAddress),
-        parseFloat(sendAmount)
-      );
+      const walletExecutor: WalletExecutor = {
+        publicKey: wallet.publicKey!,
+        signTransaction: wallet.signTransaction ?? undefined,
+        sendTransaction: wallet.sendTransaction ?? undefined,
+      };
+
+      const txid = await sendSol(connection, walletExecutor, new PublicKey(sendAddress), parseFloat(sendAmount));
 
       setMessage(`Success! TX: ${ellipsify(txid, 8)}`);
       setSendAddress('');

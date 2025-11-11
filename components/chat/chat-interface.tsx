@@ -6,13 +6,16 @@ import { PublicKey } from '@solana/web3.js';
 import { Terminal } from '@/components/ui/terminal';
 import { TerminalInput } from '@/components/ui/terminal-input';
 import {
-  getServerPDA,
-  initializeServer,
-  sendChat,
-  getChatRecords,
-  joinChat,
-  leaveChat,
+    pdaExists,
+    getServerPDA,
+    initializeServer,
+    sendChat,
+    getChatRecords,
+    joinChat,
+    leaveChat, WalletExecutor,
+
 } from '@/lib/iq';
+// import type { WalletExecutor } from '@/lib/iq';
 import { encodeWithPassword, decodeWithPassword } from 'hanlock';
 import { getBonkBalance, sendBonk } from '@/lib/token/bonk';
 import { lamportsToSol } from '@/lib/iq/utils';
@@ -40,8 +43,8 @@ export function ChatInterface() {
 
   const [history, setHistory] = useState<string[]>([
     '╔══════════════════════════════════════════════════════════════╗',
-    '║                      SOLCHAT v1.0                          ║',
-    '║               Decentralized Chat on Solana                 ║',
+    '║                        SOLCHAT v1.0                          ║',
+    '║                 Decentralized Chat on Solana                 ║',
     '╚══════════════════════════════════════════════════════════════╝',
     '',
     'Welcome to SolChat! Type /help for commands.',
@@ -114,11 +117,18 @@ export function ChatInterface() {
   };
 
   const processCommand = async (input: string) => {
-    if (!wallet.publicKey || !wallet.signTransaction) {
+    const canTransact = !!wallet.signTransaction || !!wallet.sendTransaction;
+    if (!wallet.publicKey || !canTransact) {
       addToHistory('> ' + input);
       addToHistory('[ERROR] Please connect your wallet first!');
       return;
     }
+
+    const signingWallet: WalletExecutor = {
+      publicKey: wallet.publicKey!,
+      signTransaction: wallet.signTransaction ?? undefined,
+      sendTransaction: wallet.sendTransaction ?? undefined,
+    };
 
     addToHistory('> ' + input);
 
@@ -232,7 +242,17 @@ export function ChatInterface() {
     } else if (phase === 'waitingForServerId') {
       try {
         addToHistory('[SYSTEM] Checking for room...');
-        const pda = await getServerPDA(wallet.publicKey.toBase58(), input);
+        let pda = await getServerPDA(wallet.publicKey.toBase58(), input);
+          const isPDAExist = await pdaExists(connection,pda);
+        console.log(isPDAExist);
+        if (!isPDAExist) {
+
+            addToHistory('Creating room...');
+          const { pda: createdPda, txid:txid} = await initializeServer(connection, signingWallet, input);
+            addToHistory(createdPda);
+            addToHistory(txid);
+          pda = createdPda;
+        }
         setConversationState({ phase: 'waitingForCreateResponse', serverPDA: pda, serverId: input });
         addToHistory(`[SERVER] Found/Created room: ${input}`);
         addToHistory(`[PDA] ${pda}`);
@@ -245,7 +265,7 @@ export function ChatInterface() {
       if (input.toLowerCase() === 'yes') {
         try {
           addToHistory('[SYSTEM] Initializing room...');
-          await initializeServer(connection, wallet as any, conversationState.serverId!);
+          await initializeServer(connection, signingWallet, conversationState.serverId!);
           addToHistory('[SUCCESS] Room initialized!');
           addToHistory('[SYSTEM] Enter your nickname:');
           setConversationState({ ...conversationState, phase: 'waitingForHandle' });

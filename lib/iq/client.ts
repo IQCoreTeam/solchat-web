@@ -1,4 +1,71 @@
 import { IQ_CONFIG } from './config';
+import { PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js';
+
+export type ServerInstructionKey = {
+  pubkey: string;
+  isSigner: boolean;
+  isWritable: boolean;
+};
+
+export type ServerInstructionData =
+  | number[]
+  | string
+  | { type: 'Buffer'; data: number[] };
+
+export type ServerInstruction = {
+  keys: ServerInstructionKey[];
+  programId: string;
+  data: ServerInstructionData;
+};
+
+export type ServerTransactionPayload = {
+  feePayer: string;
+  instructions: ServerInstruction[];
+};
+
+export type ServerTransactionResponse<T extends Record<string, unknown> = Record<string, unknown>> = T & {
+  transaction: ServerTransactionPayload;
+};
+
+const normalizeBuffer = (data: ServerInstructionData): Buffer => {
+  if (typeof data === 'string') {
+    try {
+      return Buffer.from(data, 'base64');
+    } catch {
+      return Buffer.from(data);
+    }
+  }
+
+  if (Array.isArray(data)) {
+    return Buffer.from(data);
+  }
+
+  if (data && typeof data === 'object' && data.type === 'Buffer' && Array.isArray(data.data)) {
+    return Buffer.from(data.data);
+  }
+
+  throw new Error('Unsupported instruction data format');
+};
+
+export const buildTransactionFromServerPayload = (payload: ServerTransactionPayload): Transaction => {
+  const transaction = new Transaction();
+
+  payload.instructions.forEach((instr) => {
+    const instruction = new TransactionInstruction({
+      programId: new PublicKey(instr.programId),
+      keys: instr.keys.map((key) => ({
+        pubkey: new PublicKey(key.pubkey),
+        isSigner: key.isSigner,
+        isWritable: key.isWritable,
+      })),
+      data: normalizeBuffer(instr.data),
+    });
+
+    transaction.add(instruction);
+  });
+
+  return transaction;
+};
 
 /**
  * Get user database PDA from backend
@@ -9,7 +76,7 @@ export async function getDBPDA(userKey: string): Promise<string> {
     throw new Error(`Failed to get DB PDA: ${response.statusText}`);
   }
   const data = await response.json();
-  return data.pda;
+  return data.DBPDA ?? data.pda ?? data.PDA;
 }
 
 /**
@@ -21,20 +88,28 @@ export async function getServerPDA(userKey: string, serverId: string): Promise<s
     throw new Error(`Failed to get server PDA: ${response.statusText}`);
   }
   const data = await response.json();
-  return data.pda;
+  return data.PDA ?? data.pda ?? data.serverPDA;
 }
 
 /**
  * Initialize server/room on backend
  */
+
 export async function createServerInitTransactionOnServer(
   userKey: string,
-  serverId: string
-): Promise<{ transaction: string; pda: string }> {
+  serverId: string,
+  serverType: string = 'group_chat',
+  allowedMerkleRoot: string = 'public'
+): Promise<ServerTransactionResponse> {
   const response = await fetch(`${IQ_CONFIG.backendHost}/initialize-server`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userKey, serverId }),
+    body: JSON.stringify({
+      userKey,
+      serverType,
+      serverID: serverId,
+      allowedMerkleRoot,
+    }),
   });
 
   if (!response.ok) {
@@ -47,7 +122,7 @@ export async function createServerInitTransactionOnServer(
 /**
  * Initialize user account on backend
  */
-export async function createInitTransactionOnServer(userKey: string): Promise<{ transaction: string }> {
+export async function createInitTransactionOnServer(userKey: string): Promise<ServerTransactionResponse> {
   const response = await fetch(`${IQ_CONFIG.backendHost}/initialize-user/${userKey}`);
   if (!response.ok) {
     throw new Error(`Failed to initialize user: ${response.statusText}`);
@@ -67,7 +142,7 @@ export async function createCodeInTransactionOnServer(
   merkleRoot: string,
   transactionType: string,
   handle: string = 'default-handle'
-): Promise<{ transaction: string }> {
+): Promise<ServerTransactionResponse> {
   const response = await fetch(`${IQ_CONFIG.backendHost}/create-send-transaction`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
