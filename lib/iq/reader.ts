@@ -120,6 +120,7 @@ export function joinChat(
       chatPDA,
       async (logs) => {
         try {
+            console.log('New message received:', logs.signature);
           const message = await readChat(logs.signature);
           if (message) {
             onMessage(message);

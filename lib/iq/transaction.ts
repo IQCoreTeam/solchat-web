@@ -8,6 +8,7 @@ import {
 import type { SendTransactionOptions } from '@solana/wallet-adapter-base';
 import {
   createCodeInTransactionOnServer,
+  createDbPingTransactionToPDAOnServer,
   createInitTransactionOnServer,
   createServerInitTransactionOnServer,
   buildTransactionFromServerPayload,
@@ -143,48 +144,49 @@ export async function codeToPDA(
   transactionType: string,
   handle: string,
   pdaString: string,
-  threshold: number = 0
+  sendAmount: number = 0
 ): Promise<string> {
   try {
     const userKey = wallet.publicKey.toBase58();
     const chunks = chunkData(data);
+    const chunkList = chunks.length ? chunks : [''];
+    const { merkleRoot } = await generateMerkleRoot(chunkList);
 
-    if (chunks.length === 1 && chunks[0].length <= threshold) {
-      // Single small transaction
-      const { merkleRoot } = await generateMerkleRoot(chunks);
-      const { transaction } = await createCodeInTransactionOnServer(
-        userKey,
-        pdaString,
-        chunks[0],
-        0,
-        1,
-        merkleRoot,
-        transactionType,
-        handle
-      );
-      return await appTxSend(connection, transaction, wallet);
+    let previousTxSignature = 'Genesis';
+
+    for (let i = 0; i < chunkList.length; i++) {
+      let sent = false;
+      while (!sent) {
+        try {
+          const { transaction } = await createCodeInTransactionOnServer(
+            userKey,
+            chunkList[i],
+            previousTxSignature,
+            i,
+            chunkList.length,
+            merkleRoot,
+            transactionType,
+            handle
+          );
+          previousTxSignature = await appTxSend(connection, transaction, wallet);
+          sent = true;
+        } catch (error) {
+          console.error('Chunk transaction failed, retrying...', error);
+        }
+      }
     }
 
-    // Multiple transactions
-    const { merkleRoot } = await generateMerkleRoot(chunks);
-    const txids: string[] = [];
+    const { transaction } = await createDbPingTransactionToPDAOnServer(
+      userKey,
+      pdaString,
+      sendAmount,
+      handle,
+      previousTxSignature,
+      transactionType,
+      merkleRoot
+    );
 
-    for (let i = 0; i < chunks.length; i++) {
-      const { transaction } = await createCodeInTransactionOnServer(
-        userKey,
-        pdaString,
-        chunks[i],
-        i,
-        chunks.length,
-        merkleRoot,
-        transactionType,
-        handle
-      );
-      const txid = await appTxSend(connection, transaction, wallet);
-      txids.push(txid);
-    }
-
-    return txids[txids.length - 1]; // Return last txid
+    return await appTxSend(connection, transaction, wallet);
   } catch (error) {
     console.error('Failed to send data to PDA:', error);
     throw error;
@@ -199,10 +201,12 @@ export async function sendChat(
   wallet: WalletExecutor,
   pdaString: string,
   message: string,
-  handle: string = 'default-handle'
+  handle: string = 'default-handle',
+  sendAmount: number = 0
 ): Promise<string> {
   try {
-    const txid = await codeToPDA(connection, wallet, message, 'group_chat', handle, pdaString, 0);
+    const txid = await codeToPDA(connection, wallet, message, 'group_chat', handle, pdaString, sendAmount);
+    console.log(`txid: ${txid}`);
     console.log(`Message sent to PDA ${pdaString}: ${message}`);
     return txid;
   } catch (error) {

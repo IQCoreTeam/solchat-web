@@ -135,8 +135,8 @@ export async function createInitTransactionOnServer(userKey: string): Promise<Se
  */
 export async function createCodeInTransactionOnServer(
   userKey: string,
-  recipientKey: string,
   chunkData: string,
+  beforeTx: string,
   chunkIndex: number,
   totalChunks: number,
   merkleRoot: string,
@@ -149,7 +149,7 @@ export async function createCodeInTransactionOnServer(
     body: JSON.stringify({
       userKeyString: userKey,
       code: chunkData,
-      before_tx: recipientKey,
+      before_tx: beforeTx,
       method: chunkIndex,
       decode_break: totalChunks,
       // Extra metadata (ignored by current backend but kept for compatibility)
@@ -161,6 +161,37 @@ export async function createCodeInTransactionOnServer(
 
   if (!response.ok) {
     throw new Error(`Failed to create transaction: ${response.statusText}`);
+  }
+
+  return await response.json();
+}
+
+export async function createDbPingTransactionToPDAOnServer(
+  userKey: string,
+  receiverPDAString: string,
+  sendAmount: number,
+  handle: string,
+  tailTx: string,
+  type: string,
+  offset: string
+): Promise<ServerTransactionResponse> {
+  const response = await fetch(`${IQ_CONFIG.backendHost}/create-db-ping-transaction-to-pda`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userKeyString: userKey,
+      pingPdaString: receiverPDAString,
+      pingAmount: sendAmount,
+      handle,
+      tail_tx: tailTx,
+      type,
+      offset,
+    }),
+  });
+
+  if (!response.ok) {
+    const details = await response.text().catch(() => '');
+    throw new Error(`Failed to create DB ping transaction: ${details || response.statusText}`);
   }
 
   return await response.json();
