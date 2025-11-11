@@ -2,15 +2,10 @@ import {
   Connection,
   PublicKey,
   Transaction,
-  VersionedTransaction,
-  TransactionMessage,
   SystemProgram,
   LAMPORTS_PER_SOL,
-  Keypair,
-  sendAndConfirmTransaction,
 } from '@solana/web3.js';
 import type { SendTransactionOptions } from '@solana/wallet-adapter-base';
-import bs58 from 'bs58';
 import {
   createCodeInTransactionOnServer,
   createInitTransactionOnServer,

@@ -147,11 +147,12 @@ export async function createCodeInTransactionOnServer(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      senderKey: userKey,
-      recipientKey,
-      chunkData,
-      chunkIndex,
-      totalChunks,
+      userKeyString: userKey,
+      code: chunkData,
+      before_tx: recipientKey,
+      method: chunkIndex,
+      decode_break: totalChunks,
+      // Extra metadata (ignored by current backend but kept for compatibility)
       merkleRoot,
       transactionType,
       handle,
@@ -194,7 +195,7 @@ export async function generateMerkleRoot(chunks: string[]): Promise<{ merkleRoot
   const response = await fetch(`${IQ_CONFIG.backendHost}/generate-merkle-root`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chunks }),
+    body: JSON.stringify({ data: chunks }),
   });
 
   if (!response.ok) {
@@ -223,11 +224,11 @@ export async function getCache(txId?: string, merkleRoot?: string): Promise<any>
 /**
  * Put data in cache
  */
-export async function putCache(data: any): Promise<void> {
+export async function putCache(chunks: string[], merkleRoot: string): Promise<void> {
   const response = await fetch(`${IQ_CONFIG.backendHost}/putCache`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
+    body: JSON.stringify({ chunks, merkleRoot }),
   });
 
   if (!response.ok) {

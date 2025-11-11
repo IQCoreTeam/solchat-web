@@ -259,6 +259,7 @@ export function ChatInterface() {
         addToHistory('[SYSTEM] Join this room? (yes/no)');
       } catch (error) {
         addToHistory('[ERROR] Failed to get server PDA');
+          addToHistory(error);
         setConversationState({ ...conversationState, phase: 'idle' });
       }
     } else if (phase === 'waitingForCreateResponse') {
