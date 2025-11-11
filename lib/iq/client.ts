@@ -201,11 +201,16 @@ export async function createDbPingTransactionToPDAOnServer(
  * Get transaction chunks
  */
 export async function getTransactionChunks(txId: string): Promise<any> {
-  const response = await fetch(`${IQ_CONFIG.backendHost}/get_transaction_chunks/${txId}`);
-  if (!response.ok) {
-    throw new Error(`Failed to get transaction chunks: ${response.statusText}`);
+  try {
+    const response = await fetch(`${IQ_CONFIG.backendHost}/get_transaction_chunks/${txId}`);
+    if (!response.ok) {
+      return null;
+    }
+    return await response.json();
+  } catch (error) {
+    // Handle JSON parse errors gracefully
+    return null;
   }
-  return await response.json();
 }
 
 /**
@@ -244,12 +249,17 @@ export async function getCache(txId?: string, merkleRoot?: string): Promise<any>
   if (txId) params.append('txId', txId);
   if (merkleRoot) params.append('merkleRoot', merkleRoot);
 
-  const response = await fetch(`${IQ_CONFIG.backendHost}/getCache?${params.toString()}`);
-  if (!response.ok) {
+  try {
+    const response = await fetch(`${IQ_CONFIG.backendHost}/getCache?${params.toString()}`);
+    if (!response.ok) {
+      return null;
+    }
+
+    return await response.json();
+  } catch (error) {
+    // Handle JSON parse errors or network errors gracefully
     return null;
   }
-
-  return await response.json();
 }
 
 /**

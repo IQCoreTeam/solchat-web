@@ -62,6 +62,7 @@ export function ChatInterface() {
   const [messageColor, setMessageColor] = useState('#1e90ff');
   const [subscriptionId, setSubscriptionId] = useState<number | null>(null);
   const [lastTxid, setLastTxid] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
 
   const encryptionKeyRef = useRef(encryptionKey);
 
@@ -130,7 +131,10 @@ export function ChatInterface() {
       sendTransaction: wallet.sendTransaction ?? undefined,
     };
 
-    addToHistory('> ' + input);
+    // Don't echo input when sending chat messages - they'll appear from blockchain subscription
+    if (conversationState.phase !== 'inChat') {
+      addToHistory('> ' + input);
+    }
 
     // Handle slash commands
     if (input.startsWith('/')) {
@@ -259,7 +263,7 @@ export function ChatInterface() {
         addToHistory('[SYSTEM] Join this room? (yes/no)');
       } catch (error) {
         addToHistory('[ERROR] Failed to get server PDA');
-          addToHistory(error);
+        addToHistory(String(error));
         setConversationState({ ...conversationState, phase: 'idle' });
       }
     } else if (phase === 'waitingForCreateResponse') {
@@ -307,6 +311,9 @@ export function ChatInterface() {
     } else if (phase === 'inChat') {
       // Send message
       try {
+        setIsSending(true);
+        addToHistory('[SENDING...]');
+
         let messageToSend = input;
         if (encryptionKey) {
           messageToSend = encodeWithPassword(input, encryptionKey);
@@ -320,8 +327,11 @@ export function ChatInterface() {
           handle
         );
         setLastTxid(txid);
-        // Message will appear via subscription
+        // Message will appear via subscription, which will clear the sending indicator
       } catch (error) {
+        setIsSending(false);
+        // Remove the sending indicator
+        setHistory((prev) => prev.filter(line => line !== '[SENDING...]'));
         addToHistory(`[ERROR] Failed to send message: ${error}`);
       }
     } else if (phase === 'playground') {
@@ -355,7 +365,12 @@ export function ChatInterface() {
     try {
       const subId = joinChat(connection, conversationState.serverPDA!, (message) => {
         const displayMsg = decryptMessageIfNeeded(message);
-        setHistory((prev) => [...prev, displayMsg]);
+        setHistory((prev) => {
+          // Remove [SENDING...] indicator and add the new message
+          const filtered = prev.filter(line => line !== '[SENDING...]');
+          return [...filtered, displayMsg];
+        });
+        setIsSending(false);
       });
       setSubscriptionId(subId);
       addToHistory('[SYSTEM] Listening for new messages...');

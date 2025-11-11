@@ -21,6 +21,7 @@ import { generateMerkleRoot } from './client';
 export type WalletExecutor = {
   publicKey: PublicKey;
   signTransaction?: (tx: Transaction) => Promise<Transaction>;
+  signAllTransactions?: (txs: Transaction[]) => Promise<Transaction[]>;
   sendTransaction?: (
     tx: Transaction,
     connection: Connection,
@@ -60,7 +61,7 @@ export async function appTxSend(
     }
 
     // Get recent blockhash
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized');
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
     transaction.recentBlockhash = blockhash;
     transaction.feePayer = wallet.publicKey;
 
@@ -68,13 +69,13 @@ export async function appTxSend(
     if (wallet.sendTransaction) {
       signature = await wallet.sendTransaction(transaction, connection, {
         skipPreflight: false,
-        preflightCommitment: 'finalized',
+        preflightCommitment: 'confirmed',
       });
     } else if (wallet.signTransaction) {
       const signedTx = await wallet.signTransaction(transaction);
       signature = await connection.sendRawTransaction(signedTx.serialize(), {
         skipPreflight: false,
-        preflightCommitment: 'finalized',
+        preflightCommitment: 'confirmed',
       });
     } else {
       throw new Error('Wallet must support sendTransaction or signTransaction');
@@ -85,7 +86,7 @@ export async function appTxSend(
       signature,
       blockhash,
       lastValidBlockHeight,
-    }, 'finalized');
+    }, 'confirmed');
 
     return signature;
   } catch (error) {
@@ -136,6 +137,7 @@ export async function initializeServer(
 
 /**
  * Send data to PDA (chat message)
+ * Optimized with parallel prep and faster transaction flow
  */
 export async function codeToPDA(
   connection: Connection,
@@ -150,15 +152,25 @@ export async function codeToPDA(
     const userKey = wallet.publicKey.toBase58();
     const chunks = chunkData(data);
     const chunkList = chunks.length ? chunks : [''];
-    const { merkleRoot } = await generateMerkleRoot(chunkList);
 
+    // Parallelize independent operations (merkleRoot generation and blockhash fetching)
+    console.log('Preparing transaction data...');
+    const [{ merkleRoot }, { blockhash, lastValidBlockHeight }] = await Promise.all([
+      generateMerkleRoot(chunkList),
+      connection.getLatestBlockhash('confirmed'),
+    ]);
+
+    console.log(`Sending ${chunkList.length} chunk(s)...`);
     let previousTxSignature = 'Genesis';
 
+    // Process chunks: build, sign, and send immediately
+    // This minimizes latency by not waiting for confirmations between build and send
     for (let i = 0; i < chunkList.length; i++) {
       let sent = false;
       while (!sent) {
         try {
-          const { transaction } = await createCodeInTransactionOnServer(
+          // Build transaction with actual previous signature
+          const { transaction: txPayload } = await createCodeInTransactionOnServer(
             userKey,
             chunkList[i],
             previousTxSignature,
@@ -168,15 +180,61 @@ export async function codeToPDA(
             transactionType,
             handle
           );
-          previousTxSignature = await appTxSend(connection, transaction, wallet);
+
+          const tx = buildTransactionFromServerPayload(txPayload);
+          tx.recentBlockhash = blockhash;
+          tx.feePayer = wallet.publicKey;
+
+          // Sign transaction
+          let signedTx: Transaction;
+          if (wallet.sendTransaction && i === 0) {
+            // For first chunk, use sendTransaction if available (wallet handles signing)
+            const signature = await wallet.sendTransaction(tx, connection, {
+              skipPreflight: false,
+              preflightCommitment: 'confirmed',
+            });
+
+            await connection.confirmTransaction({
+              signature,
+              blockhash,
+              lastValidBlockHeight,
+            }, 'confirmed');
+
+            console.log(`Chunk ${i + 1}/${chunkList.length} sent:`, signature);
+            previousTxSignature = signature;
+            sent = true;
+            continue;
+          } else if (wallet.signTransaction) {
+            signedTx = await wallet.signTransaction(tx);
+          } else {
+            throw new Error('Wallet must support signTransaction or sendTransaction');
+          }
+
+          // Send and confirm
+          const signature = await connection.sendRawTransaction(signedTx.serialize(), {
+            skipPreflight: false,
+            preflightCommitment: 'confirmed',
+          });
+
+          await connection.confirmTransaction({
+            signature,
+            blockhash,
+            lastValidBlockHeight,
+          }, 'confirmed');
+
+          console.log(`Chunk ${i + 1}/${chunkList.length} sent:`, signature);
+          previousTxSignature = signature;
           sent = true;
         } catch (error) {
-          console.error('Chunk transaction failed, retrying...', error);
+          console.error(`Chunk ${i + 1} failed, retrying...`, error);
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
     }
 
-    const { transaction } = await createDbPingTransactionToPDAOnServer(
+    // Build and send final DbCodeIn transaction with the actual last chunk signature
+    console.log('Sending final DbCodeIn transaction...');
+    const { transaction: finalTxPayload } = await createDbPingTransactionToPDAOnServer(
       userKey,
       pdaString,
       sendAmount,
@@ -186,7 +244,9 @@ export async function codeToPDA(
       merkleRoot
     );
 
-    return await appTxSend(connection, transaction, wallet);
+    const finalSignature = await appTxSend(connection, finalTxPayload, wallet);
+    console.log('Message sent successfully:', finalSignature);
+    return finalSignature;
   } catch (error) {
     console.error('Failed to send data to PDA:', error);
     throw error;
@@ -229,7 +289,7 @@ export async function requestAirdrop(
       amount * LAMPORTS_PER_SOL
     );
 
-    await connection.confirmTransaction(signature, 'finalized');
+    await connection.confirmTransaction(signature, 'confirmed');
     return signature;
   } catch (error) {
     console.error('Airdrop failed:', error);
@@ -255,7 +315,7 @@ export async function sendSol(
       })
     );
 
-    const { blockhash } = await connection.getLatestBlockhash('finalized');
+    const { blockhash } = await connection.getLatestBlockhash('confirmed');
     transaction.recentBlockhash = blockhash;
     transaction.feePayer = wallet.publicKey;
 
@@ -263,7 +323,7 @@ export async function sendSol(
     if (wallet.sendTransaction) {
       signature = await wallet.sendTransaction(transaction, connection, {
         skipPreflight: false,
-        preflightCommitment: 'finalized',
+        preflightCommitment: 'confirmed',
       });
     } else if (wallet.signTransaction) {
       const signed = await wallet.signTransaction(transaction);
@@ -272,7 +332,7 @@ export async function sendSol(
       throw new Error('Wallet must support sendTransaction or signTransaction');
     }
 
-    await connection.confirmTransaction(signature, 'finalized');
+    await connection.confirmTransaction(signature, 'confirmed');
 
     return signature;
   } catch (error) {
