@@ -1,36 +1,188 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SolChat Web
+
+A production-ready, decentralized messaging application built on Solana blockchain. This is the Next.js web version of SolChat, supporting Solana wallet extensions like Phantom, Solflare, and more.
+
+## Features
+
+✨ **All Mobile App Features**:
+- ✅ Decentralized, on-chain messaging via IQ Protocol
+- ✅ End-to-end encryption with Hanlock
+- ✅ Real-time message subscriptions
+- ✅ Create and join chat rooms
+- ✅ Send/receive SOL and BONK tokens
+- ✅ Account management with balance display
+- ✅ Terminal-style UI interface
+- ✅ Multi-wallet support (Phantom, Solflare, Torus, Ledger)
+- ✅ Message color customization
+- ✅ Command-line interface for power users
+- ✅ Devnet airdrop support
+
+## Tech Stack
+
+- **Framework**: Next.js 16 with App Router
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **Blockchain**: Solana Web3.js
+- **Wallet Adapter**: Solana Wallet Adapter
+- **State Management**: TanStack React Query + React Context
+- **Encryption**: Hanlock
+- **Storage**: IQ Protocol (on-chain)
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18+ and npm
+- A Solana wallet extension (Phantom recommended)
+- Devnet SOL for testing
+
+### Installation
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# Install dependencies
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Development
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# Run development server
+npm run dev
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Open http://localhost:3000
+```
 
-## Learn More
+### Production Build
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+# Build for production
+npm run build
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# Start production server
+npm start
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Environment Variables
 
-## Deploy on Vercel
+The app is pre-configured with Devnet endpoints. To customize, create a `.env.local` file:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```env
+NEXT_PUBLIC_IQ_BACKEND_HOST=https://iq-testbackend-381334931214.asia-northeast3.run.app
+NEXT_PUBLIC_RPC_URL=https://devnet.helius-rpc.com/?api-key=YOUR_KEY
+NEXT_PUBLIC_SOLANA_NETWORK=devnet
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Usage
+
+### Connecting Wallet
+
+1. Click "Select Wallet" in the navigation bar
+2. Choose your preferred wallet (Phantom, Solflare, etc.)
+3. Approve the connection in your wallet extension
+
+### Chat Features
+
+Navigate to `/chat` to access the messaging interface.
+
+**Main Menu**:
+```
+1 - Create/Search for a room
+2 - Enter friend's room (via PDA)
+3 - Enter Playground (test mode)
+```
+
+**Available Commands**:
+```
+/help                    - Show help message
+/clear                   - Clear screen
+/color [color]           - Change message color (blue/red/green/yellow)
+/pw [key]                - Set encryption key
+/pw off                  - Disable encryption
+/balance                 - Check wallet balance and tokens
+/sendbonk [addr] [amt]   - Send BONK tokens
+/leave                   - Exit current chat room
+```
+
+### Account Management
+
+Navigate to `/account` to:
+- View SOL and token balances
+- Send SOL to other addresses
+- Request devnet airdrops
+- View all token accounts
+
+## Architecture
+
+### IQ Protocol Integration
+
+SolChat uses the IQ Protocol to store messages permanently on Solana:
+
+1. **Message Writing**: Messages are chunked and stored in Solana transactions
+2. **Message Reading**: Historical messages fetched via transaction signatures
+3. **Real-time Updates**: WebSocket subscription to account logs for live messages
+4. **Data Integrity**: Merkle root verification for multi-chunk messages
+
+### Wallet Integration
+
+Supports all standard Solana wallet adapters:
+- Phantom
+- Solflare
+- Torus
+- Ledger
+
+### Encryption
+
+Optional end-to-end encryption using Hanlock:
+- User sets encryption key per session
+- Messages encrypted before sending to chain
+- Automatic decryption on receive (if key is set)
+
+## Deployment
+
+### Vercel (Recommended)
+
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy
+vercel
+```
+
+## Security Considerations
+
+- **Wallet Security**: Never share your private keys
+- **Encryption**: Use strong encryption keys for sensitive messages
+- **Devnet Only**: This version runs on Solana Devnet (test network)
+- **Audit**: This is demonstration software - audit before production use
+
+## Troubleshooting
+
+### Wallet Connection Issues
+
+- Ensure wallet extension is installed and unlocked
+- Check that you're on the correct network (Devnet)
+- Clear browser cache and reload
+
+### Transaction Failures
+
+- Ensure sufficient SOL balance for fees
+- Check RPC endpoint is responding
+- Verify network conditions
+
+## License
+
+MIT License
+
+## Acknowledgments
+
+- Built with [Next.js](https://nextjs.org/)
+- Powered by [Solana](https://solana.com/)
+- Wallet integration via [Solana Wallet Adapter](https://github.com/solana-labs/wallet-adapter)
+- Encryption by [Hanlock](https://github.com/hanlock-kr/hanlock)
+- Based on the SolChat mobile app
+
+---
+
+**Built with ❤️ on Solana**
+# solchat-web
