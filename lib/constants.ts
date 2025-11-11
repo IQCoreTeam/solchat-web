@@ -1,0 +1,18 @@
+export const IQ_BACKEND_HOST = process.env.NEXT_PUBLIC_IQ_BACKEND_HOST || 'https://iq-testbackend-381334931214.asia-northeast3.run.app';
+export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'https://devnet.helius-rpc.com/?api-key=54b2d536-e4d8-4ccf-814e-0c38e242cd74';
+export const SOLANA_NETWORK = process.env.NEXT_PUBLIC_SOLANA_NETWORK || 'devnet';
+
+// BONK token mint address on Devnet
+export const BONK_MINT = '3jV8jHCeqkgfK4Y7hSNbt4dCM3aFG3Rp7LkyqRYJWfRJ';
+
+// App configuration
+export const APP_NAME = 'SolChat';
+export const APP_DESCRIPTION = 'Decentralized messaging on Solana';
+
+// Transaction configuration
+export const TRANSACTION_SIZE_LIMIT = 900; // bytes
+export const COMMITMENT_LEVEL = 'finalized';
+
+// Chat configuration
+export const MAX_MESSAGE_HISTORY = 50;
+export const DEFAULT_MESSAGE_COLOR = '#1e90ff';

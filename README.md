@@ -16,6 +16,9 @@ A production-ready, decentralized messaging application built on Solana blockcha
 - ✅ Message color customization
 - ✅ Command-line interface for power users
 - ✅ Devnet airdrop support
+- ✅ **Mobile wallet support** (Phantom mobile, Solflare mobile)
+- ✅ **Solana Saga/Seeker phone optimized**
+- ✅ **Responsive design** for all screen sizes
 
 ## Tech Stack
 
@@ -76,9 +79,23 @@ NEXT_PUBLIC_SOLANA_NETWORK=devnet
 
 ### Connecting Wallet
 
+**Desktop:**
 1. Click "Select Wallet" in the navigation bar
 2. Choose your preferred wallet (Phantom, Solflare, etc.)
 3. Approve the connection in your wallet extension
+
+**Mobile (Phantom/Solflare In-App Browser):**
+1. Open Phantom or Solflare mobile app
+2. Tap the browser/explore icon (🔍)
+3. Navigate to your SolChat URL
+4. Tap "Select Wallet" and approve connection
+5. The app will automatically detect your mobile wallet!
+
+**Solana Saga/Seeker Phones:**
+1. Open the website in any browser
+2. The wallet will be automatically injected
+3. Click "Select Wallet" to connect
+4. Enjoy seamless Web3 experience!
 
 ### Chat Features
 
