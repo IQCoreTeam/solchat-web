@@ -44,6 +44,10 @@ A production-ready, decentralized messaging application built on Solana blockcha
 ```bash
 # Install dependencies
 npm install
+
+# Set up environment variables
+cp .env.example .env.local
+# Edit .env.local with your API keys (see ENV_SETUP.md for details)
 ```
 
 ### Development
@@ -54,6 +58,8 @@ npm run dev
 
 # Open http://localhost:3000
 ```
+
+**First time setup?** See [ENV_SETUP.md](ENV_SETUP.md) for detailed configuration guide.
 
 ### Production Build
 
@@ -67,7 +73,17 @@ npm start
 
 ## Environment Variables
 
-The app is pre-configured with Devnet endpoints. To customize, create a `.env.local` file:
+```bash
+# Quick setup
+cp .env.example .env.local
+```
+
+The app is pre-configured with Devnet endpoints. To use your own RPC provider:
+
+1. Get a free API key from [Helius](https://helius.dev) or [QuickNode](https://quicknode.com)
+2. Update `NEXT_PUBLIC_RPC_URL` in `.env.local`
+
+**See [ENV_SETUP.md](ENV_SETUP.md) for complete configuration guide.**
 
 ```env
 NEXT_PUBLIC_IQ_BACKEND_HOST=https://iq-testbackend-381334931214.asia-northeast3.run.app
