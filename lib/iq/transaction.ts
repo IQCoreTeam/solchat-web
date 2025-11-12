@@ -17,6 +17,7 @@ import {
 import type { ServerTransactionPayload } from './client';
 import { chunkData } from './utils';
 import { generateMerkleRoot } from './client';
+import { IQ_CONFIG } from './config';
 
 export type WalletExecutor = {
   publicKey: PublicKey;
@@ -110,6 +111,47 @@ export async function initializeUser(
     return txid;
   } catch (error) {
     console.error('Failed to initialize user:', error);
+    throw error;
+  }
+}
+
+/**
+ * Check if user is initialized and auto-initialize if needed
+ * Returns true if initialization was needed, false if already initialized
+ */
+export async function ensureUserInitialized(
+  connection: Connection,
+  wallet: WalletExecutor,
+  onStatus?: (message: string) => void
+): Promise<{ wasInitialized: boolean; txid?: string }> {
+  try {
+    const userKey = wallet.publicKey.toBase58();
+    
+    // Try to initialize the user - if already initialized, it will fail gracefully
+    // If not initialized, it will create the account
+    try {
+      onStatus?.('Initializing account...');
+      const txid = await initializeUser(connection, wallet);
+      onStatus?.('✅ Account initialized successfully!');
+      return { wasInitialized: true, txid };
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
+      
+      // If error indicates account already exists, that's fine
+      if (
+        errorMessage.includes('already in use') ||
+        errorMessage.includes('already initialized') ||
+        errorMessage.includes('AlreadyInUse')
+      ) {
+        // Account already initialized - this is success
+        return { wasInitialized: false };
+      }
+      
+      // For other errors, rethrow
+      throw error;
+    }
+  } catch (error) {
+    console.error('Failed to check/initialize user:', error);
     throw error;
   }
 }

@@ -15,6 +15,7 @@ import {
     leaveChat,
     WalletExecutor,
     requestAirdrop,
+    ensureUserInitialized,
 } from '@/lib/iq';
 // import type { WalletExecutor } from '@/lib/iq';
 import { encodeWithPassword, decodeWithPassword } from 'hanlock';
@@ -367,8 +368,23 @@ export function ChatInterface() {
 
         const errorMessage = error?.message || String(error);
 
-        // Show user-friendly error messages
-        if (errorMessage.includes('Insufficient SOL balance')) {
+        // Check if user needs initialization (backup check)
+        if (errorMessage.includes('AccountNotInitialized') || 
+            errorMessage.includes('account to be already initialized')) {
+          addToHistory('[ERROR] Account initialization required');
+          addToHistory('[INFO] Initializing your account...');
+          
+          try {
+            await ensureUserInitialized(
+              connection,
+              wallet as any,
+              (msg) => addToHistory(`[INFO] ${msg}`)
+            );
+            addToHistory('[SUCCESS] ✓ Account initialized! Please try sending your message again.');
+          } catch (initError: any) {
+            addToHistory(`[ERROR] Failed to initialize: ${initError?.message || String(initError)}`);
+          }
+        } else if (errorMessage.includes('Insufficient SOL balance')) {
           addToHistory('[ERROR] Insufficient SOL balance to send message!');
           addToHistory('[TIP] Use /balance to check your balance');
           addToHistory('[TIP] Use /airdrop to get devnet SOL (if on devnet)');
@@ -390,6 +406,23 @@ export function ChatInterface() {
     addToHistory('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     addToHistory(`[ROOM] Connected to: ${conversationState.serverId || conversationState.serverPDA}`);
     addToHistory('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    addToHistory('');
+
+    // Check and initialize user account if needed
+    try {
+      addToHistory('[SYSTEM] Checking account status...');
+      const { wasInitialized } = await ensureUserInitialized(
+        connection,
+        wallet as any,
+        (msg) => addToHistory(`[SYSTEM] ${msg}`)
+      );
+      if (!wasInitialized) {
+        addToHistory('[SYSTEM] Account ready ✓');
+      }
+    } catch (error) {
+      addToHistory(`[WARNING] Could not verify account status: ${error}`);
+      addToHistory('[INFO] If you encounter errors sending messages, try again.');
+    }
     addToHistory('');
 
     // Load chat history
