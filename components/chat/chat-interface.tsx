@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { Terminal } from '@/components/ui/terminal';
 import { TerminalInput } from '@/components/ui/terminal-input';
+import { useAppWallet, useAppConnection } from '@/lib/wallet/use-app-wallet';
 import {
     pdaExists,
     getServerPDA,
@@ -12,8 +12,9 @@ import {
     sendChat,
     getChatRecords,
     joinChat,
-    leaveChat, WalletExecutor,
-
+    leaveChat,
+    WalletExecutor,
+    requestAirdrop,
 } from '@/lib/iq';
 // import type { WalletExecutor } from '@/lib/iq';
 import { encodeWithPassword, decodeWithPassword } from 'hanlock';
@@ -38,8 +39,8 @@ interface ConversationState {
 }
 
 export function ChatInterface() {
-  const { connection } = useConnection();
-  const wallet = useWallet();
+  const { connection } = useAppConnection();
+  const wallet = useAppWallet();
 
   const [history, setHistory] = useState<string[]>([
     '╔══════════════════════════════════════════════════════════════╗',
@@ -112,6 +113,7 @@ export function ChatInterface() {
     addToHistory('  /pw [key]          - Set encryption key');
     addToHistory('  /pw off            - Disable encryption');
     addToHistory('  /balance           - Check wallet balance');
+    addToHistory('  /airdrop [amount]  - Request SOL airdrop (devnet only, default: 1)');
     addToHistory('  /sendbonk [addr] [amount] - Send BONK tokens');
     addToHistory('  /leave             - Exit current chat room');
     addToHistory('');
@@ -211,6 +213,19 @@ export function ChatInterface() {
           }
           return;
 
+        case '/airdrop':
+          try {
+            addToHistory('[SYSTEM] Requesting airdrop...');
+            const amount = parts[1] ? parseFloat(parts[1]) : 1;
+            const txid = await requestAirdrop(connection, wallet.publicKey!, amount);
+            addToHistory(`[SUCCESS] Airdropped ${amount} SOL`);
+            addToHistory(`[TX] ${txid}`);
+          } catch (error) {
+            addToHistory(`[ERROR] Airdrop failed: ${error}`);
+            addToHistory('[TIP] Airdrops only work on devnet/testnet');
+          }
+          return;
+
         case '/leave':
           if (subscriptionId !== null) {
             await leaveChat(connection, subscriptionId);
@@ -246,38 +261,55 @@ export function ChatInterface() {
     } else if (phase === 'waitingForServerId') {
       try {
         addToHistory('[SYSTEM] Checking for room...');
-        let pda = await getServerPDA(wallet.publicKey.toBase58(), input);
-          const isPDAExist = await pdaExists(connection,pda);
-        console.log(isPDAExist);
-        if (!isPDAExist) {
+        const pda = await getServerPDA(wallet.publicKey.toBase58(), input);
+        const isPDAExist = await pdaExists(connection, pda);
+        console.log('Room exists:', isPDAExist);
 
-            addToHistory('Creating room...');
-          const { pda: createdPda, txid:txid} = await initializeServer(connection, signingWallet, input);
-            addToHistory(createdPda);
-            addToHistory(txid);
-          pda = createdPda;
+        if (isPDAExist) {
+          addToHistory(`[SERVER] Found existing room: ${input}`);
+          addToHistory(`[PDA] ${pda}`);
+          addToHistory('[SYSTEM] Join this room? (yes/no)');
+          setConversationState({ phase: 'waitingForCreateResponse', serverPDA: pda, serverId: input });
+        } else {
+          addToHistory(`[SERVER] Room "${input}" doesn't exist yet`);
+          addToHistory(`[PDA] ${pda}`);
+          addToHistory('[SYSTEM] Create this room? (yes/no)');
+          setConversationState({ phase: 'waitingForCreateResponse', serverPDA: pda, serverId: input });
         }
-        setConversationState({ phase: 'waitingForCreateResponse', serverPDA: pda, serverId: input });
-        addToHistory(`[SERVER] Found/Created room: ${input}`);
-        addToHistory(`[PDA] ${pda}`);
-        addToHistory('[SYSTEM] Join this room? (yes/no)');
       } catch (error) {
-        addToHistory('[ERROR] Failed to get server PDA');
+        addToHistory('[ERROR] Failed to check server PDA');
         addToHistory(String(error));
         setConversationState({ ...conversationState, phase: 'idle' });
       }
     } else if (phase === 'waitingForCreateResponse') {
       if (input.toLowerCase() === 'yes') {
         try {
-          addToHistory('[SYSTEM] Initializing room...');
-          await initializeServer(connection, signingWallet, conversationState.serverId!);
-          addToHistory('[SUCCESS] Room initialized!');
+          // Check if room needs to be created
+          const roomExists = await pdaExists(connection, conversationState.serverPDA!);
+
+          if (!roomExists) {
+            addToHistory('[SYSTEM] Creating room...');
+            const { pda: createdPda, txid } = await initializeServer(
+              connection,
+              signingWallet,
+              conversationState.serverId!
+            );
+            addToHistory(`[SUCCESS] Room created!`);
+            addToHistory(`[TX] ${txid}`);
+
+            // Wait a bit for transaction to be confirmed
+            addToHistory('[SYSTEM] Waiting for confirmation...');
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          } else {
+            addToHistory('[SYSTEM] Room already exists, joining...');
+          }
+
           addToHistory('[SYSTEM] Enter your nickname:');
           setConversationState({ ...conversationState, phase: 'waitingForHandle' });
-        } catch (error) {
-          addToHistory('[SYSTEM] Room may already exist, continuing...');
-          addToHistory('[SYSTEM] Enter your nickname:');
-          setConversationState({ ...conversationState, phase: 'waitingForHandle' });
+        } catch (error: any) {
+          addToHistory(`[ERROR] Failed to initialize room: ${error.message || error}`);
+          addToHistory('[SYSTEM] Returning to main menu...');
+          setConversationState({ phase: 'idle', serverPDA: null, serverId: null });
         }
       } else {
         setConversationState({ phase: 'idle', serverPDA: null, serverId: null });
@@ -328,11 +360,23 @@ export function ChatInterface() {
         );
         setLastTxid(txid);
         // Message will appear via subscription, which will clear the sending indicator
-      } catch (error) {
+      } catch (error: any) {
         setIsSending(false);
         // Remove the sending indicator
         setHistory((prev) => prev.filter(line => line !== '[SENDING...]'));
-        addToHistory(`[ERROR] Failed to send message: ${error}`);
+
+        const errorMessage = error?.message || String(error);
+
+        // Show user-friendly error messages
+        if (errorMessage.includes('Insufficient SOL balance')) {
+          addToHistory('[ERROR] Insufficient SOL balance to send message!');
+          addToHistory('[TIP] Use /balance to check your balance');
+          addToHistory('[TIP] Use /airdrop to get devnet SOL (if on devnet)');
+        } else if (errorMessage.includes('Please log in with Privy')) {
+          addToHistory('[ERROR] Please log in with Privy to send messages');
+        } else {
+          addToHistory(`[ERROR] Failed to send message: ${errorMessage}`);
+        }
       }
     } else if (phase === 'playground') {
       addToHistory(`[ECHO] ${input}`);
