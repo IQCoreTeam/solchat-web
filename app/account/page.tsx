@@ -1,6 +1,7 @@
 import { Nav } from '@/components/layout/nav';
 import { AccountClient } from '@/components/account/account-client';
 import { MobileWalletBanner } from '@/components/mobile/mobile-wallet-banner';
+import { PrivyDebug } from '@/components/debug/privy-debug';
 
 export default function AccountPage() {
   return (
@@ -10,6 +11,7 @@ export default function AccountPage() {
         <MobileWalletBanner />
         <AccountClient />
       </main>
+      {process.env.NODE_ENV === 'development' && <PrivyDebug />}
     </div>
   );
 }

@@ -51,11 +51,8 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
     ];
   }, [mounted]);
 
-  // Wait for client-side hydration
-  if (!mounted) {
-    return <>{children}</>;
-  }
-
+  // Always wrap in providers, even before mounted
+  // This prevents WalletContext errors during hydration
   return (
     <ConnectionProvider endpoint={RPC_URL}>
       <WalletProvider wallets={wallets} autoConnect>

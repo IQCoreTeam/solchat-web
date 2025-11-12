@@ -1,6 +1,6 @@
 # SolChat Web
 
-A production-ready, decentralized messaging application built on Solana blockchain. This is the Next.js web version of SolChat, supporting Solana wallet extensions like Phantom, Solflare, and more.
+A production-ready, decentralized messaging application built on Solana blockchain. This is the Next.js web version of SolChat, supporting Solana wallet extensions like Phantom, Solflare, and more
 
 ## Features
 

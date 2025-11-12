@@ -2,6 +2,9 @@ export const IQ_BACKEND_HOST = process.env.NEXT_PUBLIC_IQ_BACKEND_HOST || 'https
 export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'https://devnet.helius-rpc.com/?api-key=54b2d536-e4d8-4ccf-814e-0c38e242cd74';
 export const SOLANA_NETWORK = process.env.NEXT_PUBLIC_SOLANA_NETWORK || 'devnet';
 
+// Privy Configuration
+export const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID || '';
+
 // BONK token mint address on Devnet
 export const BONK_MINT = '3jV8jHCeqkgfK4Y7hSNbt4dCM3aFG3Rp7LkyqRYJWfRJ';
 

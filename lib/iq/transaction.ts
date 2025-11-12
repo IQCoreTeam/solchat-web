@@ -167,7 +167,10 @@ export async function codeToPDA(
     // This minimizes latency by not waiting for confirmations between build and send
     for (let i = 0; i < chunkList.length; i++) {
       let sent = false;
-      while (!sent) {
+      let retryCount = 0;
+      const MAX_RETRIES = 3;
+
+      while (!sent && retryCount < MAX_RETRIES) {
         try {
           // Build transaction with actual previous signature
           const { transaction: txPayload } = await createCodeInTransactionOnServer(
@@ -225,8 +228,38 @@ export async function codeToPDA(
           console.log(`Chunk ${i + 1}/${chunkList.length} sent:`, signature);
           previousTxSignature = signature;
           sent = true;
-        } catch (error) {
-          console.error(`Chunk ${i + 1} failed, retrying...`, error);
+        } catch (error: any) {
+          const errorMessage = error?.message || String(error);
+
+          // Check for fatal errors that shouldn't retry
+          if (
+            errorMessage.includes('Attempt to debit an account but found no record of a prior credit') ||
+            errorMessage.includes('insufficient funds') ||
+            errorMessage.includes('insufficient lamports')
+          ) {
+            console.error('❌ Insufficient balance - cannot send transaction');
+            throw new Error('Insufficient SOL balance. Please add SOL to your wallet and try again.');
+          }
+
+          // Check for program/account errors that won't resolve with retries
+          if (
+            errorMessage.includes('AccountNotInitialized') ||
+            errorMessage.includes('account to be already initialized') ||
+            errorMessage.includes('custom program error') ||
+            errorMessage.includes('AccountNotFound') ||
+            errorMessage.includes('InvalidAccountData')
+          ) {
+            console.error('❌ Program/Account error - retrying will not help');
+            throw new Error('Chat room not properly initialized. Please create or join a valid room first.');
+          }
+
+          retryCount++;
+          console.error(`Chunk ${i + 1} failed (attempt ${retryCount}/${MAX_RETRIES}):`, errorMessage);
+
+          if (retryCount >= MAX_RETRIES) {
+            throw new Error(`Failed to send chunk ${i + 1} after ${MAX_RETRIES} attempts: ${errorMessage}`);
+          }
+
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }

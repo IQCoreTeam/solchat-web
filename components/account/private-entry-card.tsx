@@ -1,22 +1,22 @@
 'use client';
 
 import { useState } from 'react';
-import { useWallet } from '@solana/wallet-adapter-react';
-import type { Keypair } from '@solana/web3.js';
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { useCloakSdk } from '@/lib/cloak/use-cloak-sdk';
 import { addCloakRecord, updateCloakRecord } from '@/lib/cloak/storage';
+import type { PrivyAppWallet } from '@/lib/wallet/privy-app-wallet';
 
 const uniqueId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 interface PrivateEntryCardProps {
-  appWallet: Keypair | null;
-  ensureAppWallet: () => Keypair;
+  privyWallet: PrivyAppWallet | null;
   onAfterAction?: () => void;
   onRecordsChanged?: () => void;
 }
 
-export function PrivateEntryCard({ appWallet, ensureAppWallet, onAfterAction, onRecordsChanged }: PrivateEntryCardProps) {
-  const wallet = useWallet();
+export function PrivateEntryCard({ privyWallet, onAfterAction, onRecordsChanged }: PrivateEntryCardProps) {
+  const { connection } = useConnection();
+  const wallet = useWallet(); // Use main wallet adapter for funding source
   const { getSdk } = useCloakSdk();
   const [amount, setAmount] = useState('0.1');
   const [delayMinutes, setDelayMinutes] = useState('0');
@@ -31,6 +31,10 @@ export function PrivateEntryCard({ appWallet, ensureAppWallet, onAfterAction, on
   };
 
   const handleFund = async () => {
+    if (!connection) {
+      setError('Solana connection not available. Please refresh the page.');
+      return;
+    }
     if (!wallet.connected || !wallet.publicKey) {
       setError('Connect your funding wallet first.');
       return;
@@ -46,13 +50,19 @@ export function PrivateEntryCard({ appWallet, ensureAppWallet, onAfterAction, on
       return;
     }
 
-    const destinationWallet = appWallet ?? ensureAppWallet();
+    // Use Privy wallet as destination
+    if (!privyWallet) {
+      setError('Please log in with Privy to use private funding.');
+      return;
+    }
+
+    const destinationAddress = privyWallet.address;
     
     resetStatus();
     setIsProcessing(true);
 
     const recordId = uniqueId();
-    const recipient = destinationWallet.publicKey.toBase58();
+    const recipient = destinationAddress;
     addCloakRecord(recipient, {
       id: recordId,
       type: 'entry',
@@ -66,13 +76,16 @@ export function PrivateEntryCard({ appWallet, ensureAppWallet, onAfterAction, on
 
     try {
       appendStatus('🔒 Initializing Cloak privacy protocol...');
-      // Pass wallet adapter directly like the official Cloak example
-      // The SDK will handle signature generation internally
+      // Use main wallet SDK for the entire operation
       
-      appendStatus('📡 Getting Cloak SDK instance...');
+      // Debug: log connection info
+      console.log('🔍 Connection endpoint:', connection.rpcEndpoint);
+      console.log('🔍 Wallet publicKey:', wallet.publicKey?.toBase58());
+      
+      appendStatus('📡 Getting Cloak SDK instance with main wallet...');
       const sdk = await getSdk(wallet as any);
       
-      appendStatus(`💰 Depositing ${parsedAmount} SOL into privacy pool...`);
+      appendStatus(`💰 Depositing ${parsedAmount} SOL from main wallet into privacy pool...`);
       appendStatus('⏳ Generating zero-knowledge proof (this may take a moment)...');
       
       const depositResult = await sdk.depositSol({
@@ -132,13 +145,13 @@ export function PrivateEntryCard({ appWallet, ensureAppWallet, onAfterAction, on
 
       const delay = Number(delayMinutes) || 0;
       appendStatus('');
-      appendStatus(`🎯 Withdrawing to app wallet...`);
+      appendStatus(`🎯 Withdrawing to Privy wallet (${destinationAddress.slice(0, 8)}...)...`);
       
       appendStatus('⏳ Generating withdrawal proof...');
       
       const withdrawResult = await sdk.withdrawSol({
         amount: parsedAmount,
-        recipientAddress: destinationWallet.publicKey,
+        recipientAddress: destinationAddress,
         delayMinutes: delay,
         onStatus: (line: string) => {
           appendStatus(`[Withdraw] ${line}`);
@@ -206,6 +219,17 @@ export function PrivateEntryCard({ appWallet, ensureAppWallet, onAfterAction, on
         <h3 className="text-green-400 font-mono text-xl">Private Funding Entry</h3>
         <span className="text-xs text-green-300 font-mono">Powered by Cloak</span>
       </div>
+
+      {!privyWallet && (
+        <div className="bg-yellow-900/30 border border-yellow-600 p-4 mb-4">
+          <p className="text-yellow-400 font-mono text-sm mb-2">
+            ⚠️ No privacy wallet configured
+          </p>
+          <p className="text-yellow-300 font-mono text-xs">
+            Please login with Privy to use private funding.
+          </p>
+        </div>
+      )}
 
       <div className="space-y-4">
         <div>
