@@ -39,7 +39,7 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
           },
         },
         embeddedWallets: {
-          showWalletUIs: true,
+          showWalletUIs: false, // Disable confirmation modals for auto-signing
           solana: {
             createOnLogin: 'all-users', // Always create embedded wallet for private transactions
           },
