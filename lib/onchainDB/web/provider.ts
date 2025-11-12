@@ -1,6 +1,6 @@
 'use client'
 
-
+import idl from '../idl.json'
 import * as anchor from '@coral-xyz/anchor'
 import type { Idl, AnchorProvider, Program } from '@coral-xyz/anchor'
 import { Connection, PublicKey, Commitment } from '@solana/web3.js'
@@ -44,9 +44,10 @@ export function getAnchorProvider(
  * getProgram
  * - Instantiate an Anchor Program from IDL and programId.
  */
-export function getProgram<T extends Idl>(
-  idl: T,
+export function getProgram(
+
   provider: AnchorProvider
-): Program<T> {
-  return new anchor.Program<T>(idl, provider)
+): Program {
+
+  return new anchor.Program(idl as Idl, provider)
 }
