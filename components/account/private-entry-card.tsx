@@ -1,28 +1,22 @@
 'use client';
 
 import { useState } from 'react';
-import { useWallet } from '@solana/wallet-adapter-react';
-import type { Keypair } from '@solana/web3.js';
 import { useCloakSdk } from '@/lib/cloak/use-cloak-sdk';
 import { addCloakRecord, updateCloakRecord } from '@/lib/cloak/storage';
 import type { PrivyAppWallet } from '@/lib/wallet/privy-app-wallet';
+import { usePrivyWalletAdapter } from '@/lib/wallet/privy-wallet-adapter';
 
 const uniqueId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 interface PrivateEntryCardProps {
-  appWallet: Keypair | null;
   privyWallet: PrivyAppWallet | null;
-  ensureAppWallet: () => Keypair;
   onAfterAction?: () => void;
   onRecordsChanged?: () => void;
 }
 
-export function PrivateEntryCard({ appWallet, privyWallet, ensureAppWallet, onAfterAction, onRecordsChanged }: PrivateEntryCardProps) {
-  const wallet = useWallet();
+export function PrivateEntryCard({ privyWallet, onAfterAction, onRecordsChanged }: PrivateEntryCardProps) {
+  const wallet = usePrivyWalletAdapter();
   const { getSdk } = useCloakSdk();
-  
-  // Use Privy wallet if available, otherwise fall back to localStorage wallet
-  const activeWallet = privyWallet || (appWallet ? { address: appWallet.publicKey.toBase58(), publicKey: appWallet.publicKey } : null);
   const [amount, setAmount] = useState('0.1');
   const [delayMinutes, setDelayMinutes] = useState('0');
   const [statusLines, setStatusLines] = useState<string[]>([]);
@@ -51,14 +45,13 @@ export function PrivateEntryCard({ appWallet, privyWallet, ensureAppWallet, onAf
       return;
     }
 
-    // Determine which wallet to use as destination
-    let destinationAddress: string;
-    if (privyWallet) {
-      destinationAddress = privyWallet.address;
-    } else {
-      const legacyWallet = appWallet ?? ensureAppWallet();
-      destinationAddress = legacyWallet.publicKey.toBase58();
+    // Use Privy wallet as destination
+    if (!privyWallet) {
+      setError('Please log in with Privy to use private funding.');
+      return;
     }
+
+    const destinationAddress = privyWallet.address;
     
     resetStatus();
     setIsProcessing(true);
@@ -219,13 +212,13 @@ export function PrivateEntryCard({ appWallet, privyWallet, ensureAppWallet, onAf
         <span className="text-xs text-green-300 font-mono">Powered by Cloak</span>
       </div>
 
-      {!activeWallet && (
+      {!privyWallet && (
         <div className="bg-yellow-900/30 border border-yellow-600 p-4 mb-4">
           <p className="text-yellow-400 font-mono text-sm mb-2">
             ⚠️ No privacy wallet configured
           </p>
           <p className="text-yellow-300 font-mono text-xs">
-            Please login with Privy or create a legacy wallet above to use private funding.
+            Please login with Privy to use private funding.
           </p>
         </div>
       )}

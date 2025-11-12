@@ -2,7 +2,6 @@
 
 import { ReactNode } from 'react';
 import { ReactQueryProvider } from './query-provider';
-import { SolanaWalletProvider } from './wallet-provider';
 import { ThemeProvider } from './theme-provider';
 import { PrivyProvider } from './privy-provider';
 
@@ -11,7 +10,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
       <PrivyProvider>
         <ReactQueryProvider>
-          <SolanaWalletProvider>{children}</SolanaWalletProvider>
+          {children}
         </ReactQueryProvider>
       </PrivyProvider>
     </ThemeProvider>
