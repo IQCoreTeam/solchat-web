@@ -1,6 +1,7 @@
 'use client';
 
 import { PrivyProvider as BasePrivyProvider } from '@privy-io/react-auth';
+import { toSolanaWalletConnectors } from '@privy-io/react-auth/solana';
 import { type ReactNode } from 'react';
 
 const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID || '';
@@ -12,7 +13,10 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  console.log('✅ Privy Provider initializing with App ID:', PRIVY_APP_ID.slice(0, 10) + '...');
+  // Only log on client side, not during SSR
+  if (typeof window !== 'undefined') {
+    console.log('✅ Privy Provider initializing with App ID:', PRIVY_APP_ID.slice(0, 10) + '...');
+  }
 
   return (
     <BasePrivyProvider
@@ -40,17 +44,21 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
         },
         embeddedWallets: {
           showWalletUIs: true,
-          ethereum: {
-            createOnLogin: 'off', // No Ethereum wallets
-          },
           solana: {
-            createOnLogin: 'users-without-wallets', // Auto-create Solana wallet
+            createOnLogin: 'users-without-wallets',
+          },
+        },
+        externalWallets: {
+          solana: {
+            connectors: toSolanaWalletConnectors({
+              // Don't auto-connect to avoid annoying popups on page load
+              shouldAutoConnect: false,
+            }),
           },
         },
         mfa: {
           noPromptOnMfaRequired: false,
         },
-        // Solana configuration will use default RPC settings
       }}
     >
       {children}

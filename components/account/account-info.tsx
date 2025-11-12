@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { usePrivy } from '@privy-io/react-auth';
-import { PublicKey, Keypair } from '@solana/web3.js';
+import { PublicKey } from '@solana/web3.js';
 import { useQuery } from '@tanstack/react-query';
 import { lamportsToSol, ellipsify } from '@/lib/iq/utils';
 import { sendSol, requestAirdrop } from '@/lib/iq/transaction';
@@ -11,12 +10,12 @@ import { getBonkBalance } from '@/lib/token/bonk';
 import { PrivateEntryCard } from './private-entry-card';
 import { PrivateExitCard } from './private-exit-card';
 import { CloakTransferRecord, listCloakRecords } from '@/lib/cloak/storage';
-import { createAppWallet, ensureAppWallet, getStoredAppWallet } from '@/lib/wallet/app-wallet';
-import { usePrivyAppWallet, useHasPrivyWallet } from '@/lib/wallet/privy-app-wallet';
+import { usePrivyAppWallet, useHasPrivyWallet, useExternalSolanaWallet } from '@/lib/wallet/privy-app-wallet';
+import { usePrivyWalletAdapter, usePrivyConnection } from '@/lib/wallet/privy-wallet-adapter';
 
 export function AccountInfo() {
-  const { connection } = useConnection();
-  const wallet = useWallet();
+  const { connection } = usePrivyConnection();
+  const wallet = usePrivyWalletAdapter();
   const { ready: privyReady, authenticated, login } = usePrivy();
   const privyWallet = usePrivyAppWallet();
   const hasPrivyWallet = useHasPrivyWallet();
@@ -27,47 +26,32 @@ export function AccountInfo() {
   const [requestingAirdrop, setRequestingAirdrop] = useState(false);
   const [message, setMessage] = useState('');
 
-  const [appWallet, setAppWallet] = useState<Keypair | null>(null);
   const [cloakHistory, setCloakHistory] = useState<CloakTransferRecord[]>([]);
 
+  // Debug logging - only run once
   useEffect(() => {
-    const existing = getStoredAppWallet();
-    if (existing) {
-      setAppWallet(existing);
-      setCloakHistory(listCloakRecords(existing.publicKey.toBase58()));
+    console.log('🔍 Privy Debug:', {
+      ready: privyReady,
+      authenticated,
+      user: authenticated ? 'User exists' : 'No user',
+      appId: process.env.NEXT_PUBLIC_PRIVY_APP_ID || 'Not set',
+      clientId: process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID || 'Not set',
+    });
+  }, [privyReady, authenticated]);
+
+  useEffect(() => {
+    // Load cloak history for Privy wallet if available
+    if (privyWallet?.address) {
+      setCloakHistory(listCloakRecords(privyWallet.address));
     }
-  }, []);
-
-  const ensureLocalWallet = () => {
-    const wallet = ensureAppWallet();
-    setAppWallet(wallet);
-    setCloakHistory(listCloakRecords(wallet.publicKey.toBase58()));
-    return wallet;
-  };
-
-  const regenerateLocalWallet = () => {
-    const wallet = createAppWallet();
-    setAppWallet(wallet);
-    setCloakHistory(listCloakRecords(wallet.publicKey.toBase58()));
-    setMessage('New app wallet generated.');
-  };
+  }, [privyWallet?.address]);
 
   const refreshCloakHistory = () => {
-    if (appWallet) {
-      setCloakHistory(listCloakRecords(appWallet.publicKey.toBase58()));
+    if (privyWallet) {
+      setCloakHistory(listCloakRecords(privyWallet.address));
     }
   };
 
-  const handleCopyAppWallet = async () => {
-    if (!appWallet) return;
-    try {
-      await navigator.clipboard.writeText(appWallet.publicKey.toBase58());
-      setMessage('App wallet address copied to clipboard.');
-    } catch (error) {
-      console.error(error);
-      setMessage('Failed to copy app wallet address.');
-    }
-  };
 
   // Fetch SOL balance
   const { data: balance, refetch: refetchBalance } = useQuery({
@@ -277,16 +261,6 @@ export function AccountInfo() {
                 Login with Privy
               </button>
             )}
-            {!privyWallet && (
-              <>
-                <button
-                  onClick={ensureLocalWallet}
-                  className="bg-transparent border border-green-600 text-green-400 font-mono px-3 py-1 hover:bg-green-900 transition-colors"
-                >
-                  Legacy Wallet
-                </button>
-              </>
-            )}
           </div>
         </div>
         {privyWallet ? (
@@ -305,31 +279,6 @@ export function AccountInfo() {
             >
               Copy Address
             </button>
-          </div>
-        ) : appWallet ? (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs bg-yellow-900 text-yellow-400 font-mono px-2 py-1">LEGACY (localStorage)</span>
-              <span className="text-xs text-yellow-400 font-mono">⚠️ Less secure</span>
-            </div>
-            <p className="text-green-300 font-mono text-sm break-all">{appWallet.publicKey.toBase58()}</p>
-            <div className="flex gap-2">
-              <button
-                onClick={handleCopyAppWallet}
-                className="bg-green-600 hover:bg-green-700 text-black font-mono px-3 py-1 transition-colors"
-              >
-                Copy Address
-              </button>
-              <button
-                onClick={regenerateLocalWallet}
-                className="bg-transparent border border-yellow-600 text-yellow-400 font-mono px-3 py-1 hover:bg-yellow-900 transition-colors"
-              >
-                Regenerate
-              </button>
-            </div>
-            <p className="text-xs text-yellow-400 font-mono mt-2">
-              💡 Tip: Login with Privy for better security and cross-device access
-            </p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -397,17 +346,13 @@ export function AccountInfo() {
       </div>
 
       <PrivateEntryCard
-        appWallet={appWallet}
         privyWallet={privyWallet}
-        ensureAppWallet={ensureLocalWallet}
         onAfterAction={handleCloakSuccess}
         onRecordsChanged={refreshCloakHistory}
       />
 
       <PrivateExitCard
-        appWallet={appWallet}
         privyWallet={privyWallet}
-        ensureAppWallet={ensureLocalWallet}
         onAfterAction={handleCloakSuccess}
         onRecordsChanged={refreshCloakHistory}
       />
@@ -429,7 +374,7 @@ export function AccountInfo() {
         </div>
       )}
 
-      {appWallet && (
+      {privyWallet && (
         <div className="bg-black border-2 border-green-600 p-6 mb-6">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-green-400 font-mono text-xl">Cloak Transfer History</h3>

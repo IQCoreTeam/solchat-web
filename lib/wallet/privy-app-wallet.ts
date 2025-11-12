@@ -1,103 +1,87 @@
 'use client';
 
-import { usePrivy, useWallets, useCreateWallet } from '@privy-io/react-auth';
-import { useMemo, useCallback, useState } from 'react';
+import { usePrivy } from '@privy-io/react-auth';
+import { useWallets } from '@privy-io/react-auth/solana';
+import { useMemo } from 'react';
 import { PublicKey } from '@solana/web3.js';
 
 export interface PrivyAppWallet {
   publicKey: PublicKey;
   address: string;
   isReady: boolean;
-  isCreating: boolean;
   walletClient: any; // Privy wallet client for signing
-  createWallet: () => Promise<void>;
 }
 
 /**
  * Hook to access Privy embedded Solana wallet as the app wallet
- * This replaces the localStorage-based app wallet with secure Privy-managed wallet
+ * This provides secure Privy-managed wallet for privacy operations
  */
 export function usePrivyAppWallet(): PrivyAppWallet | null {
-  const { ready: privyReady, authenticated, login } = usePrivy();
-  const { wallets } = useWallets();
-  const { createWallet } = useCreateWallet();
-  const [isCreating, setIsCreating] = useState(false);
+  const { ready: privyReady, authenticated, user } = usePrivy();
 
-  // Find the first Solana embedded wallet
+  // Find the Solana embedded wallet from user's linked accounts
   const embeddedWallet = useMemo(() => {
-    if (!wallets || wallets.length === 0) return null;
-    
-    // Look for Solana embedded wallet (Privy creates these automatically)
-    const solanaWallet = wallets.find(
-      (wallet) => 
-        wallet.walletClientType === 'privy' && 
-        // Solana addresses are typically 32-44 characters base58
-        wallet.address && 
-        wallet.address.length > 30 &&
-        !wallet.address.startsWith('0x') // Not an Ethereum address
-    );
-    
-    return solanaWallet || null;
-  }, [wallets]);
+    if (!user || !user.linkedAccounts) return null;
 
-  const handleCreateWallet = useCallback(async () => {
-    if (isCreating) return;
-    
-    if (!authenticated) {
-      // If not authenticated, trigger login first
-      await login();
-      return;
-    }
-    
-    try {
-      setIsCreating(true);
-      await createWallet();
-    } catch (error) {
-      console.error('Failed to create Privy wallet:', error);
-      throw error;
-    } finally {
-      setIsCreating(false);
-    }
-  }, [authenticated, createWallet, isCreating, login]);
+    // Look for Privy embedded Solana wallet in linked accounts
+    const solanaWallet = user.linkedAccounts.find(
+      (account: any) =>
+        account.type === 'wallet' &&
+        account.walletClientType === 'privy' &&
+        account.chainType === 'solana'
+    ) as any;
+
+    return solanaWallet || null;
+  }, [user]);
+
+  if (!privyReady || !authenticated || !embeddedWallet) {
+    return null;
+  }
+
+  return {
+    publicKey: new PublicKey(embeddedWallet.address as string),
+    address: embeddedWallet.address as string,
+    isReady: true,
+    walletClient: embeddedWallet, // Pass the full wallet for signing
+  };
+}
+
+/**
+ * Hook to get connected external Solana wallet (Phantom, Solflare, etc.)
+ * This is used for funding operations
+ */
+export function useExternalSolanaWallet() {
+  const { ready: privyReady } = usePrivy();
+  const { wallets } = useWallets();
+
+  // Find the first wallet (could be external or embedded, but useWallets returns connected wallets)
+  const wallet = useMemo(() => {
+    if (!wallets || wallets.length === 0) return null;
+    // Return the first wallet for now
+    return wallets[0] || null;
+  }, [wallets]);
 
   if (!privyReady) {
     return null;
   }
 
-  // If authenticated but no wallet yet, return partial state
-  if (authenticated && !embeddedWallet) {
-    return null;
-  }
-
-  if (!embeddedWallet) {
-    return null;
-  }
-
-  return {
-    publicKey: new PublicKey(embeddedWallet.address),
-    address: embeddedWallet.address,
-    isReady: true,
-    isCreating,
-    walletClient: embeddedWallet, // Pass the full wallet for signing
-    createWallet: handleCreateWallet,
-  };
+  return wallet;
 }
 
 /**
- * Check if user has a Privy wallet
+ * Check if user has a Privy embedded wallet
  */
 export function useHasPrivyWallet(): boolean {
-  const { wallets } = useWallets();
-  
+  const { user } = usePrivy();
+
   return useMemo(() => {
-    if (!wallets || wallets.length === 0) return false;
-    
-    return wallets.some(
-      (wallet) => 
-        wallet.walletClientType === 'privy' && 
-        wallet.address && 
-        wallet.address.length > 30 &&
-        !wallet.address.startsWith('0x')
+    if (!user || !user.linkedAccounts) return false;
+
+    return user.linkedAccounts.some(
+      (account: any) =>
+        account.type === 'wallet' &&
+        account.walletClientType === 'privy' &&
+        account.chainType === 'solana'
     );
-  }, [wallets]);
+  }, [user]);
 }
