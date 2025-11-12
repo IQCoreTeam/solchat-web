@@ -4,6 +4,7 @@ export const SOLANA_NETWORK = process.env.NEXT_PUBLIC_SOLANA_NETWORK || 'devnet'
 
 // Privy Configuration
 export const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID || '';
+export const PRIVY_CLIENT_ID = process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID || '';
 
 // BONK token mint address on Devnet
 export const BONK_MINT = '3jV8jHCeqkgfK4Y7hSNbt4dCM3aFG3Rp7LkyqRYJWfRJ';
