@@ -23,20 +23,16 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
       appId={PRIVY_APP_ID}
       config={{
         appearance: {
-          accentColor: '#75e74f', // IQ Labs green
-          theme: '#222224', // Dark theme
-          showWalletLoginFirst: false, // Email/SMS first
-          logo: 'https://iqlabs.dev/assets/iq_logo.svg',
-          walletChainType: 'solana-only',
-          walletList: [
-            'detected_solana_wallets',
-            'phantom',
-            'solflare',
-            'backpack',
-            'okx_wallet',
-          ],
-        },
-        loginMethods: ['email', 'wallet', 'sms'],
+        accentColor: '#75e74f', // IQ Labs green
+        theme: '#222224', // Dark theme
+        showWalletLoginFirst: false, // Email/SMS first - prefer email/SMS for Privy auth
+        logo: 'https://iqlabs.dev/assets/iq_logo.svg',
+        walletChainType: 'solana-only',
+      },
+      // Prefer email/SMS for Privy authentication (embedded wallet creation)
+      // Users should connect their main wallet through the standard wallet adapter first
+      // But wallet login is available as a secondary option
+      loginMethods: ['email', 'sms', 'wallet'],
         fundingMethodConfig: {
           moonpay: {
             useSandbox: true, // MoonPay sandbox for testing
@@ -45,7 +41,7 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
         embeddedWallets: {
           showWalletUIs: true,
           solana: {
-            createOnLogin: 'users-without-wallets',
+            createOnLogin: 'all-users', // Always create embedded wallet for private transactions
           },
         },
         externalWallets: {

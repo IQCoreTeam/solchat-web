@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { useCloakSdk } from '@/lib/cloak/use-cloak-sdk';
 import { addCloakRecord, updateCloakRecord } from '@/lib/cloak/storage';
 import type { PrivyAppWallet } from '@/lib/wallet/privy-app-wallet';
-import { usePrivyWalletAdapter } from '@/lib/wallet/privy-wallet-adapter';
 
 const uniqueId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -15,7 +15,8 @@ interface PrivateEntryCardProps {
 }
 
 export function PrivateEntryCard({ privyWallet, onAfterAction, onRecordsChanged }: PrivateEntryCardProps) {
-  const wallet = usePrivyWalletAdapter();
+  const { connection } = useConnection();
+  const wallet = useWallet(); // Use main wallet adapter for funding source
   const { getSdk } = useCloakSdk();
   const [amount, setAmount] = useState('0.1');
   const [delayMinutes, setDelayMinutes] = useState('0');
@@ -30,6 +31,10 @@ export function PrivateEntryCard({ privyWallet, onAfterAction, onRecordsChanged 
   };
 
   const handleFund = async () => {
+    if (!connection) {
+      setError('Solana connection not available. Please refresh the page.');
+      return;
+    }
     if (!wallet.connected || !wallet.publicKey) {
       setError('Connect your funding wallet first.');
       return;
@@ -71,13 +76,16 @@ export function PrivateEntryCard({ privyWallet, onAfterAction, onRecordsChanged 
 
     try {
       appendStatus('🔒 Initializing Cloak privacy protocol...');
-      // Pass wallet adapter directly like the official Cloak example
-      // The SDK will handle signature generation internally
+      // Use main wallet SDK for the entire operation
       
-      appendStatus('📡 Getting Cloak SDK instance...');
+      // Debug: log connection info
+      console.log('🔍 Connection endpoint:', connection.rpcEndpoint);
+      console.log('🔍 Wallet publicKey:', wallet.publicKey?.toBase58());
+      
+      appendStatus('📡 Getting Cloak SDK instance with main wallet...');
       const sdk = await getSdk(wallet as any);
       
-      appendStatus(`💰 Depositing ${parsedAmount} SOL into privacy pool...`);
+      appendStatus(`💰 Depositing ${parsedAmount} SOL from main wallet into privacy pool...`);
       appendStatus('⏳ Generating zero-knowledge proof (this may take a moment)...');
       
       const depositResult = await sdk.depositSol({
@@ -137,7 +145,7 @@ export function PrivateEntryCard({ privyWallet, onAfterAction, onRecordsChanged 
 
       const delay = Number(delayMinutes) || 0;
       appendStatus('');
-      appendStatus(`🎯 Withdrawing to ${privyWallet ? 'Privy' : 'app'} wallet...`);
+      appendStatus(`🎯 Withdrawing to Privy wallet (${destinationAddress.slice(0, 8)}...)...`);
       
       appendStatus('⏳ Generating withdrawal proof...');
       

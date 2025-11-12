@@ -21,20 +21,43 @@ export function usePrivyAppWallet(): PrivyAppWallet | null {
 
   // Find the Solana embedded wallet from user's linked accounts
   const embeddedWallet = useMemo(() => {
-    if (!user || !user.linkedAccounts) return null;
+    if (!user || !user.linkedAccounts) {
+      console.log('🔍 No user or linkedAccounts:', { user: !!user, linkedAccounts: !!user?.linkedAccounts });
+      return null;
+    }
 
+    console.log('🔍 Searching for Privy Solana wallet in linkedAccounts:', user.linkedAccounts.length);
+    
     // Look for Privy embedded Solana wallet in linked accounts
     const solanaWallet = user.linkedAccounts.find(
-      (account: any) =>
-        account.type === 'wallet' &&
-        account.walletClientType === 'privy' &&
-        account.chainType === 'solana'
+      (account: any) => {
+        const isMatch = account.type === 'wallet' &&
+          account.walletClientType === 'privy' &&
+          account.chainType === 'solana';
+        
+        console.log('🔍 Account:', {
+          type: account.type,
+          walletClientType: account.walletClientType,
+          chainType: account.chainType,
+          address: account.address?.slice(0, 8),
+          isMatch
+        });
+        
+        return isMatch;
+      }
     ) as any;
 
+    if (solanaWallet) {
+      console.log('✅ Found Privy Solana wallet:', solanaWallet.address);
+    } else {
+      console.log('❌ No Privy Solana wallet found');
+    }
+
     return solanaWallet || null;
-  }, [user]);
+  }, [user, user?.linkedAccounts]);
 
   if (!privyReady || !authenticated || !embeddedWallet) {
+    console.log('🔍 usePrivyAppWallet returning null:', { privyReady, authenticated, hasEmbeddedWallet: !!embeddedWallet });
     return null;
   }
 
