@@ -1,6 +1,6 @@
 'use client';
 
-import type { TransactionSigner } from '@cloak-labs/sdk';
+import type { TransactionSigner } from '@cloak-dev/sdk';
 import type { WalletContextState } from '@solana/wallet-adapter-react';
 import type { Transaction, VersionedTransaction } from '@solana/web3.js';
 
