@@ -1,8 +1,8 @@
 'use client';
 
 import { useConnection } from '@solana/wallet-adapter-react';
-import { CloakSDK } from '@cloak-labs/sdk';
-import type { CloakSDKConfig, TransactionSigner } from '@cloak-labs/sdk';
+import { CloakSDK } from '@cloak-dev/sdk';
+import type { CloakSDKConfig, TransactionSigner } from '@cloak-dev/sdk';
 import type { Keypair } from '@solana/web3.js';
 import { useCallback, useMemo, useRef } from 'react';
 import { CLOAK_PROGRAM_ID, CLOAK_RELAYER_URL } from './config';
