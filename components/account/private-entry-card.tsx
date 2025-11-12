@@ -5,19 +5,24 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import type { Keypair } from '@solana/web3.js';
 import { useCloakSdk } from '@/lib/cloak/use-cloak-sdk';
 import { addCloakRecord, updateCloakRecord } from '@/lib/cloak/storage';
+import type { PrivyAppWallet } from '@/lib/wallet/privy-app-wallet';
 
 const uniqueId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 interface PrivateEntryCardProps {
   appWallet: Keypair | null;
+  privyWallet: PrivyAppWallet | null;
   ensureAppWallet: () => Keypair;
   onAfterAction?: () => void;
   onRecordsChanged?: () => void;
 }
 
-export function PrivateEntryCard({ appWallet, ensureAppWallet, onAfterAction, onRecordsChanged }: PrivateEntryCardProps) {
+export function PrivateEntryCard({ appWallet, privyWallet, ensureAppWallet, onAfterAction, onRecordsChanged }: PrivateEntryCardProps) {
   const wallet = useWallet();
   const { getSdk } = useCloakSdk();
+  
+  // Use Privy wallet if available, otherwise fall back to localStorage wallet
+  const activeWallet = privyWallet || (appWallet ? { address: appWallet.publicKey.toBase58(), publicKey: appWallet.publicKey } : null);
   const [amount, setAmount] = useState('0.1');
   const [delayMinutes, setDelayMinutes] = useState('0');
   const [statusLines, setStatusLines] = useState<string[]>([]);
@@ -46,13 +51,20 @@ export function PrivateEntryCard({ appWallet, ensureAppWallet, onAfterAction, on
       return;
     }
 
-    const destinationWallet = appWallet ?? ensureAppWallet();
+    // Determine which wallet to use as destination
+    let destinationAddress: string;
+    if (privyWallet) {
+      destinationAddress = privyWallet.address;
+    } else {
+      const legacyWallet = appWallet ?? ensureAppWallet();
+      destinationAddress = legacyWallet.publicKey.toBase58();
+    }
     
     resetStatus();
     setIsProcessing(true);
 
     const recordId = uniqueId();
-    const recipient = destinationWallet.publicKey.toBase58();
+    const recipient = destinationAddress;
     addCloakRecord(recipient, {
       id: recordId,
       type: 'entry',
@@ -132,13 +144,13 @@ export function PrivateEntryCard({ appWallet, ensureAppWallet, onAfterAction, on
 
       const delay = Number(delayMinutes) || 0;
       appendStatus('');
-      appendStatus(`🎯 Withdrawing to app wallet...`);
+      appendStatus(`🎯 Withdrawing to ${privyWallet ? 'Privy' : 'app'} wallet...`);
       
       appendStatus('⏳ Generating withdrawal proof...');
       
       const withdrawResult = await sdk.withdrawSol({
         amount: parsedAmount,
-        recipientAddress: destinationWallet.publicKey,
+        recipientAddress: destinationAddress,
         delayMinutes: delay,
         onStatus: (line: string) => {
           appendStatus(`[Withdraw] ${line}`);

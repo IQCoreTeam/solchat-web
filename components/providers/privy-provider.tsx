@@ -17,39 +17,19 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
       config={{
         // Automatically create Solana embedded wallets for users
         embeddedWallets: {
-          createOnLogin: 'users-without-wallets',
-          requireUserPasswordOnCreate: false, // For better UX
+          solana: {
+            createOnLogin: 'users-without-wallets',
+          },
         },
         // Login methods
         loginMethods: ['wallet', 'email', 'google'],
         appearance: {
           theme: 'dark',
           accentColor: '#22c55e', // Green to match SolChat theme
-          logo: undefined,
           landingHeader: 'Secure Your Private Wallet',
           loginMessage: 'Create a secure embedded wallet for private transactions',
           showWalletLoginFirst: true,
         },
-        // Solana configuration
-        supportedChains: [
-          SOLANA_NETWORK === 'mainnet-beta'
-            ? {
-                id: 'solana:mainnet',
-                name: 'Solana Mainnet',
-                network: 'mainnet-beta',
-                rpcUrl: process.env.NEXT_PUBLIC_RPC_URL || 'https://api.mainnet-beta.solana.com',
-              }
-            : {
-                id: 'solana:devnet',
-                name: 'Solana Devnet',
-                network: 'devnet',
-                rpcUrl: process.env.NEXT_PUBLIC_RPC_URL || 'https://api.devnet.solana.com',
-              },
-        ],
-        defaultChain:
-          SOLANA_NETWORK === 'mainnet-beta'
-            ? { id: 'solana:mainnet' as any }
-            : { id: 'solana:devnet' as any },
       }}
     >
       {children}

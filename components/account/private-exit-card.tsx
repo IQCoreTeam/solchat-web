@@ -5,19 +5,24 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, Keypair } from '@solana/web3.js';
 import { useCloakSdk } from '@/lib/cloak/use-cloak-sdk';
 import { addCloakRecord, updateCloakRecord } from '@/lib/cloak/storage';
+import type { PrivyAppWallet } from '@/lib/wallet/privy-app-wallet';
 
 const uniqueId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 interface PrivateExitCardProps {
   appWallet: Keypair | null;
+  privyWallet: PrivyAppWallet | null;
   ensureAppWallet: () => Keypair;
   onAfterAction?: () => void;
   onRecordsChanged?: () => void;
 }
 
-export function PrivateExitCard({ appWallet, ensureAppWallet, onAfterAction, onRecordsChanged }: PrivateExitCardProps) {
+export function PrivateExitCard({ appWallet, privyWallet, ensureAppWallet, onAfterAction, onRecordsChanged }: PrivateExitCardProps) {
   const { publicKey: walletPubkey } = useWallet();
   const { getSdk } = useCloakSdk();
+  
+  // Use Privy wallet if available, otherwise fall back to localStorage wallet
+  const activeWalletAddress = privyWallet?.address || (appWallet ? appWallet.publicKey.toBase58() : null);
 
   const [amount, setAmount] = useState('0.1');
   const [recipient, setRecipient] = useState('');
@@ -39,7 +44,6 @@ export function PrivateExitCard({ appWallet, ensureAppWallet, onAfterAction, onR
   };
 
   const handleExit = async () => {
-    const localWallet = appWallet ?? ensureAppWallet();
     const parsedAmount = Number(amount);
     if (!parsedAmount || parsedAmount <= 0) {
       setError('Enter a valid amount greater than zero.');
@@ -54,11 +58,26 @@ export function PrivateExitCard({ appWallet, ensureAppWallet, onAfterAction, onR
       return;
     }
 
+    // Determine wallet source
+    let walletForSdk: any;
+    let appAddress: string;
+    
+    if (privyWallet) {
+      // For Privy wallet, we pass the wallet client
+      walletForSdk = privyWallet.walletClient;
+      appAddress = privyWallet.address;
+      appendStatus('ℹ️  Note: Privy wallet signing requires user confirmation');
+    } else {
+      // For legacy wallet, use keypair
+      const legacyWallet = appWallet ?? ensureAppWallet();
+      walletForSdk = legacyWallet;
+      appAddress = legacyWallet.publicKey.toBase58();
+    }
+
     resetStatus();
     setIsProcessing(true);
 
     const recordId = uniqueId();
-    const appAddress = localWallet.publicKey.toBase58();
     addCloakRecord(appAddress, {
       id: recordId,
       type: 'exit',
@@ -71,7 +90,7 @@ export function PrivateExitCard({ appWallet, ensureAppWallet, onAfterAction, onR
     onRecordsChanged?.();
 
     try {
-      const sdk = await getSdk(localWallet);
+      const sdk = await getSdk(walletForSdk);
 
       appendStatus('Depositing from app wallet into Cloak pool...');
       const depositResult = await sdk.depositSol({
@@ -172,12 +191,21 @@ export function PrivateExitCard({ appWallet, ensureAppWallet, onAfterAction, onR
 
         <button
           onClick={handleExit}
-          disabled={isProcessing}
+          disabled={isProcessing || (!privyWallet && !appWallet)}
           className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-black font-mono py-2 px-4 transition-colors"
         >
           {isProcessing ? 'Processing...' : 'Withdraw Privately'}
         </button>
-        {!appWallet && <p className="text-yellow-300 font-mono text-xs">Generate an app wallet to enable private exits.</p>}
+        {!privyWallet && !appWallet && (
+          <p className="text-yellow-300 font-mono text-xs">
+            Login with Privy or generate a legacy wallet to enable private exits.
+          </p>
+        )}
+        {privyWallet && (
+          <p className="text-xs text-green-400 font-mono mt-2">
+            🔒 Using secure Privy wallet
+          </p>
+        )}
       </div>
 
       {error && <p className="text-red-400 font-mono text-sm mt-4">{error}</p>}

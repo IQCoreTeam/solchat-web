@@ -1,41 +1,53 @@
 'use client';
 
 import { usePrivy, useWallets, useCreateWallet } from '@privy-io/react-auth';
-import { useMemo, useCallback, useEffect, useState } from 'react';
-import { Keypair, PublicKey } from '@solana/web3.js';
-import bs58 from 'bs58';
+import { useMemo, useCallback, useState } from 'react';
+import { PublicKey } from '@solana/web3.js';
 
 export interface PrivyAppWallet {
   publicKey: PublicKey;
   address: string;
   isReady: boolean;
   isCreating: boolean;
-  exportPrivateKey: () => Promise<string | null>;
+  walletClient: any; // Privy wallet client for signing
   createWallet: () => Promise<void>;
 }
 
 /**
- * Hook to access Privy embedded wallet as the app wallet
+ * Hook to access Privy embedded Solana wallet as the app wallet
  * This replaces the localStorage-based app wallet with secure Privy-managed wallet
  */
 export function usePrivyAppWallet(): PrivyAppWallet | null {
-  const { ready: privyReady, authenticated, user, exportWallet } = usePrivy();
+  const { ready: privyReady, authenticated, login } = usePrivy();
   const { wallets } = useWallets();
   const { createWallet } = useCreateWallet();
   const [isCreating, setIsCreating] = useState(false);
 
   // Find the first Solana embedded wallet
   const embeddedWallet = useMemo(() => {
-    if (!wallets) return null;
-    return wallets.find(
+    if (!wallets || wallets.length === 0) return null;
+    
+    // Look for Solana embedded wallet (Privy creates these automatically)
+    const solanaWallet = wallets.find(
       (wallet) => 
         wallet.walletClientType === 'privy' && 
-        wallet.chainType === 'solana'
+        // Solana addresses are typically 32-44 characters base58
+        wallet.address && 
+        wallet.address.length > 30 &&
+        !wallet.address.startsWith('0x') // Not an Ethereum address
     );
+    
+    return solanaWallet || null;
   }, [wallets]);
 
   const handleCreateWallet = useCallback(async () => {
-    if (!authenticated || isCreating) return;
+    if (isCreating) return;
+    
+    if (!authenticated) {
+      // If not authenticated, trigger login first
+      await login();
+      return;
+    }
     
     try {
       setIsCreating(true);
@@ -46,22 +58,18 @@ export function usePrivyAppWallet(): PrivyAppWallet | null {
     } finally {
       setIsCreating(false);
     }
-  }, [authenticated, createWallet, isCreating]);
+  }, [authenticated, createWallet, isCreating, login]);
 
-  const handleExportPrivateKey = useCallback(async (): Promise<string | null> => {
-    if (!embeddedWallet || !user) return null;
+  if (!privyReady) {
+    return null;
+  }
 
-    try {
-      // Export wallet returns the private key
-      const exported = await exportWallet();
-      return exported || null;
-    } catch (error) {
-      console.error('Failed to export Privy wallet:', error);
-      return null;
-    }
-  }, [embeddedWallet, user, exportWallet]);
+  // If authenticated but no wallet yet, return partial state
+  if (authenticated && !embeddedWallet) {
+    return null;
+  }
 
-  if (!privyReady || !authenticated || !embeddedWallet) {
+  if (!embeddedWallet) {
     return null;
   }
 
@@ -70,35 +78,26 @@ export function usePrivyAppWallet(): PrivyAppWallet | null {
     address: embeddedWallet.address,
     isReady: true,
     isCreating,
-    exportPrivateKey: handleExportPrivateKey,
+    walletClient: embeddedWallet, // Pass the full wallet for signing
     createWallet: handleCreateWallet,
   };
 }
 
 /**
- * Get a Keypair object from Privy wallet for Cloak SDK usage
- * Note: This requires exporting the private key, which should be done carefully
+ * Check if user has a Privy wallet
  */
-export async function getPrivyWalletAsKeypair(
-  exportPrivateKey: () => Promise<string | null>
-): Promise<Keypair | null> {
-  try {
-    const privateKeyString = await exportPrivateKey();
-    if (!privateKeyString) return null;
-
-    // Parse the private key (could be base58 or hex)
-    let secretKey: Uint8Array;
-    try {
-      // Try base58 first
-      secretKey = bs58.decode(privateKeyString);
-    } catch {
-      // Try hex
-      secretKey = Uint8Array.from(Buffer.from(privateKeyString, 'hex'));
-    }
-
-    return Keypair.fromSecretKey(secretKey);
-  } catch (error) {
-    console.error('Failed to convert Privy wallet to Keypair:', error);
-    return null;
-  }
+export function useHasPrivyWallet(): boolean {
+  const { wallets } = useWallets();
+  
+  return useMemo(() => {
+    if (!wallets || wallets.length === 0) return false;
+    
+    return wallets.some(
+      (wallet) => 
+        wallet.walletClientType === 'privy' && 
+        wallet.address && 
+        wallet.address.length > 30 &&
+        !wallet.address.startsWith('0x')
+    );
+  }, [wallets]);
 }
