@@ -2,7 +2,7 @@ import { PublicKey } from "@solana/web3.js";
 
 export const configs = {
     network: process.env.NETWORK_URL || "https://devnet.helius-rpc.com/?api-key=fbb113ce-eeb4-4277-8c44-7153632d175a",
-    programId: process.env.PROGRAM_ID || "7Vk5JJDxUBAaaAkpYQpWYCZNz4SVPm3mJFSxrBzTQuAX",
+    programId: process.env.PROGRAM_ID || "2KWmwbAk74kVZGwot6hVsino1y6dSSpJtUCYrLHRPsvi",
     rootSeed: "iqdb-root",
     tableSeed: "iqdb-table",
     txRefSeed: "iqdb-txref",
@@ -11,7 +11,7 @@ export const configs = {
   };
 
 export const constants = {
-    iqDataBaseContractId: new PublicKey("7Vk5JJDxUBAaaAkpYQpWYCZNz4SVPm3mJFSxrBzTQuAX"),
+    iqDataBaseContractId: new PublicKey("2KWmwbAk74kVZGwot6hVsino1y6dSSpJtUCYrLHRPsvi"),
 
 }
 

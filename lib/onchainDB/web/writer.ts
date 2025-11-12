@@ -3,7 +3,7 @@
 import type { Idl, Program } from '@coral-xyz/anchor'
 import { Connection, PublicKey, SystemProgram } from '@solana/web3.js'
 import { configs } from '../configs'
-import { deriveSeedBytes } from '../core/seed'
+import { deriveSeedBytes, rootIdToBytes, type BytesLike } from '../core/seed'
 import { getAnchorProvider, getProgram, type WalletAdapterLike } from './provider'
 
 const enc = new TextEncoder()
@@ -15,9 +15,10 @@ function programPkFromCtx<T extends Idl>(ctx: { idl: T; programId?: string }) {
 }
 
 // PDA helpers calculated with program id from IDL (must match on-chain seeds)
-function pdaRootDyn(programId: PublicKey, signer: PublicKey) {
+function pdaRootDyn(programId: PublicKey, rootId: BytesLike) {
+  const rootBytes = Buffer.from(rootIdToBytes(rootId))
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('iqdb-root'), programId.toBuffer(), signer.toBuffer()],
+    [Buffer.from('iqdb-root'), programId.toBuffer(), rootBytes],
     programId
   )[0]
 }
@@ -88,22 +89,23 @@ export type WriterCtx<T extends Idl = Idl> = {
   programId?: string
 }
 
-function programFromCtx<T extends Idl>(ctx: WriterCtx<T>): Program<T> {
+function programFromCtx(ctx: WriterCtx): Program {
   const provider = getAnchorProvider(ctx.connection, ctx.wallet)
-  return getProgram<T>(ctx.idl, provider)
+  return getProgram(provider)
 }
 
 /**
  * initializeRootWeb
  * - Initialize root/txRef PDAs for the wallet owner
  */
-export async function initializeRootWeb<T extends Idl>(ctx: WriterCtx<T>) {
+export async function initializeRootWeb<T extends Idl>(ctx: WriterCtx<T>, rootId: BytesLike) {
   const program = programFromCtx(ctx)
   const signer = program.provider.publicKey!
   const programId = programPkFromCtx(ctx)
+  const rootIdBuf = Buffer.from(rootIdToBytes(rootId))
 
   // Derive PDAs with program id from IDL
-  const rootPda = pdaRootDyn(programId, signer)
+  const rootPda = pdaRootDyn(programId, rootId)
   const txRefPda = pdaTxRefDyn(programId, signer)
   const targetTxRefPda = pdaTargetTxRefDyn(programId, signer)
 
@@ -114,7 +116,7 @@ export async function initializeRootWeb<T extends Idl>(ctx: WriterCtx<T>) {
     throw new Error('Instruction "initializeRoot" (or initialize_root) not found in IDL')
   }
 
-  const tx = await init()
+  const tx = await init(rootIdBuf)
     .accounts({
       root: rootPda,
       tx_ref: txRefPda,
@@ -134,16 +136,18 @@ export async function initializeRootWeb<T extends Idl>(ctx: WriterCtx<T>) {
  */
 export async function createTableWeb<T extends Idl>(
   ctx: WriterCtx<T>,
+  rootId: BytesLike,
   tableName: string,
   columnNames: string[],
-  options?: { idColumn?: string | number; extKeys?: string[] }
+  options?: { idColumn?: string | number; extKeys?: string[]; gateMint?: PublicKey | string | null }
 ) {
   const program = programFromCtx(ctx)
   const signer = program.provider.publicKey!
   const programId = programPkFromCtx(ctx)
+  const rootIdBuf = Buffer.from(rootIdToBytes(rootId))
 
   // Derive PDAs from IDL.address
-  const root = pdaRootDyn(programId, signer)
+  const root = pdaRootDyn(programId, rootId)
   const table = pdaTableDyn(programId, root, tableName)
   const instTable = pdaInstructionTableDyn(programId, root, tableName)
 
@@ -173,7 +177,21 @@ export async function createTableWeb<T extends Idl>(
   const extKeys = options?.extKeys ?? []
   const extKeysBufs = extKeys.map((s) => Buffer.from(String(s), 'utf8'))
 
-  const tx = await create(tableSeedBuf, nameBuf, colBufs, idColBuf, extKeysBufs)
+  const gateMintOpt = options?.gateMint
+    ? typeof options.gateMint === 'string'
+      ? new PublicKey(options.gateMint)
+      : options.gateMint
+    : null
+
+  const tx = await create(
+    rootIdBuf,
+    tableSeedBuf,
+    nameBuf,
+    colBufs,
+    idColBuf,
+    extKeysBufs,
+    gateMintOpt
+  )
     .accounts({
       root,
       signer,
@@ -188,15 +206,17 @@ export async function createTableWeb<T extends Idl>(
 
 export async function createExtTableWeb<T extends Idl>(
   ctx: WriterCtx<T>,
+  rootId: BytesLike,
   tableName: string,
   columnNames: string[],
-  options?: { idColumn?: string | number; extKeys?: string[] }
+  options?: { idColumn?: string | number; extKeys?: string[]; gateMint?: PublicKey | string | null }
 ) {
   const program = programFromCtx(ctx)
   const signer = program.provider.publicKey!
   const programId = programPkFromCtx(ctx)
+  const rootIdBuf = Buffer.from(rootIdToBytes(rootId))
 
-  const root = pdaRootDyn(programId, signer)
+  const root = pdaRootDyn(programId, rootId)
   const table = pdaExtTableDyn(programId, root, tableName)
   const instTable = pdaExtInstructionTableDyn(programId, root, tableName)
 
@@ -224,7 +244,21 @@ export async function createExtTableWeb<T extends Idl>(
   const extKeys = options?.extKeys ?? []
   const extKeysBufs = extKeys.map((s) => Buffer.from(String(s), 'utf8'))
 
-  const tx = await createExt(tableSeedBuf, nameBuf, colBufs, idColBuf, extKeysBufs)
+  const gateMintOpt = options?.gateMint
+    ? typeof options.gateMint === 'string'
+      ? new PublicKey(options.gateMint)
+      : options.gateMint
+    : null
+
+  const tx = await createExt(
+    rootIdBuf,
+    tableSeedBuf,
+    nameBuf,
+    colBufs,
+    idColBuf,
+    extKeysBufs,
+    gateMintOpt
+  )
     .accounts({
       root,
       signer,
@@ -245,6 +279,7 @@ export async function createExtTableWeb<T extends Idl>(
  */
 export async function updateTableColumnsWeb<T extends Idl>(
   ctx: WriterCtx<T>,
+  rootId: BytesLike,
   tableName: string,
   columnNames: string[],
   options?: { idColumn?: string | number; extKeys?: string[] }
@@ -252,8 +287,9 @@ export async function updateTableColumnsWeb<T extends Idl>(
   const program = programFromCtx(ctx)
   const signer = program.provider.publicKey!
   const programId = programPkFromCtx(ctx)
+  const rootIdBuf = Buffer.from(rootIdToBytes(rootId))
 
-  const root = pdaRootDyn(programId, signer)
+  const root = pdaRootDyn(programId, rootId)
   const table = pdaTableDyn(programId, root, tableName)
 
   const methods = (program as any).methods as Record<string, any>
@@ -279,7 +315,7 @@ export async function updateTableColumnsWeb<T extends Idl>(
   const extKeys = options?.extKeys ?? []
   const extKeysBufs = extKeys.map((s) => Buffer.from(String(s), 'utf8'))
 
-  const tx = await upd(tableSeedBuf, nameBuf, colBufs, idColBuf, extKeysBufs)
+  const tx = await upd(rootIdBuf, tableSeedBuf, nameBuf, colBufs, idColBuf, extKeysBufs)
     .accounts({
       root,
       table,
@@ -296,13 +332,16 @@ export async function updateTableColumnsWeb<T extends Idl>(
  */
 export async function writeRowWeb<T extends Idl>(
   ctx: WriterCtx<T>,
+  rootId: BytesLike,
   tableName: string,
-  rowJson: string
+  rowJson: string,
+  options?: { signerAta?: PublicKey | string | null }
 ) {
   const program = programFromCtx(ctx)
   const signer = program.provider.publicKey!
   const programId = programPkFromCtx(ctx)
-  const root = pdaRootDyn(programId, signer)
+  const rootIdBuf = Buffer.from(rootIdToBytes(rootId))
+  const root = pdaRootDyn(programId, rootId)
   const txRef = pdaTxRefDyn(programId, signer)
   const table = pdaTableDyn(programId, root, tableName)
 
@@ -315,11 +354,19 @@ export async function writeRowWeb<T extends Idl>(
   const tableSeed = deriveSeedBytes(tableName)
   const tableSeedBuf = Buffer.from(tableSeed)
   const nameBuf = Buffer.from(tableName, 'utf8')
-  const tx = await write(tableSeedBuf, nameBuf, Buffer.from(rowJson, 'utf8'))
+  const signerAta =
+    options?.signerAta == null
+      ? null
+      : typeof options.signerAta === 'string'
+      ? new PublicKey(options.signerAta)
+      : options.signerAta
+
+  const tx = await write(rootIdBuf, tableSeedBuf, nameBuf, Buffer.from(rowJson, 'utf8'))
     .accounts({
       root,
       table,
       tx_ref: txRef,
+      ...(signerAta ? { signer_ata: signerAta } : {}),
       signer,
     })
     .transaction()
@@ -333,16 +380,20 @@ export async function writeRowWeb<T extends Idl>(
  */
 export async function pushDbInstructionWeb<T extends Idl>(
   ctx: WriterCtx<T>,
+  rootId: BytesLike,
   tableName: string,
   targetTxSig: string,
-  contentJson: string
+  contentJson: string,
+  options?: { signerAta?: PublicKey | string | null }
 ) {
   const program = programFromCtx(ctx)
   const signer = program.provider.publicKey!
   const programId = programPkFromCtx(ctx)
-  const root = pdaRootDyn(programId, signer)
+  const rootIdBuf = Buffer.from(rootIdToBytes(rootId))
+  const root = pdaRootDyn(programId, rootId)
   const txRef = pdaTxRefDyn(programId, signer)
   const targetTxRef = pdaTargetTxRefDyn(programId, signer)
+  const table = pdaTableDyn(programId, root, tableName)
   const instTable = pdaInstructionTableDyn(programId, root, tableName)
 
   const methods = (program as any).methods as Record<string, any>
@@ -357,12 +408,21 @@ export async function pushDbInstructionWeb<T extends Idl>(
   const targetSigBuf = Buffer.from(targetTxSig, 'utf8')
   const contentBuf = Buffer.from(contentJson, 'utf8')
 
-  const tx = await dbInstr(tableSeedBuf, tableNameBuf, targetSigBuf, contentBuf)
+  const signerAta =
+    options?.signerAta == null
+      ? null
+      : typeof options.signerAta === 'string'
+      ? new PublicKey(options.signerAta)
+      : options.signerAta
+
+  const tx = await dbInstr(rootIdBuf, tableSeedBuf, tableNameBuf, targetSigBuf, contentBuf)
     .accounts({
       root,
+      table,
       instruction_table: instTable,
       tx_ref: txRef,
       target_tx_ref: targetTxRef,
+      ...(signerAta ? { signer_ata: signerAta } : {}),
       signer,
     })
     .transaction()

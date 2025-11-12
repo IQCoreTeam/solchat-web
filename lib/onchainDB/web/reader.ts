@@ -7,7 +7,7 @@ import { Connection, PublicKey, ParsedTransactionWithMeta, ConfirmedSignatureInf
 import bs58 from 'bs58'
 import { Buffer } from 'buffer'
 import { configs } from '../configs'
-import { deriveSeedHex } from '../core/seed'
+import { deriveSeedHex, rootIdToBytes, type BytesLike } from '../core/seed'
 import { pdaRoot, pdaTable, pdaTxRef, pdaInstructionTable } from '../provider/pda.provider'
 
 export type Row = Record<string, any>
@@ -19,6 +19,8 @@ export type ReaderParams = {
   endpoint?: string
   // Required: user public key in base58
   userPublicKey: string
+  // Required: database root identifier (string/bytes, <=32 bytes on-chain)
+  rootId: BytesLike
   // Optional: program id override (base58)
   programId?: string
   // Optional IDL to decode accounts/instructions on web
@@ -114,10 +116,10 @@ async function fetchAndDecode<T = any>(
 async function readTableListFromRoot(
   connection: Connection,
   idl: Idl,
-  user: PublicKey
+  rootId: BytesLike
 ) {
   const accCoder = makeAccountsCoder(idl)
-  const rootPda = pdaRoot(user)
+  const rootPda = pdaRoot(rootId)
   const root = await fetchAndDecode<any>(connection, accCoder, rootPda, 'Root')
   if (!root) {
     return {
@@ -244,10 +246,11 @@ export async function readRecentRows(params: ReaderParams): Promise<ReaderResult
   const connection = params.connection || new Connection(endpoint, 'confirmed')
   const programIdStr = params.programId || configs.programId
   const user = new PublicKey(params.userPublicKey)
+  const rootIdBytes = rootIdToBytes(params.rootId)
   const idl = params.idl
 
   // Compute PDAs (always safe on web)
-  const root = pdaRoot(user)
+  const root = pdaRoot(rootIdBytes)
   const txRef = pdaTxRef(user)
 
   // If no IDL, return metadata only (tables/rows empty)
@@ -267,7 +270,7 @@ export async function readRecentRows(params: ReaderParams): Promise<ReaderResult
   }
 
   // With IDL: read table list from root and build tables metadata
-  const { tableSeeds } = await readTableListFromRoot(connection, idl, user)
+  const { tableSeeds } = await readTableListFromRoot(connection, idl, rootIdBytes)
   const accCoder = makeAccountsCoder(idl)
   const tables: ReaderResult['tables'] = {}
   const tableDisplayNames: Record<string, string> = {}
@@ -358,6 +361,7 @@ export async function readRowsByTable(
   const connection = params.connection || new Connection(endpoint, 'confirmed')
   const programIdStr = params.programId || configs.programId
   const user = new PublicKey(params.userPublicKey)
+  const rootIdBytes = rootIdToBytes(params.rootId)
   const idl = params.idl
   const tableName = params.tableName
   const maxTx = params.maxTx || 100
@@ -401,7 +405,7 @@ export async function readRowsByTable(
   }
 
   // Derive PDAs (pure computation, no network read)
-  const rootPda = pdaRoot(user)
+  const rootPda = pdaRoot(rootIdBytes)
   const tablePda = pdaTable(rootPda, tableName)
   const instPda = pdaInstructionTable(rootPda, tableName)
   const targetSeedHex = deriveSeedHex(tableName)
@@ -620,10 +624,11 @@ export async function readTableMeta(
   const endpoint = params.endpoint || configs.network
   const connection = params.connection || new Connection(endpoint, 'confirmed')
   const user = new PublicKey(params.userPublicKey)
+  const rootIdBytes = rootIdToBytes(params.rootId)
   const idl = params.idl
   const tableName = params.tableName
 
-  const rootPda = pdaRoot(user)
+  const rootPda = pdaRoot(rootIdBytes)
   const tablePda = pdaTable(rootPda, tableName)
   const instPda = pdaInstructionTable(rootPda, tableName)
 

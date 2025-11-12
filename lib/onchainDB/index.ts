@@ -11,6 +11,7 @@ export { pdaRoot, pdaTxRef, pdaTargetTxRef, pdaTable, pdaInstructionTable, pdaEx
 // Web reader API (UI-friendly)
 export type { ReaderParams, ReaderResult, Row } from './web/reader'
 export { readRecentRows, readRowsByTable, readTableMeta } from './web/reader'
+export type { BytesLike } from './core/seed'
 
 // Web writer API (wallet-adapter + Anchor Program)
 export type { WriterCtx } from './web/writer'
@@ -28,16 +29,18 @@ export { getAnchorProvider, getProgram } from './web/provider'
 
 // Convenience helpers (pure)
 import { PublicKey } from '@solana/web3.js'
+import type { BytesLike } from './core/seed'
 
 /**
  * getPdas
- * - Return common PDAs for a given user public key (base58)
+ * - Return PDAs for a given database root id + user signer
  * - Useful for debugging, devtools, and low-level integrations
  */
-export function getPdas(userPublicKey: string) {
+export function getPdas(params: { rootId: BytesLike; userPublicKey: string }) {
+  const { rootId, userPublicKey } = params
   const user = new PublicKey(userPublicKey)
   return {
-    root: pdaRoot(user).toBase58(),
+    root: pdaRoot(rootId).toBase58(),
     txRef: pdaTxRef(user).toBase58(),
     targetTxRef: pdaTargetTxRef(user).toBase58(),
   }

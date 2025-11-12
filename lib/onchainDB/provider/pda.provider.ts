@@ -1,13 +1,14 @@
 // src/Lprovider/pdaprovider.ts
 import { PublicKey } from "@solana/web3.js";
 import { configs } from "../configs";
-import { deriveSeedBytes } from "../core/seed";
+import { deriveSeedBytes, rootIdToBytes, type BytesLike } from "../core/seed";
 
 const PROGRAM_ID = new PublicKey(configs.programId);
 
-export function pdaRoot(signer: PublicKey) {
+export function pdaRoot(rootId: BytesLike) {
+  const rootBytes = Buffer.from(rootIdToBytes(rootId));
   return PublicKey.findProgramAddressSync(
-    [Buffer.from(configs.rootSeed), PROGRAM_ID.toBuffer(), signer.toBuffer()],
+    [Buffer.from(configs.rootSeed), PROGRAM_ID.toBuffer(), rootBytes],
     PROGRAM_ID
   )[0];
 }
