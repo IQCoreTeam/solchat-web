@@ -219,6 +219,17 @@ export function PrivateEntryCard({ appWallet, privyWallet, ensureAppWallet, onAf
         <span className="text-xs text-green-300 font-mono">Powered by Cloak</span>
       </div>
 
+      {!activeWallet && (
+        <div className="bg-yellow-900/30 border border-yellow-600 p-4 mb-4">
+          <p className="text-yellow-400 font-mono text-sm mb-2">
+            ⚠️ No privacy wallet configured
+          </p>
+          <p className="text-yellow-300 font-mono text-xs">
+            Please login with Privy or create a legacy wallet above to use private funding.
+          </p>
+        </div>
+      )}
+
       <div className="space-y-4">
         <div>
           <label className="text-green-400 font-mono text-sm block mb-2">Amount (SOL)</label>

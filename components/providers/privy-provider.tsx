@@ -4,21 +4,19 @@ import { PrivyProvider as BasePrivyProvider } from '@privy-io/react-auth';
 import { type ReactNode } from 'react';
 
 const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID || '';
-const PRIVY_CLIENT_ID = process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID || '';
 
 export function PrivyProvider({ children }: { children: ReactNode }) {
   if (!PRIVY_APP_ID) {
-    console.warn('NEXT_PUBLIC_PRIVY_APP_ID is not set. Privy features will not work.');
+    console.error('❌ NEXT_PUBLIC_PRIVY_APP_ID is not set. Privy features will not work.');
+    console.error('Please add NEXT_PUBLIC_PRIVY_APP_ID to your .env.local file');
+    return <>{children}</>;
   }
-  
-  if (!PRIVY_CLIENT_ID) {
-    console.warn('NEXT_PUBLIC_PRIVY_CLIENT_ID is not set. Using appId only.');
-  }
+
+  console.log('✅ Privy Provider initializing with App ID:', PRIVY_APP_ID.slice(0, 10) + '...');
 
   return (
     <BasePrivyProvider
       appId={PRIVY_APP_ID}
-      clientId={PRIVY_CLIENT_ID || undefined}
       config={{
         appearance: {
           accentColor: '#75e74f', // IQ Labs green

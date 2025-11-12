@@ -175,6 +175,61 @@ export function AccountInfo() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
+      {/* Privy Wallet Section - Prominent at Top */}
+      {!authenticated && (
+        <div className="bg-gradient-to-r from-green-900/30 to-green-800/30 border-2 border-green-500 p-8 mb-6 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <h2 className="text-green-400 font-mono text-2xl mb-2 flex items-center gap-2">
+                🔒 Secure Your Privacy Wallet
+              </h2>
+              <p className="text-green-300 font-mono text-sm mb-3">
+                Create a secure embedded wallet with Privy for private transactions
+              </p>
+              <ul className="text-xs text-green-400 font-mono space-y-1 mb-4">
+                <li>✓ Enterprise-grade security</li>
+                <li>✓ Cross-device access</li>
+                <li>✓ No seed phrases to manage</li>
+                <li>✓ Required for Cloak privacy features</li>
+              </ul>
+            </div>
+            <button
+              onClick={login}
+              className="bg-green-600 hover:bg-green-500 text-black font-mono px-8 py-4 text-lg font-bold transition-all transform hover:scale-105"
+            >
+              🚀 Login with Privy
+            </button>
+          </div>
+        </div>
+      )}
+
+      {authenticated && privyWallet && (
+        <div className="bg-green-900/20 border-2 border-green-600 p-6 mb-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-green-400 font-mono text-xl mb-2 flex items-center gap-2">
+                🔒 Privy Wallet Active
+              </h3>
+              <p className="text-green-300 font-mono text-sm break-all mb-2">
+                {privyWallet.address}
+              </p>
+              <span className="text-xs bg-green-600 text-black font-mono px-2 py-1">
+                SECURED BY PRIVY
+              </span>
+            </div>
+            <button
+              onClick={async () => {
+                await navigator.clipboard.writeText(privyWallet.address);
+                setMessage('Privy wallet address copied!');
+              }}
+              className="bg-green-600 hover:bg-green-700 text-black font-mono px-4 py-2 transition-colors"
+            >
+              Copy Address
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="bg-black border-2 border-green-600 p-6 mb-6">
         <h2 className="text-green-400 font-mono text-2xl mb-4">Account Overview</h2>
 
