@@ -42,7 +42,7 @@ import { relayer_API_URL, CIRCUIT_PATH } from "../utils/constants";
  *
  * @example
  * ```typescript
- * import { CloakSDK } from '@cloak-labs/sdk';
+ * import { CloakSDK } from '@cloak-dev/sdk';
  * import { Connection, Keypair } from '@solana/web3.js';
  *
  * const connection = new Connection('https://api.devnet.solana.com');
