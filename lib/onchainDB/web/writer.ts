@@ -366,7 +366,7 @@ export async function writeRowWeb<T extends Idl>(
       root,
       table,
       tx_ref: txRef,
-      ...(signerAta ? { signer_ata: signerAta } : {}),
+      signerAta,
       signer,
     })
     .transaction()
@@ -422,7 +422,7 @@ export async function pushDbInstructionWeb<T extends Idl>(
       instruction_table: instTable,
       tx_ref: txRef,
       target_tx_ref: targetTxRef,
-      ...(signerAta ? { signer_ata: signerAta } : {}),
+      signerAta,
       signer,
     })
     .transaction()

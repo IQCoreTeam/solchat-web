@@ -1,9 +1,13 @@
 // src/Lprovider/pdaprovider.ts
 import { PublicKey } from "@solana/web3.js";
 import { configs } from "../configs";
-import { deriveSeedBytes, rootIdToBytes, type BytesLike } from "../core/seed";
+import { deriveSeedBytes, rootIdToBytes, toBytes, type BytesLike } from "../core/seed";
 
 const PROGRAM_ID = new PublicKey(configs.programId);
+
+function tableSeedBytes(input: string | BytesLike) {
+  return typeof input === "string" ? deriveSeedBytes(input) : toBytes(input);
+}
 
 export function pdaRoot(rootId: BytesLike) {
   const rootBytes = Buffer.from(rootIdToBytes(rootId));
@@ -32,8 +36,8 @@ export function pdaTargetTxRef(signer: PublicKey) {
   )[0];
 }
 
-export function pdaTable(root: PublicKey, tableName: string) {
-  const tableSeed = deriveSeedBytes(tableName);
+export function pdaTable(root: PublicKey, tableNameOrSeed: string | BytesLike) {
+  const tableSeed = tableSeedBytes(tableNameOrSeed);
   return PublicKey.findProgramAddressSync(
     [
       Buffer.from(configs.tableSeed),
@@ -45,8 +49,8 @@ export function pdaTable(root: PublicKey, tableName: string) {
   )[0];
 }
 
-export function pdaInstructionTable(root: PublicKey, tableName: string) {
-  const tableSeed = deriveSeedBytes(tableName);
+export function pdaInstructionTable(root: PublicKey, tableNameOrSeed: string | BytesLike) {
+  const tableSeed = tableSeedBytes(tableNameOrSeed);
   return PublicKey.findProgramAddressSync(
     [
       Buffer.from(configs.tableSeed),
@@ -101,8 +105,8 @@ export function pdaExternalRecordFromStrings(
   );
 }
 
-export function pdaExtTable(root: PublicKey, tableName: string) {
-  const tableSeed = deriveSeedBytes(tableName);
+export function pdaExtTable(root: PublicKey, tableNameOrSeed: string | BytesLike) {
+  const tableSeed = tableSeedBytes(tableNameOrSeed);
   return PublicKey.findProgramAddressSync(
     [
       Buffer.from(configs.tableSeed),
