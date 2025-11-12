@@ -18,34 +18,37 @@ export function useCloakSdk() {
 
   const getSdk = useCallback(
     async (signer: Signer) => {
+      if (!connection) {
+        throw new Error('Solana connection not available. Please ensure WalletProvider is properly configured.');
+      }
+
       const userAddress = signer.publicKey.toBase58();
       
-      // Check if we already have a cached SDK instance
-      if (!cacheRef.current.has(userAddress)) {
-        const cfg: CloakSDKConfig = {
-          connection,
-          signer,
-          relayerUrl: CLOAK_RELAYER_URL,
-          programId: CLOAK_PROGRAM_ID,
-          verbose: process.env.NODE_ENV !== 'production',
-        };
+      // Always create a fresh SDK to avoid stale connection issues
+      // The SDK initialization is idempotent, so it's safe to recreate
+      const cfg: CloakSDKConfig = {
+        connection,
+        signer,
+        relayerUrl: CLOAK_RELAYER_URL,
+        programId: CLOAK_PROGRAM_ID,
+        verbose: process.env.NODE_ENV !== 'production',
+      };
+      
+      const sdkPromise = (async () => {
+        const sdk = new CloakSDK(cfg);
         
-        const sdkPromise = (async () => {
-          const sdk = new CloakSDK(cfg);
-          
-          // Initialize once per user
-          if (!isUserInitialized(userAddress)) {
-            await sdk.initialize();
-            markUserInitialized(userAddress);
-          } else {
-            await sdk.initialize();
-          }
-          
-          return sdk;
-        })();
+        // Initialize once per user
+        if (!isUserInitialized(userAddress)) {
+          await sdk.initialize();
+          markUserInitialized(userAddress);
+        } else {
+          await sdk.initialize();
+        }
         
-        cacheRef.current.set(userAddress, sdkPromise);
-      }
+        return sdk;
+      })();
+      
+      cacheRef.current.set(userAddress, sdkPromise);
       
       return cacheRef.current.get(userAddress)!;
     },

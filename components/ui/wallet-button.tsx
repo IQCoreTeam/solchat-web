@@ -1,13 +1,19 @@
 'use client';
 
-import { usePrivy } from '@privy-io/react-auth';
-import { useExternalSolanaWallet } from '@/lib/wallet/privy-app-wallet';
+import { useWallet } from '@solana/wallet-adapter-react';
+import { useWalletModal } from '@solana/wallet-adapter-react-ui';
+import { useEffect, useState } from 'react';
 
 export function WalletButton() {
-  const { ready, authenticated, login, logout, connectWallet } = usePrivy();
-  const externalWallet = useExternalSolanaWallet();
+  const { wallet, publicKey, disconnect, connecting } = useWallet();
+  const { setVisible } = useWalletModal();
+  const [mounted, setMounted] = useState(false);
 
-  if (!ready) {
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
     return (
       <div className="bg-green-600 text-black font-mono text-sm px-4 py-2 rounded opacity-50">
         Loading...
@@ -15,40 +21,30 @@ export function WalletButton() {
     );
   }
 
-  // User is not authenticated at all
-  if (!authenticated) {
+  // Not connected - show connect button
+  if (!publicKey || !wallet) {
     return (
       <button
-        onClick={login}
-        className="bg-green-600 hover:bg-green-700 text-black font-mono text-sm px-4 py-2 rounded transition-colors"
+        onClick={() => setVisible(true)}
+        disabled={connecting}
+        className="bg-green-600 hover:bg-green-700 text-black font-mono text-sm px-4 py-2 rounded transition-colors disabled:opacity-50"
       >
-        Login
+        {connecting ? 'Connecting...' : 'Connect Wallet'}
       </button>
     );
   }
 
-  // User is authenticated but no external wallet connected
-  if (!externalWallet) {
-    return (
-      <button
-        onClick={connectWallet}
-        className="bg-green-600 hover:bg-green-700 text-black font-mono text-sm px-4 py-2 rounded transition-colors"
-      >
-        Connect Wallet
-      </button>
-    );
-  }
-
-  // User has external wallet connected
-  const shortAddress = `${externalWallet.address.slice(0, 4)}...${externalWallet.address.slice(-4)}`;
+  // Connected - show address and disconnect button
+  const shortAddress = `${publicKey.toBase58().slice(0, 4)}...${publicKey.toBase58().slice(-4)}`;
 
   return (
     <div className="flex items-center gap-2">
-      <div className="bg-green-600 text-black font-mono text-sm px-4 py-2 rounded">
-        {shortAddress}
+      <div className="bg-green-600 text-black font-mono text-sm px-4 py-2 rounded flex items-center gap-2">
+        <span className="hidden sm:inline">{wallet.adapter.name}:</span>
+        <span>{shortAddress}</span>
       </div>
       <button
-        onClick={logout}
+        onClick={disconnect}
         className="bg-red-600 hover:bg-red-700 text-white font-mono text-sm px-3 py-2 rounded transition-colors"
       >
         Disconnect
