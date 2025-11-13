@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { AccountInfo } from '@solana/web3.js';
-import { PublicKey, Transaction } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
 import idl from '@/lib/onchainDB/idl.json';
@@ -15,8 +15,10 @@ import {
   type WriterCtx,
 } from '@/lib/onchainDB/web/writer';
 import { readRowsByTable, type Row } from '@/lib/onchainDB/web/reader';
-import { pdaInstructionTable, pdaRoot, pdaTable } from '@/lib/onchainDB';
+import { pdaInstructionTable, pdaRoot, pdaTable, pdaTxRef } from '@/lib/onchainDB';
+import { useUserInit } from '@/lib/onchainDB/hooks/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
+import { RPC_URL } from '@/lib/constants';
 
 const ROOT_ID = 'solchat';
 const DECODER = new TextDecoder();
@@ -90,6 +92,12 @@ function rowToMessage(row: Row): MessageRow {
 export function ChatClient() {
   const { connection } = useAppConnection();
   const wallet = useAppWallet();
+  const {
+    isInitialized: isUserInitialized,
+    isInitializing: isUserInitializing,
+    error: userInitError,
+    retry: retryUserInit,
+  } = useUserInit();
 
   const coder = useMemo(() => new BorshAccountsCoder(idl as Idl), []);
   const rootPubkey = useMemo(() => pdaRoot(ROOT_ID), []);
@@ -105,6 +113,7 @@ export function ChatClient() {
   const [selectedSeed, setSelectedSeed] = useState<string | null>(null);
 
   const [messages, setMessages] = useState<MessageRow[]>([]);
+  const [pendingMessages, setPendingMessages] = useState<MessageRow[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
 
@@ -134,6 +143,8 @@ export function ChatClient() {
       programId: (idl as any)?.address,
     };
   }, [connection, writerWallet]);
+
+  const canWrite = Boolean(writerCtx && isUserInitialized);
 
   const submitTransaction = useCallback(
     async (tx: Transaction) => {
@@ -303,9 +314,11 @@ export function ChatClient() {
   );
 
   const loadMessages = useCallback(
-    async (room: RoomMeta) => {
-      setMessagesLoading(true);
-      setMessagesError(null);
+    async (room: RoomMeta, options?: { skipLoadingState?: boolean }) => {
+      if (!options?.skipLoadingState) {
+        setMessagesLoading(true);
+        setMessagesError(null);
+      }
       try {
         const rows = await readRowsByTable({
           connection,
@@ -318,10 +331,15 @@ export function ChatClient() {
 
         const normalized = rows.map(rowToMessage).reverse();
         setMessages(normalized);
+        setPendingMessages((prev) =>
+          prev.filter((pending) => !normalized.some((message) => message.id === pending.id))
+        );
       } catch (error) {
         setMessagesError((error as Error).message);
       } finally {
-        setMessagesLoading(false);
+        if (!options?.skipLoadingState) {
+          setMessagesLoading(false);
+        }
       }
     },
     [connection, wallet.publicKey]
@@ -343,31 +361,85 @@ export function ChatClient() {
 
     if (!selectedRoom) return;
 
-    const handleLogs = () => {
-      loadMessages(selectedRoom);
+    let cancelled = false;
+    const subscriptions: number[] = [];
+
+    const subscribe = async () => {
+      const tablePk = new PublicKey(selectedRoom.tableAddress);
+      const instructionPk = new PublicKey(selectedRoom.instructionAddress);
+
+      const register = async (pubkey: PublicKey, commitment: 'processed' | 'confirmed', handler: () => void) => {
+        try {
+          const id = await connection.onLogs(pubkey, handler, commitment);
+          if (cancelled) {
+            connection.removeOnLogsListener(id).catch(() => undefined);
+            return;
+          }
+          subscriptions.push(id);
+        } catch (error) {
+          console.warn('Failed to subscribe to logs', error);
+        }
+      };
+
+      await register(tablePk, 'confirmed', () => {
+        loadMessages(selectedRoom);
+      });
+      await register(instructionPk, 'confirmed', () => {
+        loadMessages(selectedRoom);
+      });
+
+      logSubscriptionsRef.current = subscriptions;
     };
 
-    const tableSub = connection.onLogs(new PublicKey(selectedRoom.tableAddress), handleLogs, 'confirmed');
-    const instructionSub = connection.onLogs(
-      new PublicKey(selectedRoom.instructionAddress),
-      handleLogs,
-      'confirmed'
-    );
-
-    logSubscriptionsRef.current = [tableSub, instructionSub];
+    subscribe();
 
     return () => {
-      logSubscriptionsRef.current.forEach((subId) => {
+      cancelled = true;
+      subscriptions.forEach((subId) => {
         connection.removeOnLogsListener(subId).catch(() => undefined);
       });
       logSubscriptionsRef.current = [];
     };
   }, [connection, loadMessages, selectedRoom]);
 
+  useEffect(() => {
+    if (!wallet.publicKey || !selectedRoom) return;
+
+    let cancelled = false;
+    let subscriptionId: number | null = null;
+    const txRefPk = pdaTxRef(wallet.publicKey);
+
+    const subscribe = async () => {
+      try {
+        const id = await connection.onLogs(txRefPk, () => {
+          loadMessages(selectedRoom);
+        }, 'confirmed');
+
+        if (cancelled) {
+          connection.removeOnLogsListener(id).catch(() => undefined);
+          return;
+        }
+
+        subscriptionId = id;
+      } catch (error) {
+        console.warn('Failed to subscribe to tx_ref logs', error);
+      }
+    };
+
+    subscribe();
+
+    return () => {
+      cancelled = true;
+      if (subscriptionId !== null) {
+        connection.removeOnLogsListener(subscriptionId).catch(() => undefined);
+      }
+    };
+  }, [connection, loadMessages, selectedRoom, wallet.publicKey]);
+
   const handleCreateRoom = useCallback(
     async (event: FormEvent) => {
       event.preventDefault();
-      if (!writerCtx) {
+      if (!writerCtx || !isUserInitialized) {
         setRoomsError('Connect your wallet to create a room');
         return;
       }
@@ -404,24 +476,34 @@ export function ChatClient() {
         setCreatingRoom(false);
       }
     },
-    [newRoomName, refreshRoot, submitTransaction, writerCtx]
+    [isUserInitialized, newRoomName, refreshRoot, submitTransaction, writerCtx]
   );
 
   const handleSendMessage = useCallback(
     async (event: FormEvent) => {
       event.preventDefault();
-      if (!selectedRoom || !writerCtx) return;
+      if (!selectedRoom || !writerCtx || !isUserInitialized) return;
       const text = messageInput.trim();
       if (!text) return;
 
+      const messageId =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID().slice(0, 12)
+          : Math.random().toString(36).slice(2, 10);
+
+      const tempMessage: MessageRow = {
+        id: messageId,
+        text,
+        file: '',
+        signature: 'pending',
+      };
+
       setSendingMessage(true);
       setMessagesError(null);
+      setPendingMessages((prev) => [...prev, tempMessage]);
       try {
         const payload = {
-          id:
-            (typeof crypto !== 'undefined' && crypto.randomUUID
-              ? crypto.randomUUID().slice(0, 12)
-              : Math.random().toString(36).slice(2, 10)),
+          id: messageId,
           text,
           file: '',
         };
@@ -430,12 +512,13 @@ export function ChatClient() {
         setMessageInput('');
         await loadMessages(selectedRoom);
       } catch (error) {
+        setPendingMessages((prev) => prev.filter((msg) => msg.id !== tempMessage.id));
         setMessagesError((error as Error).message);
       } finally {
         setSendingMessage(false);
       }
     },
-    [loadMessages, messageInput, selectedRoom, submitTransaction, writerCtx]
+    [isUserInitialized, loadMessages, messageInput, selectedRoom, submitTransaction, writerCtx]
   );
 
   const rootStatusText = useMemo(() => {
@@ -455,6 +538,22 @@ export function ChatClient() {
     }
   }, [rootError, rootPubkey, rootStatus]);
 
+  const userInitStatus = useMemo(() => {
+    if (!wallet.publicKey) {
+      return 'Connect a wallet to enable chat actions.';
+    }
+    if (isUserInitializing) {
+      return 'Preparing your on-chain session…';
+    }
+    if (userInitError) {
+      return `Init error: ${userInitError.message}`;
+    }
+    if (!isUserInitialized) {
+      return 'Account not initialized yet.';
+    }
+    return 'Account ready.';
+  }, [isUserInitialized, isUserInitializing, userInitError, wallet.publicKey]);
+
   return (
     <div className="flex h-full flex-col bg-black/40 text-sm text-white">
       <header className="border-b border-white/10 px-6 py-4">
@@ -463,7 +562,31 @@ export function ChatClient() {
             <p className="text-xs uppercase tracking-widest text-emerald-300">SOLCHAT</p>
             <h1 className="text-2xl font-semibold">On-chain Rooms</h1>
           </div>
-          <div className="text-xs text-white/70">{rootStatusText}</div>
+          <div className="text-xs text-white/70 space-y-1">
+            <div>{rootStatusText}</div>
+            {wallet.publicKey && (
+              <div
+                className={
+                  isUserInitialized
+                    ? 'text-emerald-300'
+                    : userInitError
+                    ? 'text-red-300'
+                    : 'text-white/60'
+                }
+              >
+                {userInitStatus}
+                {userInitError && (
+                  <button
+                    type="button"
+                    onClick={retryUserInit}
+                    className="ml-2 underline text-white"
+                  >
+                    Retry
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -490,13 +613,21 @@ export function ChatClient() {
               />
               <button
                 type="submit"
-                disabled={creatingRoom || !writerCtx || !newRoomName.trim()}
+                disabled={creatingRoom || !canWrite || !newRoomName.trim()}
                 className="w-full rounded bg-emerald-500 py-2 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
               >
                 {creatingRoom ? 'Creating…' : 'Create'}
               </button>
               {!writerCtx && (
                 <p className="text-xs text-orange-300">Connect your wallet to create rooms.</p>
+              )}
+              {writerCtx && !isUserInitialized && !userInitError && (
+                <p className="text-xs text-yellow-300">Setting up your account…</p>
+              )}
+              {userInitError && (
+                <p className="text-xs text-red-400">
+                  Failed to initialize your account. Please retry.
+                </p>
               )}
               {roomsError && <p className="text-xs text-red-400">{roomsError}</p>}
             </form>
@@ -548,6 +679,15 @@ export function ChatClient() {
                   <div className="text-white/50">No messages yet. Be the first to say hello!</div>
                 )}
                 <div className="space-y-4">
+                  {pendingMessages.map((message) => (
+                    <div
+                      key={`pending-${message.id}`}
+                      className="rounded border border-yellow-400/40 bg-yellow-400/10 p-3"
+                    >
+                      <div className="text-sm text-yellow-100">{message.text || '[empty]'}</div>
+                      <div className="mt-1 text-[11px] text-yellow-300">#{message.id} · Processing…</div>
+                    </div>
+                  ))}
                   {messages.map((message) => (
                     <div key={message.id} className="rounded border border-white/10 bg-white/5 p-3">
                       <div className="text-sm text-white">{message.text || '[empty]'}</div>
@@ -569,11 +709,11 @@ export function ChatClient() {
                     onChange={(event) => setMessageInput(event.target.value)}
                     placeholder="Type your message"
                     className="flex-1 rounded bg-white/10 px-4 py-2 text-sm text-white placeholder-white/50 outline-none focus:ring-2 focus:ring-emerald-400"
-                    disabled={sendingMessage || !writerCtx}
+                    disabled={sendingMessage || !canWrite}
                   />
                   <button
                     type="submit"
-                    disabled={sendingMessage || !writerCtx || !messageInput.trim()}
+                    disabled={sendingMessage || !canWrite || !messageInput.trim()}
                     className="rounded bg-emerald-500 px-4 py-2 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
                   >
                     {sendingMessage ? 'Sending…' : 'Send'}
@@ -581,6 +721,16 @@ export function ChatClient() {
                 </div>
                 {!writerCtx && (
                   <p className="mt-2 text-xs text-orange-300">Connect your wallet to send messages.</p>
+                )}
+                {writerCtx && !isUserInitialized && !userInitError && (
+                  <p className="mt-2 text-xs text-yellow-300">
+                    Waiting for your on-chain account initialization…
+                  </p>
+                )}
+                {userInitError && (
+                  <p className="mt-2 text-xs text-red-400">
+                    Account initialization failed. Please retry above.
+                  </p>
                 )}
               </form>
             </>
