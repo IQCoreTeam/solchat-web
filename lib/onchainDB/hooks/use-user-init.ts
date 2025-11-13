@@ -1,0 +1,122 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { initializeRootWeb } from '../index';
+import { pdaTxRef } from '../provider/pda.provider';
+import idl from '../idl.json';
+import type { Idl } from '@coral-xyz/anchor';
+import type { BytesLike } from '../core/seed';
+import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
+
+export function useUserInit(rootIdOverride?: BytesLike) {
+  const { connection } = useAppConnection();
+  const appWallet = useAppWallet();
+  const { publicKey, connected, signTransaction, signAllTransactions } = appWallet;
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const walletAddress = publicKey?.toBase58() ?? null;
+
+  const derivedRootId = useMemo<BytesLike | null>(() => {
+    if (rootIdOverride) {
+      return rootIdOverride;
+    }
+    if (publicKey) {
+      return publicKey.toBytes();
+    }
+    return null;
+  }, [rootIdOverride, walletAddress]);
+
+  const checkAndInitialize = useCallback(async () => {
+    if (!publicKey || !connected || !derivedRootId || !signTransaction) {
+      console.log('useUserInit: wallet not ready');
+      setIsInitialized(false);
+      return;
+    }
+
+    try {
+      setIsInitializing(true);
+      setError(null);
+
+      const txRefPda = pdaTxRef(publicKey);
+      console.log('useUserInit: Checking TxRef PDA:', txRefPda.toBase58());
+
+      const txRefInfo = await connection.getAccountInfo(txRefPda);
+
+      if (txRefInfo) {
+        console.log('useUserInit: ✓ TxRef exists, user is initialized');
+        setIsInitialized(true);
+        return;
+      }
+
+      console.log('useUserInit: ❌ TxRef missing, initializing via initialize_root');
+
+      const { tx } = await initializeRootWeb(
+        {
+          connection,
+          wallet: {
+            publicKey,
+            signTransaction,
+            signAllTransactions,
+          },
+          idl: idl as Idl,
+        },
+        derivedRootId
+      );
+
+      console.log('useUserInit: Transaction built, requesting signature...');
+      const latestBlockhash = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = latestBlockhash.blockhash;
+      tx.feePayer = publicKey;
+
+      const signedTx = await signTransaction(tx);
+      const signature = await connection.sendRawTransaction(signedTx.serialize());
+
+      console.log('useUserInit: Transaction sent:', signature);
+      console.log('useUserInit: Confirming...');
+
+      await connection.confirmTransaction(
+        {
+          signature,
+          blockhash: latestBlockhash.blockhash,
+          lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+        },
+        'confirmed'
+      );
+
+      console.log('useUserInit: ✓ User initialized successfully!');
+      setIsInitialized(true);
+    } catch (err: any) {
+      console.error('useUserInit: Error during initialization:', err);
+
+      if (
+        err?.message?.includes('already in use') ||
+        err?.message?.includes('AlreadyInUse')
+      ) {
+        console.log('useUserInit: Account already exists, marking as initialized');
+        setIsInitialized(true);
+      } else {
+        setError(err);
+      }
+    } finally {
+      setIsInitializing(false);
+    }
+  }, [connection, derivedRootId, publicKey, connected, signTransaction, signAllTransactions]);
+
+  useEffect(() => {
+    if (!publicKey || !connected || !signTransaction || !derivedRootId) {
+      setIsInitialized(false);
+      return;
+    }
+
+    checkAndInitialize();
+  }, [checkAndInitialize, derivedRootId, connected, publicKey, signTransaction]);
+
+  return {
+    isInitialized,
+    isInitializing,
+    error,
+    retry: checkAndInitialize,
+  };
+}
