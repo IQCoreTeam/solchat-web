@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { AccountInfo } from '@solana/web3.js';
-import { Connection, PublicKey, Transaction } from '@solana/web3.js';
+import { PublicKey, Transaction } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
 import idl from '@/lib/onchainDB/idl.json';
@@ -18,11 +18,11 @@ import { readRowsByTable, type Row } from '@/lib/onchainDB/web/reader';
 import { pdaInstructionTable, pdaRoot, pdaTable, pdaTxRef } from '@/lib/onchainDB';
 import { useUserInit } from '@/lib/onchainDB/hooks/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
-import { RPC_URL } from '@/lib/constants';
 
 const ROOT_ID = 'solchat';
 const DECODER = new TextDecoder();
 const PRINTABLE_ASCII = /^[\x20-\x7E]+$/;
+const MESSAGE_COLUMNS = ['id', 'text', 'file', 'sender', 'displayName', 'avatarHue', 'timestamp', 'status'];
 
 type RoomMeta = {
   seedHex: string;
@@ -38,6 +38,11 @@ type MessageRow = {
   text: string;
   file?: string;
   signature?: string;
+  sender?: string;
+  displayName?: string;
+  avatarHue?: number;
+  timestamp?: number;
+  status?: 'pending' | 'sent' | 'confirmed' | 'failed';
 };
 
 function bytesToHex(bytes: Uint8Array) {
@@ -72,6 +77,30 @@ function shorten(address: string, chars = 4) {
   return `${address.slice(0, chars)}…${address.slice(-chars)}`;
 }
 
+function deriveAvatarHue(address: string) {
+  if (!address) return 160;
+  let hash = 0;
+  for (let i = 0; i < address.length; i += 1) {
+    hash = (hash << 5) - hash + address.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % 360;
+}
+
+function formatTimestamp(ts?: number) {
+  if (!ts) return '';
+  const date = new Date(ts);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function getInitials(name?: string) {
+  if (!name) return '?';
+  const words = name.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return name.slice(0, 1).toUpperCase();
+  if (words.length === 1) return words[0].slice(0, 1).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
+
 function rowToMessage(row: Row): MessageRow {
   const record = row ?? {};
   const idCandidate =
@@ -86,6 +115,16 @@ function rowToMessage(row: Row): MessageRow {
     text: record.text != null ? String(record.text) : '',
     file: record.file ? String(record.file) : '',
     signature: (record as any).__txSignature,
+    sender: record.sender ? String(record.sender) : (record as any).senderAddress ? String((record as any).senderAddress) : undefined,
+    displayName: record.displayName ? String(record.displayName) : undefined,
+    avatarHue:
+      record.avatarHue != null
+        ? Number(record.avatarHue)
+        : record.sender
+        ? deriveAvatarHue(String(record.sender))
+        : undefined,
+    timestamp: record.timestamp != null ? Number(record.timestamp) : undefined,
+    status: record.status ? (String(record.status) as MessageRow['status']) : 'confirmed',
   };
 }
 
@@ -148,6 +187,14 @@ export function ChatClient() {
   }, [connection, writerWallet]);
 
   const canWrite = Boolean(writerCtx && isUserInitialized);
+  const viewerAddress = wallet.publicKey?.toBase58() ?? '';
+  const orderedMessages = useMemo(() => {
+    return [...messages, ...pendingMessages].sort((a, b) => {
+      const tsA = a.timestamp ?? 0;
+      const tsB = b.timestamp ?? 0;
+      return tsA - tsB;
+    });
+  }, [messages, pendingMessages]);
 
   const submitTransaction = useCallback(
     async (tx: Transaction) => {
@@ -469,7 +516,7 @@ export function ChatClient() {
 
       setCreatingRoom(true);
       try {
-        const { tx } = await createTableWeb(writerCtx, ROOT_ID, name, ['id', 'text', 'file'], {
+        const { tx } = await createTableWeb(writerCtx, ROOT_ID, name, MESSAGE_COLUMNS, {
           idColumn: 'id',
           gateMint,
         });
@@ -497,12 +544,21 @@ export function ChatClient() {
         typeof crypto !== 'undefined' && crypto.randomUUID
           ? crypto.randomUUID().slice(0, 12)
           : Math.random().toString(36).slice(2, 10);
+      const senderAddress = wallet.publicKey?.toBase58() ?? '';
+      const displayName = senderAddress ? `You (${shorten(senderAddress)})` : 'You';
+      const avatarHue = deriveAvatarHue(senderAddress);
+      const timestamp = Date.now();
 
       const tempMessage: MessageRow = {
         id: messageId,
         text,
         file: '',
         signature: 'pending',
+        sender: senderAddress,
+        displayName,
+        avatarHue,
+        timestamp,
+        status: 'pending',
       };
 
       // Clear input immediately and keep focus
@@ -517,6 +573,11 @@ export function ChatClient() {
           id: messageId,
           text,
           file: '',
+          sender: senderAddress,
+          displayName: senderAddress ? shorten(senderAddress, 6) : 'Anonymous',
+          avatarHue,
+          timestamp,
+          status: 'sent',
         };
         const { tx } = await writeRowWeb(writerCtx, ROOT_ID, selectedRoom.name, JSON.stringify(payload));
         await submitTransaction(tx);
@@ -780,30 +841,56 @@ export function ChatClient() {
                   </div>
                 )}
                 {messagesError && <div className="text-red-400">{messagesError}</div>}
-                {!messagesLoading && messages.length === 0 && (
+                {!messagesLoading && orderedMessages.length === 0 && (
                   <div className="text-white/50">No messages yet. Be the first to say hello!</div>
                 )}
                 <div className="space-y-4">
-                  {messages.map((message) => (
-                    <div key={message.id} className="rounded border border-white/10 bg-white/5 p-3">
-                      <div className="text-sm text-white">{message.text || '[empty]'}</div>
-                      {message.file && (
-                        <div className="text-xs text-white/70">Attachment: {message.file}</div>
-                      )}
-                      <div className="mt-1 text-[11px] text-white/40">
-                        #{message.id} {message.signature ? `· ${shorten(message.signature)}` : null}
+                  {orderedMessages.map((message) => {
+                    const isOwn = message.sender && viewerAddress && message.sender === viewerAddress;
+                    const bubbleName = isOwn ? 'You' : message.displayName || (message.sender ? shorten(message.sender) : 'Unknown');
+                    const avatarHue = message.avatarHue ?? deriveAvatarHue(message.sender || bubbleName);
+                    const isPending = message.status === 'pending';
+                    const avatarStyle = { backgroundColor: `hsl(${avatarHue}, 65%, 48%)` };
+                    return (
+                      <div key={message.id} className={`flex w-full ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                        <div
+                          className={`flex max-w-[80%] items-end gap-3 ${
+                            isOwn ? 'flex-row-reverse text-right' : 'text-left'
+                          }`}
+                        >
+                          <div
+                            className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold text-white shadow-lg"
+                            style={avatarStyle}
+                          >
+                            {getInitials(bubbleName)}
+                          </div>
+                          <div
+                            className={`rounded-2xl border px-4 py-3 ${
+                              isOwn
+                                ? 'bg-emerald-500/20 border-emerald-400/60 text-white'
+                                : 'bg-white/5 border-white/10 text-white'
+                            }`}
+                          >
+                            <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-wide text-white/70">
+                              <span>{bubbleName}</span>
+                              <span className="text-white/40">· {formatTimestamp(message.timestamp)}</span>
+                            </div>
+                            <div className="text-sm leading-relaxed">{message.text || '[empty]'}</div>
+                            <div className="mt-2 flex items-center justify-between text-[11px] text-white/50">
+                              <span>#{message.id.slice(0, 6)}</span>
+                              <span>
+                                {isPending
+                                  ? 'Processing…'
+                                  : message.signature
+                                  ? `Confirmed · ${shorten(message.signature)}`
+                                  : 'Confirmed'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                  {pendingMessages.map((message) => (
-                    <div
-                      key={`pending-${message.id}`}
-                      className="rounded border border-yellow-400/40 bg-yellow-400/10 p-3"
-                    >
-                      <div className="text-sm text-yellow-100">{message.text || '[empty]'}</div>
-                      <div className="mt-1 text-[11px] text-yellow-300">#{message.id} · Processing…</div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   <div ref={messagesEndRef} />
                 </div>
               </div>
