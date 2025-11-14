@@ -15,11 +15,11 @@ import {
   type WriterCtx,
 } from '@/lib/onchainDB/web/writer';
 import { readRowsByTable, type Row } from '@/lib/onchainDB/web/reader';
-import { pdaInstructionTable, pdaRoot, pdaTable, pdaTxRef } from '@/lib/onchainDB';
+import { configs, pdaInstructionTable, pdaRoot, pdaTable, pdaTxRef } from '@/lib/onchainDB';
 import { useUserInit } from '@/lib/onchainDB/hooks/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 
-const ROOT_ID = 'solchat';
+const ROOT_ID = configs.defaultRootId;
 const DECODER = new TextDecoder();
 const PRINTABLE_ASCII = /^[\x20-\x7E]+$/;
 const MESSAGE_COLUMNS = ['id', 'text', 'file', 'sender', 'displayName', 'avatarHue', 'timestamp', 'status'];
@@ -599,7 +599,7 @@ export function ChatClient() {
       case 'missing':
         return 'Root not found. Will create once a wallet is connected.';
       case 'creating':
-        return 'Creating root “solchat”…';
+        return `Creating root “${ROOT_ID}”…`;
       case 'ready':
         return `Root ready (${shorten(rootPubkey.toBase58())})`;
       case 'error':

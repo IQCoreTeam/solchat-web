@@ -18,26 +18,31 @@ function programPkFromCtx<T extends Idl>(ctx: { idl: T; programId?: string }) {
 function pdaRootDyn(programId: PublicKey, rootId: BytesLike) {
   const rootBytes = Buffer.from(rootIdToBytes(rootId))
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('iqdb-root'), programId.toBuffer(), rootBytes],
+    [Buffer.from(configs.rootSeed), programId.toBuffer(), rootBytes],
     programId
   )[0]
 }
 function pdaTxRefDyn(programId: PublicKey, signer: PublicKey) {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('iqdb-txref'), programId.toBuffer(), signer.toBuffer()],
+    [Buffer.from(configs.txRefSeed), programId.toBuffer(), signer.toBuffer()],
     programId
   )[0]
 }
 function pdaTargetTxRefDyn(programId: PublicKey, signer: PublicKey) {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('iqdb-txref'), programId.toBuffer(), signer.toBuffer(), Buffer.from('target')],
+    [
+      Buffer.from(configs.txRefSeed),
+      programId.toBuffer(),
+      signer.toBuffer(),
+      Buffer.from(configs.targetSeed),
+    ],
     programId
   )[0]
 }
 function pdaTableDyn(programId: PublicKey, rootPk: PublicKey, tableName: string) {
   const tableSeed = deriveSeedBytes(tableName)
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('iqdb-table'), programId.toBuffer(), rootPk.toBuffer(), Buffer.from(tableSeed)],
+    [Buffer.from(configs.tableSeed), programId.toBuffer(), rootPk.toBuffer(), Buffer.from(tableSeed)],
     programId
   )[0]
 }
@@ -45,11 +50,11 @@ function pdaInstructionTableDyn(programId: PublicKey, rootPk: PublicKey, tableNa
   const tableSeed = deriveSeedBytes(tableName)
   return PublicKey.findProgramAddressSync(
     [
-      Buffer.from('iqdb-table'),
+      Buffer.from(configs.tableSeed),
       programId.toBuffer(),
       rootPk.toBuffer(),
       Buffer.from(tableSeed),
-      Buffer.from('instruction'),
+      Buffer.from(configs.instructionSeed),
     ],
     programId
   )[0]
@@ -59,7 +64,7 @@ function pdaExtTableDyn(programId: PublicKey, rootPk: PublicKey, tableName: stri
   const tableNameBytes = deriveSeedBytes(tableName)
   return PublicKey.findProgramAddressSync(
     [
-      Buffer.from('iqdb-table'),
+      Buffer.from(configs.tableSeed),
       programId.toBuffer(),
       rootPk.toBuffer(),
       Buffer.from(tableNameBytes),
@@ -72,11 +77,11 @@ function pdaExtInstructionTableDyn(programId: PublicKey, rootPk: PublicKey, tabl
   const tableNameBytes = deriveSeedBytes(tableName)
   return PublicKey.findProgramAddressSync(
     [
-      Buffer.from('iqdb-table'),
+      Buffer.from(configs.tableSeed),
       programId.toBuffer(),
       rootPk.toBuffer(),
       Buffer.from(tableNameBytes),
-      Buffer.from('instruction'),
+      Buffer.from(configs.instructionSeed),
     ],
     programId
   )[0]
