@@ -67,18 +67,13 @@ export type ReaderResult = {
  */
 // Web reader API - scan recent txs for TxRef PDA and decode using IDL
 
-const isPrintableAscii = (s: string) => /^[\x20-\x7E]+$/.test(s)
-
 const toStr = (u8: any) => {
   try {
     if (typeof u8 === 'string') return u8
     const bytes = toU8(u8)
     if (bytes.length === 0) return ''
     try {
-      const decoded = new TextDecoder().decode(bytes).replace(/\0+$/, '')
-      if (decoded && isPrintableAscii(decoded)) {
-        return decoded
-      }
+      return new TextDecoder().decode(bytes).replace(/\0+$/, '')
     } catch {
       // fall through to hex representation
     }
