@@ -122,8 +122,11 @@ export function ChatClient() {
   const [newRoomGateMint, setNewRoomGateMint] = useState('');
   const [messageInput, setMessageInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [copiedAddress, setCopiedAddress] = useState(false);
 
   const logSubscriptionsRef = useRef<number[]>([]);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const writerWallet = useMemo<WalletAdapterLike | null>(() => {
     if (!wallet.publicKey) return null;
@@ -348,8 +351,12 @@ export function ChatClient() {
   useEffect(() => {
     if (!selectedRoom) {
       setMessages([]);
+      setPendingMessages([]);
       return;
     }
+    // Clear old messages immediately when switching rooms for better UX
+    setMessages([]);
+    setPendingMessages([]);
     loadMessages(selectedRoom);
   }, [selectedRoom, loadMessages]);
 
@@ -498,6 +505,10 @@ export function ChatClient() {
         signature: 'pending',
       };
 
+      // Clear input immediately and keep focus
+      setMessageInput('');
+      inputRef.current?.focus();
+
       setSendingMessage(true);
       setMessagesError(null);
       setPendingMessages((prev) => [...prev, tempMessage]);
@@ -509,7 +520,6 @@ export function ChatClient() {
         };
         const { tx } = await writeRowWeb(writerCtx, ROOT_ID, selectedRoom.name, JSON.stringify(payload));
         await submitTransaction(tx);
-        setMessageInput('');
         await loadMessages(selectedRoom);
       } catch (error) {
         setPendingMessages((prev) => prev.filter((msg) => msg.id !== tempMessage.id));
@@ -554,6 +564,26 @@ export function ChatClient() {
     return 'Account ready.';
   }, [isUserInitialized, isUserInitializing, userInitError, wallet.publicKey]);
 
+  const handleCopyAddress = useCallback(async () => {
+    if (!wallet.publicKey) return;
+    try {
+      await navigator.clipboard.writeText(wallet.publicKey.toBase58());
+      setCopiedAddress(true);
+      setTimeout(() => setCopiedAddress(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy address:', error);
+    }
+  }, [wallet.publicKey]);
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
+  // Auto-scroll when messages or pending messages change
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, pendingMessages, scrollToBottom]);
+
   return (
     <div className="flex h-full flex-col bg-black/40 text-sm text-white">
       <header className="border-b border-white/10 px-6 py-4">
@@ -562,31 +592,91 @@ export function ChatClient() {
             <p className="text-xs uppercase tracking-widest text-emerald-300">SOLCHAT</p>
             <h1 className="text-2xl font-semibold">On-chain Rooms</h1>
           </div>
-          <div className="text-xs text-white/70 space-y-1">
-            <div>{rootStatusText}</div>
-            {wallet.publicKey && (
-              <div
-                className={
-                  isUserInitialized
-                    ? 'text-emerald-300'
-                    : userInitError
-                    ? 'text-red-300'
-                    : 'text-white/60'
-                }
-              >
-                {userInitStatus}
-                {userInitError && (
-                  <button
-                    type="button"
-                    onClick={retryUserInit}
-                    className="ml-2 underline text-white"
+
+          {wallet.publicKey ? (
+            <div className="flex items-center gap-3">
+              {isUserInitialized && rootStatus === 'ready' ? (
+                <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-4 py-2">
+                  <span className="text-xs font-medium text-emerald-300">
+                    Securely connected to IQ Labs
+                  </span>
+                  <div className="h-4 w-px bg-emerald-500/30"></div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-white/70 font-mono">
+                      {shorten(wallet.publicKey.toBase58(), 4)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyAddress}
+                      className="group relative flex items-center justify-center w-6 h-6 rounded hover:bg-emerald-500/20 transition-colors"
+                      title="Copy wallet address"
+                    >
+                      <svg
+                        className={`w-3.5 h-3.5 transition-all duration-300 ${
+                          copiedAddress
+                            ? 'scale-0 opacity-0'
+                            : 'scale-100 opacity-100 text-white/70 group-hover:text-emerald-300'
+                        }`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                        />
+                      </svg>
+                      <svg
+                        className={`absolute w-3.5 h-3.5 transition-all duration-300 text-emerald-400 ${
+                          copiedAddress ? 'scale-100 opacity-100' : 'scale-0 opacity-0'
+                        }`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-xs text-white/70 space-y-1">
+                  <div
+                    className={
+                      userInitError
+                        ? 'text-red-300'
+                        : isUserInitializing
+                        ? 'text-yellow-300'
+                        : 'text-white/60'
+                    }
                   >
-                    Retry
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
+                    {rootStatus !== 'ready' && <div>{rootStatusText}</div>}
+                    <div>{userInitStatus}</div>
+                    {userInitError && (
+                      <button
+                        type="button"
+                        onClick={retryUserInit}
+                        className="ml-2 underline text-white"
+                      >
+                        Retry
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-xs text-white/50">
+              Connect wallet to get started
+            </div>
+          )}
         </div>
       </header>
 
@@ -658,7 +748,7 @@ export function ChatClient() {
           </div>
         </aside>
 
-        <section className="flex flex-1 flex-col">
+        <section className="flex flex-1 flex-col overflow-hidden">
           {!selectedRoom ? (
             <div className="flex flex-1 items-center justify-center text-white/60">
               Choose or create a room to start chatting.
@@ -673,21 +763,27 @@ export function ChatClient() {
                 </p>
               </div>
               <div className="flex-1 overflow-y-auto bg-black/20 px-6 py-4">
-                {messagesLoading && <div className="text-white/60">Loading messages…</div>}
+                {messagesLoading && (
+                  <div className="flex flex-col items-center justify-center h-full">
+                    <div className="relative">
+                      <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
+                      <div className="absolute inset-0 w-12 h-12 border-4 border-transparent border-r-emerald-400/40 rounded-full animate-spin" style={{ animationDuration: '1.5s', animationDirection: 'reverse' }}></div>
+                    </div>
+                    <div className="mt-4 flex items-center gap-1">
+                      <span className="text-sm text-emerald-300 font-medium">Loading messages</span>
+                      <span className="flex gap-0.5">
+                        <span className="w-1 h-1 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                        <span className="w-1 h-1 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                        <span className="w-1 h-1 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                      </span>
+                    </div>
+                  </div>
+                )}
                 {messagesError && <div className="text-red-400">{messagesError}</div>}
                 {!messagesLoading && messages.length === 0 && (
                   <div className="text-white/50">No messages yet. Be the first to say hello!</div>
                 )}
                 <div className="space-y-4">
-                  {pendingMessages.map((message) => (
-                    <div
-                      key={`pending-${message.id}`}
-                      className="rounded border border-yellow-400/40 bg-yellow-400/10 p-3"
-                    >
-                      <div className="text-sm text-yellow-100">{message.text || '[empty]'}</div>
-                      <div className="mt-1 text-[11px] text-yellow-300">#{message.id} · Processing…</div>
-                    </div>
-                  ))}
                   {messages.map((message) => (
                     <div key={message.id} className="rounded border border-white/10 bg-white/5 p-3">
                       <div className="text-sm text-white">{message.text || '[empty]'}</div>
@@ -699,24 +795,35 @@ export function ChatClient() {
                       </div>
                     </div>
                   ))}
+                  {pendingMessages.map((message) => (
+                    <div
+                      key={`pending-${message.id}`}
+                      className="rounded border border-yellow-400/40 bg-yellow-400/10 p-3"
+                    >
+                      <div className="text-sm text-yellow-100">{message.text || '[empty]'}</div>
+                      <div className="mt-1 text-[11px] text-yellow-300">#{message.id} · Processing…</div>
+                    </div>
+                  ))}
+                  <div ref={messagesEndRef} />
                 </div>
               </div>
               <form onSubmit={handleSendMessage} className="border-t border-white/10 bg-black/40 px-6 py-4">
                 <div className="flex gap-3">
                   <input
+                    ref={inputRef}
                     type="text"
                     value={messageInput}
                     onChange={(event) => setMessageInput(event.target.value)}
                     placeholder="Type your message"
                     className="flex-1 rounded bg-white/10 px-4 py-2 text-sm text-white placeholder-white/50 outline-none focus:ring-2 focus:ring-emerald-400"
-                    disabled={sendingMessage || !canWrite}
+                    disabled={!canWrite}
                   />
                   <button
                     type="submit"
-                    disabled={sendingMessage || !canWrite || !messageInput.trim()}
+                    disabled={!canWrite || !messageInput.trim()}
                     className="rounded bg-emerald-500 px-4 py-2 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
                   >
-                    {sendingMessage ? 'Sending…' : 'Send'}
+                    Send
                   </button>
                 </div>
                 {!writerCtx && (
