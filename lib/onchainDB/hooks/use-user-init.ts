@@ -1,12 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { initializeRootWeb } from '../index';
+import {initializeRootWeb, pdaRoot} from '../index';
 import { pdaTxRef } from '../provider/pda.provider';
 import idl from '../idl.json';
 import type { Idl } from '@coral-xyz/anchor';
 import type { BytesLike } from '../core/seed';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
+import { configs } from '../configs';
 
 export function useUserInit(rootIdOverride?: BytesLike) {
   const { connection } = useAppConnection();
@@ -18,15 +19,7 @@ export function useUserInit(rootIdOverride?: BytesLike) {
 
   const walletAddress = publicKey?.toBase58() ?? null;
 
-  const derivedRootId = useMemo<BytesLike | null>(() => {
-    if (rootIdOverride) {
-      return rootIdOverride;
-    }
-    if (publicKey) {
-      return publicKey.toBytes();
-    }
-    return null;
-  }, [rootIdOverride, walletAddress]);
+  const derivedRootId = rootIdOverride ?? configs.defaultRootId;
 
   const checkAndInitialize = useCallback(async () => {
     if (!publicKey || !connected || !derivedRootId || !signTransaction) {
@@ -43,12 +36,18 @@ export function useUserInit(rootIdOverride?: BytesLike) {
       console.log('useUserInit: Checking TxRef PDA:', txRefPda.toBase58());
 
       const txRefInfo = await connection.getAccountInfo(txRefPda);
-
-      if (txRefInfo) {
-        console.log('useUserInit: ✓ TxRef exists, user is initialized');
-        setIsInitialized(true);
-        return;
-      }
+      const rootPda = pdaRoot(derivedRootId);
+        const rootInfo = await connection.getAccountInfo(rootPda);
+        if (rootInfo) {
+            console.log('useUserInit: ✓ root exists, user is initialized');
+            setIsInitialized(true);
+            return;
+        }
+      //   if (txRefInfo) {
+      //   console.log('useUserInit: ✓ TxRef exists, user is initialized');
+      //   setIsInitialized(true);
+      //   return;
+      // }
 
       console.log('useUserInit: ❌ TxRef missing, initializing via initialize_root');
 
