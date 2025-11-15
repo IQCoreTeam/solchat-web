@@ -246,7 +246,7 @@ export async function readRecentRows(params: ReaderParams): Promise<ReaderResult
 
   // Compute PDAs (always safe on web)
   const root = pdaRoot(rootIdBytes)
-  const txRef = pdaTxRef(user)
+  const txRef = pdaTxRef(rootIdBytes)
 
   // If no IDL, return metadata only (tables/rows empty)
   if (!idl) {
