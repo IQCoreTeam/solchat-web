@@ -183,7 +183,6 @@ export function ChatClient() {
   const [disconnectingPrivy, setDisconnectingPrivy] = useState(false);
 
   const logSubscriptionsRef = useRef<number[]>([]);
-  const txRefSubscriptionsRef = useRef<Record<string, number>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesRef = useRef<MessageRow[]>([]);
@@ -230,19 +229,6 @@ export function ChatClient() {
   useEffect(() => {
     selectedRoomRef.current = selectedRoom?.name ?? null;
   }, [selectedRoom]);
-
-  const participantAddresses = useMemo(() => {
-    const set = new Set<string>();
-    if (viewerAddress) set.add(viewerAddress);
-    const collect = (message: MessageRow) => {
-      if (message.sender) {
-        set.add(message.sender);
-      }
-    };
-    messages.forEach(collect);
-    pendingMessages.forEach(collect);
-    return Array.from(set);
-  }, [messages, pendingMessages, viewerAddress]);
 
   const submitTransaction = useCallback(
     async (tx: Transaction) => {
@@ -500,24 +486,51 @@ export function ChatClient() {
   }, [connection, loadMessages, selectedRoom]);
 
   useEffect(() => {
-    if (!wallet.publicKey || !selectedRoom) return;
+    if (!selectedRoom) return;
 
     let cancelled = false;
-    let subscriptionId: number | null = null;
-    const txRefPk = pdaTxRef(wallet.publicKey);
+    const txRefPk = pdaTxRef(ROOT_ID);
+    const subscriptions: number[] = [];
 
     const subscribe = async () => {
       try {
-        const id = await connection.onLogs(txRefPk, () => {
-          loadMessages(selectedRoom);
-        }, 'confirmed');
+        const processedId = await connection.onLogs(
+          txRefPk,
+          async () => {
+            try {
+              const info = await connection.getAccountInfo(txRefPk, { commitment: 'processed' });
+              if (!info) return;
+              const parsed = parseTxRefAccount(info.data);
+              if (!parsed) return;
+              const message = rowToMessage(parsed);
+              const activeRoom = selectedRoomRef.current;
+              if (!activeRoom || message.room !== activeRoom) {
+                return;
+              }
+              message.status = 'pending';
+              setPendingMessages((prev) => {
+                if (prev.some((m) => m.id === message.id)) return prev;
+                if (messagesRef.current.some((m) => m.id === message.id)) return prev;
+                return [...prev, message];
+              });
+            } catch (error) {
+              console.warn('Failed to process tx_ref update', error);
+            }
+          },
+          'processed'
+        );
+        subscriptions.push(processedId);
 
-        if (cancelled) {
-          connection.removeOnLogsListener(id).catch(() => undefined);
-          return;
-        }
-
-        subscriptionId = id;
+        const confirmedId = await connection.onLogs(
+          txRefPk,
+          () => {
+            if (selectedRoomRef.current) {
+              loadMessages(selectedRoom, { skipLoadingState: true });
+            }
+          },
+          'confirmed'
+        );
+        subscriptions.push(confirmedId);
       } catch (error) {
         console.warn('Failed to subscribe to tx_ref logs', error);
       }
@@ -527,93 +540,11 @@ export function ChatClient() {
 
     return () => {
       cancelled = true;
-      if (subscriptionId !== null) {
-        connection.removeOnLogsListener(subscriptionId).catch(() => undefined);
-      }
-    };
-  }, [connection, loadMessages, selectedRoom, wallet.publicKey]);
-
-  useEffect(() => {
-    const subscriptions = txRefSubscriptionsRef.current;
-    if (!selectedRoom) {
-      Object.values(subscriptions).forEach((subId) => {
+      subscriptions.forEach((subId) => {
         connection.removeOnLogsListener(subId).catch(() => undefined);
       });
-      txRefSubscriptionsRef.current = {};
-      return;
-    }
-
-    const desired = new Map<string, PublicKey>();
-    participantAddresses.forEach((address) => {
-      if (!address) return;
-      try {
-        if (wallet.publicKey && address === wallet.publicKey.toBase58()) {
-          desired.set(address, wallet.publicKey);
-        } else {
-          desired.set(address, new PublicKey(address));
-        }
-      } catch {
-        // ignore invalid addresses
-      }
-    });
-
-    Object.entries(subscriptions).forEach(([address, subId]) => {
-      if (!desired.has(address)) {
-        connection.removeOnLogsListener(subId).catch(() => undefined);
-        delete subscriptions[address];
-      }
-    });
-
-    desired.forEach((participantPk, address) => {
-      if (subscriptions[address]) return;
-      const txRefPk = pdaTxRef(participantPk);
-
-      const subscribe = async () => {
-        try {
-          const subId = await connection.onLogs(
-            txRefPk,
-            async () => {
-              try {
-                const info = await connection.getAccountInfo(txRefPk, { commitment: 'processed' });
-                if (!info) return;
-                const parsed = parseTxRefAccount(info.data);
-                if (!parsed) return;
-                const message = rowToMessage(parsed);
-                const activeRoom = selectedRoomRef.current;
-                if (!activeRoom || message.room !== activeRoom) {
-                  return;
-                }
-                message.status = 'pending';
-                setPendingMessages((prev) => {
-                  if (prev.some((m) => m.id === message.id)) return prev;
-                  if (messagesRef.current.some((m) => m.id === message.id)) return prev;
-                  return [...prev, message];
-                });
-              } catch (error) {
-                console.warn('Failed to process tx_ref update', error);
-              }
-            },
-            'processed'
-          );
-          subscriptions[address] = subId;
-        } catch (error) {
-          console.warn('Failed to subscribe to tx_ref', error);
-        }
-      };
-
-      subscribe();
-    });
-  }, [connection, participantAddresses, selectedRoom, wallet.publicKey]);
-
-  useEffect(() => {
-    return () => {
-      const subscriptions = txRefSubscriptionsRef.current;
-      Object.values(subscriptions).forEach((subId) => {
-        connection.removeOnLogsListener(subId).catch(() => undefined);
-      });
-      txRefSubscriptionsRef.current = {};
     };
-  }, [connection]);
+  }, [connection, loadMessages, selectedRoom]);
 
   const handleCreateRoom = useCallback(
     async (event: FormEvent) => {

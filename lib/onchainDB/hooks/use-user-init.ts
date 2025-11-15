@@ -17,8 +17,6 @@ export function useUserInit(rootIdOverride?: BytesLike) {
   const [isInitializing, setIsInitializing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const walletAddress = publicKey?.toBase58() ?? null;
-
   const derivedRootId = rootIdOverride ?? configs.defaultRootId;
 
   const checkAndInitialize = useCallback(async () => {
@@ -32,17 +30,15 @@ export function useUserInit(rootIdOverride?: BytesLike) {
       setIsInitializing(true);
       setError(null);
 
-      const txRefPda = pdaTxRef(publicKey);
+      const txRefPda = pdaTxRef(derivedRootId);
       console.log('useUserInit: Checking TxRef PDA:', txRefPda.toBase58());
-
-      const txRefInfo = await connection.getAccountInfo(txRefPda);
       const rootPda = pdaRoot(derivedRootId);
-        const rootInfo = await connection.getAccountInfo(rootPda);
-        if (rootInfo) {
-            console.log('useUserInit: ✓ root exists, user is initialized');
-            setIsInitialized(true);
-            return;
-        }
+      const rootInfo = await connection.getAccountInfo(rootPda);
+      if (rootInfo) {
+        console.log('useUserInit: ✓ root exists, user is initialized');
+        setIsInitialized(true);
+        return;
+      }
       //   if (txRefInfo) {
       //   console.log('useUserInit: ✓ TxRef exists, user is initialized');
       //   setIsInitialized(true);

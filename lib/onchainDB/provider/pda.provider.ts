@@ -17,19 +17,21 @@ export function pdaRoot(rootId: BytesLike) {
   )[0];
 }
 
-export function pdaTxRef(signer: PublicKey) {
+export function pdaTxRef(rootId: BytesLike) {
+  const rootBytes = Buffer.from(rootIdToBytes(rootId));
   return PublicKey.findProgramAddressSync(
-    [Buffer.from(configs.txRefSeed), PROGRAM_ID.toBuffer(), signer.toBuffer()],
+    [Buffer.from(configs.txRefSeed), PROGRAM_ID.toBuffer(), rootBytes],
     PROGRAM_ID
   )[0];
 }
 
-export function pdaTargetTxRef(signer: PublicKey) {
+export function pdaTargetTxRef(rootId: BytesLike) {
+  const rootBytes = Buffer.from(rootIdToBytes(rootId));
   return PublicKey.findProgramAddressSync(
     [
       Buffer.from(configs.txRefSeed),
       PROGRAM_ID.toBuffer(),
-      signer.toBuffer(),
+      rootBytes,
       Buffer.from(configs.targetSeed),
     ],
     PROGRAM_ID

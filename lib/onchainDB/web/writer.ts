@@ -22,18 +22,20 @@ function pdaRootDyn(programId: PublicKey, rootId: BytesLike) {
     programId
   )[0]
 }
-function pdaTxRefDyn(programId: PublicKey, signer: PublicKey) {
+function pdaTxRefDyn(programId: PublicKey, rootId: BytesLike) {
+  const rootBytes = Buffer.from(rootIdToBytes(rootId))
   return PublicKey.findProgramAddressSync(
-    [Buffer.from(configs.txRefSeed), programId.toBuffer(), signer.toBuffer()],
+    [Buffer.from(configs.txRefSeed), programId.toBuffer(), rootBytes],
     programId
   )[0]
 }
-function pdaTargetTxRefDyn(programId: PublicKey, signer: PublicKey) {
+function pdaTargetTxRefDyn(programId: PublicKey, rootId: BytesLike) {
+  const rootBytes = Buffer.from(rootIdToBytes(rootId))
   return PublicKey.findProgramAddressSync(
     [
       Buffer.from(configs.txRefSeed),
       programId.toBuffer(),
-      signer.toBuffer(),
+      rootBytes,
       Buffer.from(configs.targetSeed),
     ],
     programId
@@ -111,8 +113,8 @@ export async function initializeRootWeb<T extends Idl>(ctx: WriterCtx<T>, rootId
 
   // Derive PDAs with program id from IDL
   const rootPda = pdaRootDyn(programId, rootId)
-  const txRefPda = pdaTxRefDyn(programId, signer)
-  const targetTxRefPda = pdaTargetTxRefDyn(programId, signer)
+  const txRefPda = pdaTxRefDyn(programId, rootId)
+  const targetTxRefPda = pdaTargetTxRefDyn(programId, rootId)
 
   // Resolve method name dynamically (camelCase or snake_case)
   const methods = (program as any).methods as Record<string, any>
@@ -347,7 +349,7 @@ export async function writeRowWeb<T extends Idl>(
   const programId = programPkFromCtx(ctx)
   const rootIdBuf = Buffer.from(rootIdToBytes(rootId))
   const root = pdaRootDyn(programId, rootId)
-  const txRef = pdaTxRefDyn(programId, signer)
+  const txRef = pdaTxRefDyn(programId, rootId)
   const table = pdaTableDyn(programId, root, tableName)
 
   const methods = (program as any).methods as Record<string, any>
@@ -396,8 +398,8 @@ export async function pushDbInstructionWeb<T extends Idl>(
   const programId = programPkFromCtx(ctx)
   const rootIdBuf = Buffer.from(rootIdToBytes(rootId))
   const root = pdaRootDyn(programId, rootId)
-  const txRef = pdaTxRefDyn(programId, signer)
-  const targetTxRef = pdaTargetTxRefDyn(programId, signer)
+  const txRef = pdaTxRefDyn(programId, rootId)
+  const targetTxRef = pdaTargetTxRefDyn(programId, rootId)
   const table = pdaTableDyn(programId, root, tableName)
   const instTable = pdaInstructionTableDyn(programId, root, tableName)
 
