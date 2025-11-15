@@ -18,6 +18,7 @@ import { readRowsByTable, type Row } from '@/lib/onchainDB/web/reader';
 import { configs, pdaInstructionTable, pdaRoot, pdaTable, pdaTxRef } from '@/lib/onchainDB';
 import { useUserInit } from '@/lib/onchainDB/hooks/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
+import { usePrivy } from '@privy-io/react-auth';
 
 const ROOT_ID = configs.defaultRootId;
 const DECODER = new TextDecoder();
@@ -153,6 +154,7 @@ export function ChatClient() {
     error: userInitError,
     retry: retryUserInit,
   } = useUserInit();
+  const { logout } = usePrivy();
 
   const coder = useMemo(() => new BorshAccountsCoder(idl as Idl), []);
   const rootPubkey = useMemo(() => pdaRoot(ROOT_ID), []);
@@ -178,6 +180,7 @@ export function ChatClient() {
   const [messageInput, setMessageInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState(false);
+  const [disconnectingPrivy, setDisconnectingPrivy] = useState(false);
 
   const logSubscriptionsRef = useRef<number[]>([]);
   const txRefSubscriptionsRef = useRef<Record<string, number>>({});
@@ -779,7 +782,7 @@ export function ChatClient() {
           </div>
 
           {wallet.publicKey ? (
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col gap-2">
               {isUserInitialized && rootStatus === 'ready' ? (
                 <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-4 py-2">
                   <span className="text-xs font-medium text-emerald-300">
@@ -847,7 +850,7 @@ export function ChatClient() {
                     {userInitError && (
                       <button
                         type="button"
-                        onClick={retryUserInit}
+                        onClick={() => retryUserInit()}
                         className="ml-2 underline text-white"
                       >
                         Retry
@@ -856,6 +859,25 @@ export function ChatClient() {
                   </div>
                 </div>
               )}
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/50">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (disconnectingPrivy) return;
+                    setDisconnectingPrivy(true);
+                    try {
+                      await logout();
+                    } finally {
+                      setDisconnectingPrivy(false);
+                    }
+                  }}
+                  className="text-red-300 underline disabled:opacity-50"
+                  disabled={disconnectingPrivy}
+                >
+                  {disconnectingPrivy ? 'Disconnecting…' : 'Disconnect Privy wallet'}
+                </button>
+                <span>Use this to create a fresh embedded wallet for testing.</span>
+              </div>
             </div>
           ) : (
             <div className="text-xs text-white/50">
