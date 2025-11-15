@@ -41,7 +41,7 @@ export function getPdas(params: { rootId: BytesLike; userPublicKey: string }) {
   const user = new PublicKey(userPublicKey)
   return {
     root: pdaRoot(rootId).toBase58(),
-    txRef: pdaTxRef(user).toBase58(),
-    targetTxRef: pdaTargetTxRef(user).toBase58(),
+    txRef: pdaTxRef(rootId).toBase58(),
+    targetTxRef: pdaTargetTxRef(rootId).toBase58(),
   }
 }

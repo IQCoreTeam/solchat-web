@@ -18,26 +18,33 @@ function programPkFromCtx<T extends Idl>(ctx: { idl: T; programId?: string }) {
 function pdaRootDyn(programId: PublicKey, rootId: BytesLike) {
   const rootBytes = Buffer.from(rootIdToBytes(rootId))
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('iqdb-root'), programId.toBuffer(), rootBytes],
+    [Buffer.from(configs.rootSeed), programId.toBuffer(), rootBytes],
     programId
   )[0]
 }
-function pdaTxRefDyn(programId: PublicKey, signer: PublicKey) {
+function pdaTxRefDyn(programId: PublicKey, rootId: BytesLike) {
+  const rootBytes = Buffer.from(rootIdToBytes(rootId))
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('iqdb-txref'), programId.toBuffer(), signer.toBuffer()],
+    [Buffer.from(configs.txRefSeed), programId.toBuffer(), rootBytes],
     programId
   )[0]
 }
-function pdaTargetTxRefDyn(programId: PublicKey, signer: PublicKey) {
+function pdaTargetTxRefDyn(programId: PublicKey, rootId: BytesLike) {
+  const rootBytes = Buffer.from(rootIdToBytes(rootId))
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('iqdb-txref'), programId.toBuffer(), signer.toBuffer(), Buffer.from('target')],
+    [
+      Buffer.from(configs.txRefSeed),
+      programId.toBuffer(),
+      rootBytes,
+      Buffer.from(configs.targetSeed),
+    ],
     programId
   )[0]
 }
 function pdaTableDyn(programId: PublicKey, rootPk: PublicKey, tableName: string) {
   const tableSeed = deriveSeedBytes(tableName)
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('iqdb-table'), programId.toBuffer(), rootPk.toBuffer(), Buffer.from(tableSeed)],
+    [Buffer.from(configs.tableSeed), programId.toBuffer(), rootPk.toBuffer(), Buffer.from(tableSeed)],
     programId
   )[0]
 }
@@ -45,11 +52,11 @@ function pdaInstructionTableDyn(programId: PublicKey, rootPk: PublicKey, tableNa
   const tableSeed = deriveSeedBytes(tableName)
   return PublicKey.findProgramAddressSync(
     [
-      Buffer.from('iqdb-table'),
+      Buffer.from(configs.tableSeed),
       programId.toBuffer(),
       rootPk.toBuffer(),
       Buffer.from(tableSeed),
-      Buffer.from('instruction'),
+      Buffer.from(configs.instructionSeed),
     ],
     programId
   )[0]
@@ -59,7 +66,7 @@ function pdaExtTableDyn(programId: PublicKey, rootPk: PublicKey, tableName: stri
   const tableNameBytes = deriveSeedBytes(tableName)
   return PublicKey.findProgramAddressSync(
     [
-      Buffer.from('iqdb-table'),
+      Buffer.from(configs.tableSeed),
       programId.toBuffer(),
       rootPk.toBuffer(),
       Buffer.from(tableNameBytes),
@@ -72,11 +79,11 @@ function pdaExtInstructionTableDyn(programId: PublicKey, rootPk: PublicKey, tabl
   const tableNameBytes = deriveSeedBytes(tableName)
   return PublicKey.findProgramAddressSync(
     [
-      Buffer.from('iqdb-table'),
+      Buffer.from(configs.tableSeed),
       programId.toBuffer(),
       rootPk.toBuffer(),
       Buffer.from(tableNameBytes),
-      Buffer.from('instruction'),
+      Buffer.from(configs.instructionSeed),
     ],
     programId
   )[0]
@@ -106,8 +113,8 @@ export async function initializeRootWeb<T extends Idl>(ctx: WriterCtx<T>, rootId
 
   // Derive PDAs with program id from IDL
   const rootPda = pdaRootDyn(programId, rootId)
-  const txRefPda = pdaTxRefDyn(programId, signer)
-  const targetTxRefPda = pdaTargetTxRefDyn(programId, signer)
+  const txRefPda = pdaTxRefDyn(programId, rootId)
+  const targetTxRefPda = pdaTargetTxRefDyn(programId, rootId)
 
   // Resolve method name dynamically (camelCase or snake_case)
   const methods = (program as any).methods as Record<string, any>
@@ -342,7 +349,7 @@ export async function writeRowWeb<T extends Idl>(
   const programId = programPkFromCtx(ctx)
   const rootIdBuf = Buffer.from(rootIdToBytes(rootId))
   const root = pdaRootDyn(programId, rootId)
-  const txRef = pdaTxRefDyn(programId, signer)
+  const txRef = pdaTxRefDyn(programId, rootId)
   const table = pdaTableDyn(programId, root, tableName)
 
   const methods = (program as any).methods as Record<string, any>
@@ -366,7 +373,7 @@ export async function writeRowWeb<T extends Idl>(
       root,
       table,
       tx_ref: txRef,
-      ...(signerAta ? { signer_ata: signerAta } : {}),
+      signerAta,
       signer,
     })
     .transaction()
@@ -391,8 +398,8 @@ export async function pushDbInstructionWeb<T extends Idl>(
   const programId = programPkFromCtx(ctx)
   const rootIdBuf = Buffer.from(rootIdToBytes(rootId))
   const root = pdaRootDyn(programId, rootId)
-  const txRef = pdaTxRefDyn(programId, signer)
-  const targetTxRef = pdaTargetTxRefDyn(programId, signer)
+  const txRef = pdaTxRefDyn(programId, rootId)
+  const targetTxRef = pdaTargetTxRefDyn(programId, rootId)
   const table = pdaTableDyn(programId, root, tableName)
   const instTable = pdaInstructionTableDyn(programId, root, tableName)
 
@@ -422,7 +429,7 @@ export async function pushDbInstructionWeb<T extends Idl>(
       instruction_table: instTable,
       tx_ref: txRef,
       target_tx_ref: targetTxRef,
-      ...(signerAta ? { signer_ata: signerAta } : {}),
+      signerAta,
       signer,
     })
     .transaction()

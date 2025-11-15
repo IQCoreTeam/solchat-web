@@ -20,6 +20,7 @@ import {
 import { encodeWithPassword, decodeWithPassword } from 'hanlock';
 import { getBonkBalance, sendBonk } from '@/lib/token/bonk';
 import { lamportsToSol } from '@/lib/iq/utils';
+import { useUserInit } from '@/lib/onchainDB/hooks/use-user-init';
 
 type ChatPhase =
   | 'idle'
@@ -41,6 +42,7 @@ interface ConversationState {
 export function ChatInterface() {
   const { connection } = useAppConnection();
   const wallet = useAppWallet();
+  const { isInitialized, isInitializing, error: initError } = useUserInit();
 
   const [history, setHistory] = useState<string[]>([
     '╔══════════════════════════════════════════════════════════════╗',
@@ -70,6 +72,17 @@ export function ChatInterface() {
   useEffect(() => {
     encryptionKeyRef.current = encryptionKey;
   }, [encryptionKey]);
+
+  // Show initialization status
+  useEffect(() => {
+    if (isInitializing && wallet.publicKey) {
+      addToHistory('[SYSTEM] Initializing your account for first-time use...');
+    } else if (initError) {
+      addToHistory(`[ERROR] Failed to initialize account: ${initError.message}`);
+    } else if (isInitialized && wallet.publicKey) {
+      addToHistory('[SYSTEM] ✓ Account ready');
+    }
+  }, [isInitialized, isInitializing, initError]);
 
   // Show main menu when idle
   useEffect(() => {
