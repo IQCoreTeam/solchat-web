@@ -162,6 +162,7 @@ export function ChatClient() {
   const [messageInput, setMessageInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
 
   const logSubscriptionsRef = useRef<number[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -436,10 +437,10 @@ export function ChatClient() {
       };
 
       await register(tablePk, 'confirmed', () => {
-        loadMessages(selectedRoom);
+        loadMessages(selectedRoom, { skipLoadingState: true });
       });
       await register(instructionPk, 'confirmed', () => {
-        loadMessages(selectedRoom);
+        loadMessages(selectedRoom, { skipLoadingState: true });
       });
 
       logSubscriptionsRef.current = subscriptions;
@@ -466,7 +467,7 @@ export function ChatClient() {
     const subscribe = async () => {
       try {
         const id = await connection.onLogs(txRefPk, () => {
-          loadMessages(selectedRoom);
+          loadMessages(selectedRoom, { skipLoadingState: true });
         }, 'confirmed');
 
         if (cancelled) {
@@ -581,7 +582,7 @@ export function ChatClient() {
         };
         const { tx } = await writeRowWeb(writerCtx, ROOT_ID, selectedRoom.name, JSON.stringify(payload));
         await submitTransaction(tx);
-        await loadMessages(selectedRoom);
+        await loadMessages(selectedRoom, { skipLoadingState: true });
       } catch (error) {
         setPendingMessages((prev) => prev.filter((msg) => msg.id !== tempMessage.id));
         setMessagesError((error as Error).message);
@@ -636,6 +637,16 @@ export function ChatClient() {
     }
   }, [wallet.publicKey]);
 
+  const handleCopySenderAddress = useCallback(async (address: string, messageId: string) => {
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopiedMessageId(messageId);
+      setTimeout(() => setCopiedMessageId(null), 2000);
+    } catch (error) {
+      console.error('Failed to copy sender address:', error);
+    }
+  }, []);
+
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
@@ -647,65 +658,20 @@ export function ChatClient() {
 
   return (
     <div className="flex h-full flex-col bg-black/40 text-sm text-white">
-      <header className="border-b border-white/10 px-6 py-4">
+      <header className="border-b-2 border-green-600 bg-black px-6 py-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-widest text-emerald-300">SOLCHAT</p>
-            <h1 className="text-2xl font-semibold">On-chain Rooms</h1>
+            <p className="text-xs font-mono uppercase tracking-widest text-green-400">[ SOLCHAT ]</p>
+            <h1 className="text-xl font-mono font-bold text-green-400">ON-CHAIN ROOMS</h1>
           </div>
 
           {wallet.publicKey ? (
             <div className="flex items-center gap-3">
               {isUserInitialized && rootStatus === 'ready' ? (
-                <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-4 py-2">
-                  <span className="text-xs font-medium text-emerald-300">
-                    Securely connected to IQ Labs
+                <div className="flex items-center gap-2 bg-black/60 border border-green-600/50 rounded px-3 py-1.5 shadow-lg shadow-green-600/10">
+                  <span className="text-xs font-mono text-green-400">
+                    [SECURELY CONNECTED]
                   </span>
-                  <div className="h-4 w-px bg-emerald-500/30"></div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-white/70 font-mono">
-                      {shorten(wallet.publicKey.toBase58(), 4)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleCopyAddress}
-                      className="group relative flex items-center justify-center w-6 h-6 rounded hover:bg-emerald-500/20 transition-colors"
-                      title="Copy wallet address"
-                    >
-                      <svg
-                        className={`w-3.5 h-3.5 transition-all duration-300 ${
-                          copiedAddress
-                            ? 'scale-0 opacity-0'
-                            : 'scale-100 opacity-100 text-white/70 group-hover:text-emerald-300'
-                        }`}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                        />
-                      </svg>
-                      <svg
-                        className={`absolute w-3.5 h-3.5 transition-all duration-300 text-emerald-400 ${
-                          copiedAddress ? 'scale-100 opacity-100' : 'scale-0 opacity-0'
-                        }`}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
-                    </button>
-                  </div>
                 </div>
               ) : (
                 <div className="text-xs text-white/70 space-y-1">
@@ -873,11 +839,53 @@ export function ChatClient() {
                           >
                             <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-wide text-white/70">
                               <span>{bubbleName}</span>
+                              {message.sender && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopySenderAddress(message.sender!, message.id)}
+                                  className="group relative flex items-center justify-center w-4 h-4 hover:bg-white/10 transition-colors border border-white/10 rounded"
+                                  title="Copy wallet address"
+                                >
+                                  <svg
+                                    className={`w-2.5 h-2.5 transition-all duration-300 ${
+                                      copiedMessageId === message.id
+                                        ? 'scale-0 opacity-0'
+                                        : 'scale-100 opacity-100 text-white/50 group-hover:text-white/70'
+                                    }`}
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                    />
+                                  </svg>
+                                  <svg
+                                    className={`absolute w-2.5 h-2.5 transition-all duration-300 text-white/70 ${
+                                      copiedMessageId === message.id ? 'scale-100 opacity-100' : 'scale-0 opacity-0'
+                                    }`}
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M5 13l4 4L19 7"
+                                    />
+                                  </svg>
+                                </button>
+                              )}
                               <span className="text-white/40">· {formatTimestamp(message.timestamp)}</span>
                             </div>
                             <div className="text-sm leading-relaxed">{message.text || '[empty]'}</div>
-                            <div className="mt-2 flex items-center justify-between text-[11px] text-white/50">
+                            <div className="mt-2 flex items-center gap-2 text-[11px] text-white/50">
                               <span>#{message.id.slice(0, 6)}</span>
+                              <span>·</span>
                               <span>
                                 {isPending
                                   ? 'Processing…'
