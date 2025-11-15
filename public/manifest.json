@@ -1,0 +1,27 @@
+{
+  "name": "SolChat by IQ Labs",
+  "short_name": "SolChat",
+  "description": "Fully decentralized on-chain chat on Solana blockchain",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#002100",
+  "theme_color": "#002100",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "categories": ["social", "utilities", "finance"],
+  "screenshots": [],
+  "related_applications": [],
+  "prefer_related_applications": false
+}
