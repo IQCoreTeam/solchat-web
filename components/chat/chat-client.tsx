@@ -710,7 +710,8 @@ export function ChatClient() {
                 value={newRoomName}
                 onChange={(event) => setNewRoomName(event.target.value)}
                 placeholder="Room name"
-                className="w-full rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2 focus:ring-emerald-400"
+                className="w-full rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2"
+                style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
                 disabled={creatingRoom || !writerCtx}
               />
               <input
@@ -718,13 +719,26 @@ export function ChatClient() {
                 value={newRoomGateMint}
                 onChange={(event) => setNewRoomGateMint(event.target.value)}
                 placeholder="Gate mint (optional)"
-                className="w-full rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2 focus:ring-emerald-400"
+                className="w-full rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2"
+                style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
                 disabled={creatingRoom || !writerCtx}
               />
               <button
                 type="submit"
                 disabled={creatingRoom || !canWrite || !newRoomName.trim()}
-                className="w-full rounded bg-emerald-500 py-2 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
+                className="w-full rounded py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
+                style={{
+                  backgroundColor: creatingRoom || !canWrite || !newRoomName.trim() ? undefined : 'rgb(65, 255, 0)',
+                  color: creatingRoom || !canWrite || !newRoomName.trim() ? undefined : 'rgb(0, 33, 0)',
+                }}
+                onMouseEnter={(e) => {
+                  if (!creatingRoom && canWrite && newRoomName.trim()) {
+                    e.currentTarget.style.opacity = '0.85';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.opacity = '1';
+                }}
               >
                 {creatingRoom ? 'Creating…' : 'Create'}
               </button>
@@ -757,8 +771,9 @@ export function ChatClient() {
                   key={room.seedHex}
                   onClick={() => setSelectedSeed(room.seedHex)}
                   className={`w-full rounded px-3 py-2 text-left transition ${
-                    selectedSeed === room.seedHex ? 'bg-emerald-500/20 text-white' : 'bg-white/5 text-white/80 hover:bg-white/10'
+                    selectedSeed === room.seedHex ? 'text-white' : 'bg-white/5 text-white/80 hover:bg-white/10'
                   }`}
+                  style={selectedSeed === room.seedHex ? { backgroundColor: 'rgba(65, 255, 0, 0.2)' } : undefined}
                 >
                   <div className="font-semibold">{room.name}</div>
                   <div className="text-xs text-white/60">{shorten(room.tableAddress)}</div>
@@ -824,11 +839,12 @@ export function ChatClient() {
                             {getInitials(bubbleName)}
                           </div>
                           <div
-                            className={`rounded-2xl border px-4 py-3 ${
+                            className="rounded-2xl border px-4 py-3 text-white"
+                            style={
                               isOwn
-                                ? 'bg-emerald-500/20 border-emerald-400/60 text-white'
-                                : 'bg-white/5 border-white/10 text-white'
-                            }`}
+                                ? { backgroundColor: 'rgba(65, 255, 0, 0.2)', borderColor: 'rgba(65, 255, 0, 0.6)' }
+                                : { backgroundColor: 'rgba(255, 255, 255, 0.05)', borderColor: 'rgba(255, 255, 255, 0.1)' }
+                            }
                           >
                             <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-wide text-white/70">
                               <span>{bubbleName}</span>
@@ -903,13 +919,26 @@ export function ChatClient() {
                     value={messageInput}
                     onChange={(event) => setMessageInput(event.target.value)}
                     placeholder="Type your message"
-                    className="flex-1 rounded bg-white/10 px-4 py-2 text-sm text-white placeholder-white/50 outline-none focus:ring-2 focus:ring-emerald-400"
+                    className="flex-1 rounded bg-white/10 px-4 py-2 text-sm text-white placeholder-white/50 outline-none focus:ring-2"
+                    style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
                     disabled={!canWrite}
                   />
                   <button
                     type="submit"
                     disabled={!canWrite || !messageInput.trim()}
-                    className="rounded bg-emerald-500 px-4 py-2 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
+                    className="rounded px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
+                    style={{
+                      backgroundColor: !canWrite || !messageInput.trim() ? undefined : 'rgb(65, 255, 0)',
+                      color: !canWrite || !messageInput.trim() ? undefined : 'rgb(0, 33, 0)',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (canWrite && messageInput.trim()) {
+                        e.currentTarget.style.opacity = '0.85';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.opacity = '1';
+                    }}
                   >
                     Send
                   </button>
