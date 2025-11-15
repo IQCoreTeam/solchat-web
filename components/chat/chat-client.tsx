@@ -661,7 +661,6 @@ export function ChatClient() {
       <header className="border-b-2 border-green-600 bg-black px-6 py-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-mono uppercase tracking-widest text-green-400">[ SOLCHAT ]</p>
             <h1 className="text-xl font-mono font-bold text-green-400">ON-CHAIN ROOMS</h1>
           </div>
 
@@ -674,34 +673,28 @@ export function ChatClient() {
                   </span>
                 </div>
               ) : (
-                <div className="text-xs text-white/70 space-y-1">
-                  <div
-                    className={
-                      userInitError
-                        ? 'text-red-300'
-                        : isUserInitializing
-                        ? 'text-yellow-300'
-                        : 'text-white/60'
-                    }
-                  >
-                    {rootStatus !== 'ready' && <div>{rootStatusText}</div>}
-                    <div>{userInitStatus}</div>
+                <div className="flex items-center gap-2 bg-black/60 border border-green-600/50 rounded px-3 py-1.5 shadow-lg shadow-green-600/10">
+                  <span className="text-xs font-mono text-green-400">
+                    {rootStatus !== 'ready' && <div>[{rootStatusText.toUpperCase()}]</div>}
+                    <div>[{userInitStatus.toUpperCase()}]</div>
                     {userInitError && (
                       <button
                         type="button"
                         onClick={retryUserInit}
-                        className="ml-2 underline text-white"
+                        className="ml-2 text-green-400 hover:text-green-300 font-mono"
                       >
-                        Retry
+                        [RETRY]
                       </button>
                     )}
-                  </div>
+                  </span>
                 </div>
               )}
             </div>
           ) : (
-            <div className="text-xs text-white/50">
-              Connect wallet to get started
+            <div className="flex items-center gap-2 bg-black/60 border border-green-600/50 rounded px-3 py-1.5 shadow-lg shadow-green-600/10">
+              <span className="text-xs font-mono text-green-400">
+                [CONNECT WALLET TO START]
+              </span>
             </div>
           )}
         </div>
@@ -793,15 +786,15 @@ export function ChatClient() {
                 {messagesLoading && (
                   <div className="flex flex-col items-center justify-center h-full">
                     <div className="relative">
-                      <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
-                      <div className="absolute inset-0 w-12 h-12 border-4 border-transparent border-r-emerald-400/40 rounded-full animate-spin" style={{ animationDuration: '1.5s', animationDirection: 'reverse' }}></div>
+                      <div className="w-12 h-12 border-4 rounded-full animate-spin" style={{ borderColor: 'rgba(65, 255, 0, 0.2)', borderTopColor: 'rgb(65, 255, 0)' }}></div>
+                      <div className="absolute inset-0 w-12 h-12 border-4 border-transparent rounded-full animate-spin" style={{ borderRightColor: 'rgba(65, 255, 0, 0.4)', animationDuration: '1.5s', animationDirection: 'reverse' }}></div>
                     </div>
                     <div className="mt-4 flex items-center gap-1">
-                      <span className="text-sm text-emerald-300 font-medium">Loading messages</span>
+                      <span className="text-sm font-mono" style={{ color: 'rgb(65, 255, 0)' }}>LOADING</span>
                       <span className="flex gap-0.5">
-                        <span className="w-1 h-1 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                        <span className="w-1 h-1 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                        <span className="w-1 h-1 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                        <span className="w-1 h-1 rounded-full animate-bounce" style={{ backgroundColor: 'rgb(65, 255, 0)', animationDelay: '0ms' }}></span>
+                        <span className="w-1 h-1 rounded-full animate-bounce" style={{ backgroundColor: 'rgb(65, 255, 0)', animationDelay: '150ms' }}></span>
+                        <span className="w-1 h-1 rounded-full animate-bounce" style={{ backgroundColor: 'rgb(65, 255, 0)', animationDelay: '300ms' }}></span>
                       </span>
                     </div>
                   </div>
