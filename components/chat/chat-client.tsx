@@ -717,55 +717,92 @@ export function ChatClient() {
   return (
     <div className="flex h-full flex-col bg-black/40 text-sm text-white">
       <header className="border-b-2 border-green-600 bg-black px-6 py-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-xl font-mono font-bold text-green-400">ON-CHAIN ROOMS</h1>
           </div>
 
           {wallet.publicKey ? (
-            <div className="flex flex-col gap-2">
+            <div className="flex w-full flex-col gap-3 text-right sm:w-[240px] sm:ml-auto sm:text-left">
               {isUserInitialized && rootStatus === 'ready' ? (
-                <div className="flex items-center gap-2 bg-black/60 border border-green-600/50 rounded px-3 py-1.5 shadow-lg shadow-green-600/10">
-                  <span className="text-xs font-mono text-green-400">
-                    [SECURELY CONNECTED]
-                  </span>
+                <div className="border-2 border-green-500 bg-black/70 px-4 py-3 font-mono text-xs text-green-200 w-full">
+                  <p className="text-green-300 text-sm uppercase">[STATUS: OK]</p>
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center gap-2 text-green-100">
+                      <span className="text-green-300">TXREF</span>
+                      <span className="text-[11px] text-green-400/70">ONLINE</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-green-100">
+                      <span className="text-green-300">ROOMS</span>
+                      <span className="text-[11px] text-green-400/70">SYNCED</span>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex justify-end sm:justify-start">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (disconnectingPrivy) return;
+                        setDisconnectingPrivy(true);
+                        try {
+                          await logout();
+                        } finally {
+                          setDisconnectingPrivy(false);
+                        }
+                      }}
+                      className="text-[11px] text-red-300 underline decoration-dotted underline-offset-2 transition hover:text-red-200 disabled:opacity-50"
+                      disabled={disconnectingPrivy}
+                    >
+                      {disconnectingPrivy ? 'Disconnecting…' : 'Disconnect'}
+                    </button>
+                  </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 bg-black/60 border border-green-600/50 rounded px-3 py-1.5 shadow-lg shadow-green-600/10">
-                  <span className="text-xs font-mono text-green-400">
-                    {rootStatus !== 'ready' && <div>[{rootStatusText.toUpperCase()}]</div>}
-                    <div>[{userInitStatus.toUpperCase()}]</div>
+                <div className="border-2 border-yellow-400 bg-black/70 px-4 py-3 font-mono text-xs text-yellow-100 w-full">
+                  <p className="text-yellow-200 text-sm tracking-[0.3em] uppercase">[STATUS: INIT]</p>
+                  <div className="mt-2 space-y-1">
+                    {rootStatus !== 'ready' && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-yellow-300">ROOT</span>
+                        <span className="text-[11px]">{rootStatusText.toUpperCase()}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <span className="text-yellow-300">USER</span>
+                      <span className="text-[11px]">{userInitStatus.toUpperCase()}</span>
+                    </div>
                     {userInitError && (
                       <button
                         type="button"
                         onClick={retryUserInit}
-                        className="ml-2 underline text-green-400 hover:text-green-300 font-mono"
+                        className="mt-1 text-[11px] text-yellow-100 underline decoration-dotted underline-offset-2 hover:text-yellow-200"
                       >
                         [RETRY]
                       </button>
                     )}
-                  </span>
+                    <p className="pt-2 text-[11px] text-yellow-200/70">
+                      complete setup to unlock realtime room updates
+                    </p>
+                  </div>
+                  <div className="mt-3 flex justify-end sm:justify-start">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (disconnectingPrivy) return;
+                        setDisconnectingPrivy(true);
+                        try {
+                          await logout();
+                        } finally {
+                          setDisconnectingPrivy(false);
+                        }
+                      }}
+                      className="text-[11px] text-red-300 underline decoration-dotted underline-offset-2 transition hover:text-red-200 disabled:opacity-50"
+                      disabled={disconnectingPrivy}
+                    >
+                      {disconnectingPrivy ? 'Disconnecting…' : 'Disconnect'}
+                    </button>
+                  </div>
                 </div>
               )}
-              <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/50">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (disconnectingPrivy) return;
-                    setDisconnectingPrivy(true);
-                    try {
-                      await logout();
-                    } finally {
-                      setDisconnectingPrivy(false);
-                    }
-                  }}
-                  className="text-red-300 underline disabled:opacity-50"
-                  disabled={disconnectingPrivy}
-                >
-                  {disconnectingPrivy ? 'Disconnecting…' : 'Disconnect Privy wallet'}
-                </button>
-                <span>Use this to create a fresh embedded wallet for testing.</span>
-              </div>
             </div>
           ) : (
             <div className="flex items-center gap-2 bg-black/60 border border-green-600/50 rounded px-3 py-1.5 shadow-lg shadow-green-600/10">

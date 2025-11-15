@@ -4,6 +4,8 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { useEffect, useState, useRef } from 'react';
 
+const PANEL_WIDTH_CLASS = 'w-full sm:w-[240px]';
+
 export function WalletButton() {
   const { wallet, publicKey, disconnect, connecting } = useWallet();
   const { setVisible } = useWalletModal();
@@ -50,7 +52,7 @@ export function WalletButton() {
 
   if (!mounted) {
     return (
-      <div className="bg-black border-2 border-green-600/50 text-green-400 font-mono text-sm px-4 py-2 opacity-50">
+      <div className={`bg-black border-2 border-green-600/50 text-green-400 font-mono text-sm px-4 py-2 opacity-50 ${PANEL_WIDTH_CLASS}`}>
         [LOADING...]
       </div>
     );
@@ -62,7 +64,7 @@ export function WalletButton() {
       <button
         onClick={() => setVisible(true)}
         disabled={connecting}
-        className="bg-black border-2 border-green-600 hover:border-green-400 text-green-400 font-mono text-sm px-4 py-2 transition-colors disabled:opacity-50"
+        className={`bg-black border-2 border-green-600 hover:border-green-400 text-green-400 font-mono text-sm px-4 py-2 transition-colors disabled:opacity-50 ${PANEL_WIDTH_CLASS}`}
       >
         {connecting ? '[CONNECTING...]' : '[CONNECT WALLET]'}
       </button>
@@ -73,10 +75,10 @@ export function WalletButton() {
   const shortAddress = `${publicKey.toBase58().slice(0, 4)}...${publicKey.toBase58().slice(-4)}`;
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <div className={`relative ${PANEL_WIDTH_CLASS}`} ref={dropdownRef}>
       <button
         onClick={() => setDropdownOpen(!dropdownOpen)}
-        className="bg-black border-2 border-green-600/50 hover:border-green-400 text-green-400 font-mono text-sm px-4 py-2 flex items-center gap-2 transition-colors"
+        className={`bg-black border-2 border-green-600/50 hover:border-green-400 text-green-400 font-mono text-sm px-4 py-2 flex items-center justify-between gap-2 transition-colors ${PANEL_WIDTH_CLASS}`}
       >
         <span>{shortAddress}</span>
         <svg
