@@ -22,7 +22,7 @@ import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 const ROOT_ID = configs.defaultRootId;
 const DECODER = new TextDecoder();
 const PRINTABLE_ASCII = /^[\x20-\x7E]+$/;
-const MESSAGE_COLUMNS = ['id', 'text', 'file', 'sender', 'displayName', 'avatarHue', 'timestamp', 'status'];
+const MESSAGE_COLUMNS = ['id', 'text', 'file', 'sender', 'displayName', 'avatarHue', 'timestamp', 'status', 'room'];
 
 type RoomMeta = {
   seedHex: string;
@@ -43,6 +43,7 @@ type MessageRow = {
   avatarHue?: number;
   timestamp?: number;
   status?: 'pending' | 'sent' | 'confirmed' | 'failed';
+  room?: string;
 };
 
 function bytesToHex(bytes: Uint8Array) {
@@ -101,6 +102,20 @@ function getInitials(name?: string) {
   return (words[0][0] + words[1][0]).toUpperCase();
 }
 
+function parseTxRefAccount(data: Buffer | Uint8Array | null): Row | null {
+  if (!data) return null;
+  const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
+  if (buffer.length < 12) return null;
+  const len = buffer.readUInt32LE(8);
+  if (len <= 0 || 12 + len > buffer.length) return null;
+  const payload = buffer.slice(12, 12 + len);
+  try {
+    return JSON.parse(payload.toString('utf8')) as Row;
+  } catch {
+    return null;
+  }
+}
+
 function rowToMessage(row: Row): MessageRow {
   const record = row ?? {};
   const idCandidate =
@@ -125,6 +140,7 @@ function rowToMessage(row: Row): MessageRow {
         : undefined,
     timestamp: record.timestamp != null ? Number(record.timestamp) : undefined,
     status: record.status ? (String(record.status) as MessageRow['status']) : 'confirmed',
+    room: record.room ? String(record.room) : undefined,
   };
 }
 
@@ -164,8 +180,11 @@ export function ChatClient() {
   const [copiedAddress, setCopiedAddress] = useState(false);
 
   const logSubscriptionsRef = useRef<number[]>([]);
+  const txRefSubscriptionsRef = useRef<Record<string, number>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const messagesRef = useRef<MessageRow[]>([]);
+  const selectedRoomRef = useRef<string | null>(null);
 
   const writerWallet = useMemo<WalletAdapterLike | null>(() => {
     if (!wallet.publicKey) return null;
@@ -195,6 +214,32 @@ export function ChatClient() {
       return tsA - tsB;
     });
   }, [messages, pendingMessages]);
+
+  const selectedRoom = useMemo(
+    () => rooms.find((room) => room.seedHex === selectedSeed) ?? null,
+    [rooms, selectedSeed]
+  );
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    selectedRoomRef.current = selectedRoom?.name ?? null;
+  }, [selectedRoom]);
+
+  const participantAddresses = useMemo(() => {
+    const set = new Set<string>();
+    if (viewerAddress) set.add(viewerAddress);
+    const collect = (message: MessageRow) => {
+      if (message.sender) {
+        set.add(message.sender);
+      }
+    };
+    messages.forEach(collect);
+    pendingMessages.forEach(collect);
+    return Array.from(set);
+  }, [messages, pendingMessages, viewerAddress]);
 
   const submitTransaction = useCallback(
     async (tx: Transaction) => {
@@ -358,11 +403,6 @@ export function ChatClient() {
     };
   }, [coder, connection, rootAccount, rootPubkey, selectedSeed]);
 
-  const selectedRoom = useMemo(
-    () => rooms.find((room) => room.seedHex === selectedSeed) ?? null,
-    [rooms, selectedSeed]
-  );
-
   const loadMessages = useCallback(
     async (room: RoomMeta, options?: { skipLoadingState?: boolean }) => {
       if (!options?.skipLoadingState) {
@@ -490,6 +530,88 @@ export function ChatClient() {
     };
   }, [connection, loadMessages, selectedRoom, wallet.publicKey]);
 
+  useEffect(() => {
+    const subscriptions = txRefSubscriptionsRef.current;
+    if (!selectedRoom) {
+      Object.values(subscriptions).forEach((subId) => {
+        connection.removeOnLogsListener(subId).catch(() => undefined);
+      });
+      txRefSubscriptionsRef.current = {};
+      return;
+    }
+
+    const desired = new Map<string, PublicKey>();
+    participantAddresses.forEach((address) => {
+      if (!address) return;
+      try {
+        if (wallet.publicKey && address === wallet.publicKey.toBase58()) {
+          desired.set(address, wallet.publicKey);
+        } else {
+          desired.set(address, new PublicKey(address));
+        }
+      } catch {
+        // ignore invalid addresses
+      }
+    });
+
+    Object.entries(subscriptions).forEach(([address, subId]) => {
+      if (!desired.has(address)) {
+        connection.removeOnLogsListener(subId).catch(() => undefined);
+        delete subscriptions[address];
+      }
+    });
+
+    desired.forEach((participantPk, address) => {
+      if (subscriptions[address]) return;
+      const txRefPk = pdaTxRef(participantPk);
+
+      const subscribe = async () => {
+        try {
+          const subId = await connection.onLogs(
+            txRefPk,
+            async () => {
+              try {
+                const info = await connection.getAccountInfo(txRefPk, { commitment: 'processed' });
+                if (!info) return;
+                const parsed = parseTxRefAccount(info.data);
+                if (!parsed) return;
+                const message = rowToMessage(parsed);
+                const activeRoom = selectedRoomRef.current;
+                if (!activeRoom || message.room !== activeRoom) {
+                  return;
+                }
+                message.status = 'pending';
+                setPendingMessages((prev) => {
+                  if (prev.some((m) => m.id === message.id)) return prev;
+                  if (messagesRef.current.some((m) => m.id === message.id)) return prev;
+                  return [...prev, message];
+                });
+              } catch (error) {
+                console.warn('Failed to process tx_ref update', error);
+              }
+            },
+            'processed'
+          );
+          subscriptions[address] = subId;
+        } catch (error) {
+          console.warn('Failed to subscribe to tx_ref', error);
+        }
+      };
+
+      subscribe();
+    });
+  }, [connection, participantAddresses, selectedRoom, wallet.publicKey]);
+
+  useEffect(() => {
+    return () => {
+      const subscriptions = txRefSubscriptionsRef.current;
+      Object.values(subscriptions).forEach((subId) => {
+        connection.removeOnLogsListener(subId).catch(() => undefined);
+      });
+      txRefSubscriptionsRef.current = {};
+    };
+  }, [connection]);
+
   const handleCreateRoom = useCallback(
     async (event: FormEvent) => {
       event.preventDefault();
@@ -559,6 +681,7 @@ export function ChatClient() {
         avatarHue,
         timestamp,
         status: 'pending',
+        room: selectedRoom.name,
       };
 
       // Clear input immediately and keep focus
@@ -578,6 +701,7 @@ export function ChatClient() {
           avatarHue,
           timestamp,
           status: 'sent',
+          room: selectedRoom.name,
         };
         const { tx } = await writeRowWeb(writerCtx, ROOT_ID, selectedRoom.name, JSON.stringify(payload));
         await submitTransaction(tx);
