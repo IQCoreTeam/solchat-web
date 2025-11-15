@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { WalletButton } from '@/components/ui/wallet-button';
 
@@ -17,8 +18,9 @@ export function Nav() {
         {/* Mobile layout */}
         <div className="flex flex-col gap-3 md:hidden">
           <div className="flex items-center justify-between">
-            <Link href="/" className="text-green-400 font-mono text-xl font-bold hover:text-green-300">
-              ✦ SOLCHAT
+            <Link href="/" className="flex items-center gap-2 text-green-400 font-mono text-xl font-bold hover:text-green-300">
+              <Image src="/iq_logo.svg" alt="IQ Labs" width={32} height={32} />
+              SOLCHAT
             </Link>
             <WalletButton />
           </div>
@@ -49,8 +51,9 @@ export function Nav() {
         {/* Desktop layout */}
         <div className="hidden md:flex items-center justify-between">
           <div className="flex items-center gap-8">
-            <Link href="/" className="text-green-400 font-mono text-2xl font-bold hover:text-green-300">
-              ✦ SOLCHAT
+            <Link href="/" className="flex items-center gap-3 text-green-400 font-mono text-2xl font-bold hover:text-green-300">
+              <Image src="/iq_logo.svg" alt="IQ Labs" width={40} height={40} />
+              SOLCHAT
             </Link>
 
             <div className="flex gap-4">
