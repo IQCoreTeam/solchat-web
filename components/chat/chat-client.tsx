@@ -181,6 +181,7 @@ export function ChatClient() {
   const [sendingMessage, setSendingMessage] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [disconnectingPrivy, setDisconnectingPrivy] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
 
   const logSubscriptionsRef = useRef<number[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -465,10 +466,10 @@ export function ChatClient() {
       };
 
       await register(tablePk, 'confirmed', () => {
-        loadMessages(selectedRoom);
+        loadMessages(selectedRoom, { skipLoadingState: true });
       });
       await register(instructionPk, 'confirmed', () => {
-        loadMessages(selectedRoom);
+        loadMessages(selectedRoom, { skipLoadingState: true });
       });
 
       logSubscriptionsRef.current = subscriptions;
@@ -639,7 +640,7 @@ export function ChatClient() {
         };
         const { tx } = await writeRowWeb(writerCtx, ROOT_ID, selectedRoom.name, JSON.stringify(payload));
         await submitTransaction(tx);
-        await loadMessages(selectedRoom);
+        await loadMessages(selectedRoom, { skipLoadingState: true });
       } catch (error) {
         setPendingMessages((prev) => prev.filter((msg) => msg.id !== tempMessage.id));
         setMessagesError((error as Error).message);
@@ -694,6 +695,16 @@ export function ChatClient() {
     }
   }, [wallet.publicKey]);
 
+  const handleCopySenderAddress = useCallback(async (address: string, messageId: string) => {
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopiedMessageId(messageId);
+      setTimeout(() => setCopiedMessageId(null), 2000);
+    } catch (error) {
+      console.error('Failed to copy sender address:', error);
+    }
+  }, []);
+
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
@@ -705,89 +716,35 @@ export function ChatClient() {
 
   return (
     <div className="flex h-full flex-col bg-black/40 text-sm text-white">
-      <header className="border-b border-white/10 px-6 py-4">
+      <header className="border-b-2 border-green-600 bg-black px-6 py-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-widest text-emerald-300">SOLCHAT</p>
-            <h1 className="text-2xl font-semibold">On-chain Rooms</h1>
+            <h1 className="text-xl font-mono font-bold text-green-400">ON-CHAIN ROOMS</h1>
           </div>
 
           {wallet.publicKey ? (
             <div className="flex flex-col gap-2">
               {isUserInitialized && rootStatus === 'ready' ? (
-                <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-4 py-2">
-                  <span className="text-xs font-medium text-emerald-300">
-                    Securely connected to IQ Labs
+                <div className="flex items-center gap-2 bg-black/60 border border-green-600/50 rounded px-3 py-1.5 shadow-lg shadow-green-600/10">
+                  <span className="text-xs font-mono text-green-400">
+                    [SECURELY CONNECTED]
                   </span>
-                  <div className="h-4 w-px bg-emerald-500/30"></div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-white/70 font-mono">
-                      {shorten(wallet.publicKey.toBase58(), 4)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleCopyAddress}
-                      className="group relative flex items-center justify-center w-6 h-6 rounded hover:bg-emerald-500/20 transition-colors"
-                      title="Copy wallet address"
-                    >
-                      <svg
-                        className={`w-3.5 h-3.5 transition-all duration-300 ${
-                          copiedAddress
-                            ? 'scale-0 opacity-0'
-                            : 'scale-100 opacity-100 text-white/70 group-hover:text-emerald-300'
-                        }`}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                        />
-                      </svg>
-                      <svg
-                        className={`absolute w-3.5 h-3.5 transition-all duration-300 text-emerald-400 ${
-                          copiedAddress ? 'scale-100 opacity-100' : 'scale-0 opacity-0'
-                        }`}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
-                    </button>
-                  </div>
                 </div>
               ) : (
-                <div className="text-xs text-white/70 space-y-1">
-                  <div
-                    className={
-                      userInitError
-                        ? 'text-red-300'
-                        : isUserInitializing
-                        ? 'text-yellow-300'
-                        : 'text-white/60'
-                    }
-                  >
-                    {rootStatus !== 'ready' && <div>{rootStatusText}</div>}
-                    <div>{userInitStatus}</div>
+                <div className="flex items-center gap-2 bg-black/60 border border-green-600/50 rounded px-3 py-1.5 shadow-lg shadow-green-600/10">
+                  <span className="text-xs font-mono text-green-400">
+                    {rootStatus !== 'ready' && <div>[{rootStatusText.toUpperCase()}]</div>}
+                    <div>[{userInitStatus.toUpperCase()}]</div>
                     {userInitError && (
                       <button
                         type="button"
-                        onClick={() => retryUserInit()}
-                        className="ml-2 underline text-white"
+                        onClick={retryUserInit}
+                        className="ml-2 underline text-green-400 hover:text-green-300 font-mono"
                       >
-                        Retry
+                        [RETRY]
                       </button>
                     )}
-                  </div>
+                  </span>
                 </div>
               )}
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/50">
@@ -811,8 +768,10 @@ export function ChatClient() {
               </div>
             </div>
           ) : (
-            <div className="text-xs text-white/50">
-              Connect wallet to get started
+            <div className="flex items-center gap-2 bg-black/60 border border-green-600/50 rounded px-3 py-1.5 shadow-lg shadow-green-600/10">
+              <span className="text-xs font-mono text-green-400">
+                [CONNECT WALLET TO START]
+              </span>
             </div>
           )}
         </div>
@@ -828,7 +787,8 @@ export function ChatClient() {
                 value={newRoomName}
                 onChange={(event) => setNewRoomName(event.target.value)}
                 placeholder="Room name"
-                className="w-full rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2 focus:ring-emerald-400"
+                className="w-full rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2"
+                style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
                 disabled={creatingRoom || !writerCtx}
               />
               <input
@@ -836,13 +796,26 @@ export function ChatClient() {
                 value={newRoomGateMint}
                 onChange={(event) => setNewRoomGateMint(event.target.value)}
                 placeholder="Gate mint (optional)"
-                className="w-full rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2 focus:ring-emerald-400"
+                className="w-full rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2"
+                style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
                 disabled={creatingRoom || !writerCtx}
               />
               <button
                 type="submit"
                 disabled={creatingRoom || !canWrite || !newRoomName.trim()}
-                className="w-full rounded bg-emerald-500 py-2 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
+                className="w-full rounded py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
+                style={{
+                  backgroundColor: creatingRoom || !canWrite || !newRoomName.trim() ? undefined : 'rgb(65, 255, 0)',
+                  color: creatingRoom || !canWrite || !newRoomName.trim() ? undefined : 'rgb(0, 33, 0)',
+                }}
+                onMouseEnter={(e) => {
+                  if (!creatingRoom && canWrite && newRoomName.trim()) {
+                    e.currentTarget.style.opacity = '0.85';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.opacity = '1';
+                }}
               >
                 {creatingRoom ? 'Creating…' : 'Create'}
               </button>
@@ -875,8 +848,9 @@ export function ChatClient() {
                   key={room.seedHex}
                   onClick={() => setSelectedSeed(room.seedHex)}
                   className={`w-full rounded px-3 py-2 text-left transition ${
-                    selectedSeed === room.seedHex ? 'bg-emerald-500/20 text-white' : 'bg-white/5 text-white/80 hover:bg-white/10'
+                    selectedSeed === room.seedHex ? 'text-white' : 'bg-white/5 text-white/80 hover:bg-white/10'
                   }`}
+                  style={selectedSeed === room.seedHex ? { backgroundColor: 'rgba(65, 255, 0, 0.2)' } : undefined}
                 >
                   <div className="font-semibold">{room.name}</div>
                   <div className="text-xs text-white/60">{shorten(room.tableAddress)}</div>
@@ -904,15 +878,15 @@ export function ChatClient() {
                 {messagesLoading && (
                   <div className="flex flex-col items-center justify-center h-full">
                     <div className="relative">
-                      <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
-                      <div className="absolute inset-0 w-12 h-12 border-4 border-transparent border-r-emerald-400/40 rounded-full animate-spin" style={{ animationDuration: '1.5s', animationDirection: 'reverse' }}></div>
+                      <div className="w-12 h-12 border-4 rounded-full animate-spin" style={{ borderColor: 'rgba(65, 255, 0, 0.2)', borderTopColor: 'rgb(65, 255, 0)' }}></div>
+                      <div className="absolute inset-0 w-12 h-12 border-4 border-transparent rounded-full animate-spin" style={{ borderRightColor: 'rgba(65, 255, 0, 0.4)', animationDuration: '1.5s', animationDirection: 'reverse' }}></div>
                     </div>
                     <div className="mt-4 flex items-center gap-1">
-                      <span className="text-sm text-emerald-300 font-medium">Loading messages</span>
+                      <span className="text-sm font-mono" style={{ color: 'rgb(65, 255, 0)' }}>LOADING</span>
                       <span className="flex gap-0.5">
-                        <span className="w-1 h-1 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                        <span className="w-1 h-1 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                        <span className="w-1 h-1 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                        <span className="w-1 h-1 rounded-full animate-bounce" style={{ backgroundColor: 'rgb(65, 255, 0)', animationDelay: '0ms' }}></span>
+                        <span className="w-1 h-1 rounded-full animate-bounce" style={{ backgroundColor: 'rgb(65, 255, 0)', animationDelay: '150ms' }}></span>
+                        <span className="w-1 h-1 rounded-full animate-bounce" style={{ backgroundColor: 'rgb(65, 255, 0)', animationDelay: '300ms' }}></span>
                       </span>
                     </div>
                   </div>
@@ -942,19 +916,62 @@ export function ChatClient() {
                             {getInitials(bubbleName)}
                           </div>
                           <div
-                            className={`rounded-2xl border px-4 py-3 ${
+                            className="rounded-2xl border px-4 py-3 text-white"
+                            style={
                               isOwn
-                                ? 'bg-emerald-500/20 border-emerald-400/60 text-white'
-                                : 'bg-white/5 border-white/10 text-white'
-                            }`}
+                                ? { backgroundColor: 'rgba(65, 255, 0, 0.2)', borderColor: 'rgba(65, 255, 0, 0.6)' }
+                                : { backgroundColor: 'rgba(255, 255, 255, 0.05)', borderColor: 'rgba(255, 255, 255, 0.1)' }
+                            }
                           >
                             <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-wide text-white/70">
                               <span>{bubbleName}</span>
+                              {message.sender && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopySenderAddress(message.sender!, message.id)}
+                                  className="group relative flex items-center justify-center w-4 h-4 hover:bg-white/10 transition-colors border border-white/10 rounded"
+                                  title="Copy wallet address"
+                                >
+                                  <svg
+                                    className={`w-2.5 h-2.5 transition-all duration-300 ${
+                                      copiedMessageId === message.id
+                                        ? 'scale-0 opacity-0'
+                                        : 'scale-100 opacity-100 text-white/50 group-hover:text-white/70'
+                                    }`}
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                    />
+                                  </svg>
+                                  <svg
+                                    className={`absolute w-2.5 h-2.5 transition-all duration-300 text-white/70 ${
+                                      copiedMessageId === message.id ? 'scale-100 opacity-100' : 'scale-0 opacity-0'
+                                    }`}
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M5 13l4 4L19 7"
+                                    />
+                                  </svg>
+                                </button>
+                              )}
                               <span className="text-white/40">· {formatTimestamp(message.timestamp)}</span>
                             </div>
                             <div className="text-sm leading-relaxed">{message.text || '[empty]'}</div>
-                            <div className="mt-2 flex items-center justify-between text-[11px] text-white/50">
+                            <div className="mt-2 flex items-center gap-2 text-[11px] text-white/50">
                               <span>#{message.id.slice(0, 6)}</span>
+                              <span>·</span>
                               <span>
                                 {isPending
                                   ? 'Processing…'
@@ -979,13 +996,26 @@ export function ChatClient() {
                     value={messageInput}
                     onChange={(event) => setMessageInput(event.target.value)}
                     placeholder="Type your message"
-                    className="flex-1 rounded bg-white/10 px-4 py-2 text-sm text-white placeholder-white/50 outline-none focus:ring-2 focus:ring-emerald-400"
+                    className="flex-1 rounded bg-white/10 px-4 py-2 text-sm text-white placeholder-white/50 outline-none focus:ring-2"
+                    style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
                     disabled={!canWrite}
                   />
                   <button
                     type="submit"
                     disabled={!canWrite || !messageInput.trim()}
-                    className="rounded bg-emerald-500 px-4 py-2 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
+                    className="rounded px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
+                    style={{
+                      backgroundColor: !canWrite || !messageInput.trim() ? undefined : 'rgb(65, 255, 0)',
+                      color: !canWrite || !messageInput.trim() ? undefined : 'rgb(0, 33, 0)',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (canWrite && messageInput.trim()) {
+                        e.currentTarget.style.opacity = '0.85';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.opacity = '1';
+                    }}
                   >
                     Send
                   </button>
