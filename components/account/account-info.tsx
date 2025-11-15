@@ -17,7 +17,7 @@ import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 export function AccountInfo() {
   const { connection } = useConnection(); // Use standard wallet adapter connection
   const wallet = useWallet(); // Use standard wallet adapter wallet
-  const { ready: privyReady, authenticated, login } = usePrivy();
+  const { ready: privyReady, authenticated, login, logout } = usePrivy();
   const privyWallet = usePrivyAppWallet();
   const hasPrivyWallet = useHasPrivyWallet();
 
@@ -26,6 +26,7 @@ export function AccountInfo() {
   const [sendingSOL, setSendingSOL] = useState(false);
   const [requestingAirdrop, setRequestingAirdrop] = useState(false);
   const [message, setMessage] = useState('');
+  const [disconnectingPrivy, setDisconnectingPrivy] = useState(false);
 
   const [cloakHistory, setCloakHistory] = useState<CloakTransferRecord[]>([]);
 
@@ -294,9 +295,27 @@ export function AccountInfo() {
       </div>
 
       <div className="bg-black border-2 border-green-600 p-6 mb-6">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <h3 className="text-green-400 font-mono text-xl">App Wallet (Private)</h3>
-          <div className="space-x-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {authenticated && (
+              <button
+                onClick={async () => {
+                  if (disconnectingPrivy) return;
+                  setDisconnectingPrivy(true);
+                  try {
+                    await logout();
+                    setMessage('Privy session disconnected. Create a new wallet to continue testing.');
+                  } finally {
+                    setDisconnectingPrivy(false);
+                  }
+                }}
+                disabled={disconnectingPrivy}
+                className="text-xs font-mono uppercase tracking-wide text-red-300 underline decoration-dotted underline-offset-2 disabled:opacity-60"
+              >
+                {disconnectingPrivy ? 'Disconnecting…' : 'Disconnect Privy'}
+              </button>
+            )}
             {privyWallet ? (
               <span className="bg-green-600 text-black font-mono px-3 py-1">
                 🔒 Privy Secured
