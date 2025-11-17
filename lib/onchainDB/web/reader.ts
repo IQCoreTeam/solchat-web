@@ -177,6 +177,13 @@ function decodeAllIxsFromTx(
 function tryParseJsonLoose(s: string): Row {
   if (!s) return {}
   let normalized = s.trim()
+  if (normalized) {
+    try {
+      return JSON.parse(normalized) as Row
+    } catch {
+      // continue with loose parsing
+    }
+  }
   if (!/^\s*\{/.test(normalized)) {
     return { value: normalized }
   }

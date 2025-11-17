@@ -24,6 +24,9 @@ const ROOT_ID = configs.defaultRootId;
 const DECODER = new TextDecoder();
 const PRINTABLE_ASCII = /^[\x20-\x7E]+$/;
 const MESSAGE_COLUMNS = ['id', 'text', 'file', 'sender', 'displayName', 'avatarHue', 'timestamp', 'status', 'room'];
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'];
+const VIDEO_EXTENSIONS = ['mp4', 'webm', 'ogg', 'mov', 'm4v'];
+const AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'm4a'];
 
 type RoomMeta = {
   seedHex: string;
@@ -101,6 +104,79 @@ function getInitials(name?: string) {
   if (words.length === 0) return name.slice(0, 1).toUpperCase();
   if (words.length === 1) return words[0].slice(0, 1).toUpperCase();
   return (words[0][0] + words[1][0]).toUpperCase();
+}
+
+function normalizeFileUrl(value?: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      return url.toString();
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+type AttachmentType = 'image' | 'video' | 'audio' | 'other';
+
+function detectAttachmentType(url: string): AttachmentType {
+  try {
+    const { pathname } = new URL(url);
+    const ext = pathname.split('.').pop()?.toLowerCase() ?? '';
+    if (IMAGE_EXTENSIONS.includes(ext)) return 'image';
+    if (VIDEO_EXTENSIONS.includes(ext)) return 'video';
+    if (AUDIO_EXTENSIONS.includes(ext)) return 'audio';
+  } catch {
+    // ignore
+  }
+  return 'other';
+}
+
+function AttachmentPreview({ url }: { url: string }) {
+  const type = detectAttachmentType(url);
+  if (type === 'image') {
+    return (
+      <img
+        src={url}
+        alt="Attachment"
+        className="max-h-64 w-full rounded border border-white/10 object-contain"
+        loading="lazy"
+      />
+    );
+  }
+  if (type === 'video') {
+    return (
+      <video controls src={url} className="max-h-64 w-full rounded border border-white/10">
+        Your browser does not support the video tag.
+      </video>
+    );
+  }
+  if (type === 'audio') {
+    return (
+      <audio controls src={url} className="w-full">
+        Your browser does not support the audio element.
+      </audio>
+    );
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-2 text-green-300 underline decoration-dotted underline-offset-2"
+    >
+      Open attachment
+      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 13v6a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2h6" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 3h6v6" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14L21 3" />
+      </svg>
+    </a>
+  );
 }
 
 function parseTxRefAccount(data: Buffer | Uint8Array | null): Row | null {
@@ -182,6 +258,10 @@ export function ChatClient() {
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [disconnectingPrivy, setDisconnectingPrivy] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [expandedAttachments, setExpandedAttachments] = useState<Record<string, boolean>>({});
+  const [showAttachmentInput, setShowAttachmentInput] = useState(false);
+  const [attachmentUrl, setAttachmentUrl] = useState('');
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
 
   const logSubscriptionsRef = useRef<number[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -211,7 +291,16 @@ export function ChatClient() {
   const canWrite = Boolean(writerCtx && isUserInitialized);
   const viewerAddress = wallet.publicKey?.toBase58() ?? '';
   const orderedMessages = useMemo(() => {
-    return [...messages, ...pendingMessages].sort((a, b) => {
+    const deduped: MessageRow[] = [];
+    const seen = new Set<string>();
+    const addMessage = (msg: MessageRow) => {
+      if (seen.has(msg.id)) return;
+      seen.add(msg.id);
+      deduped.push(msg);
+    };
+    messages.forEach(addMessage);
+    pendingMessages.forEach(addMessage);
+    return deduped.sort((a, b) => {
       const tsA = a.timestamp ?? 0;
       const tsB = b.timestamp ?? 0;
       return tsA - tsB;
@@ -226,6 +315,13 @@ export function ChatClient() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    if (!pendingMessages.length) return;
+    setPendingMessages((prev) =>
+      prev.filter((pending) => !messages.some((message) => message.id === pending.id))
+    );
+  }, [messages, pendingMessages.length]);
 
   useEffect(() => {
     selectedRoomRef.current = selectedRoom?.name ?? null;
@@ -409,7 +505,7 @@ export function ChatClient() {
           maxTx: 50,
         });
 
-        const normalized = rows.map(rowToMessage).reverse();
+        const normalized = rows.map((row) => rowToMessage(row)).reverse();
         setMessages(normalized);
         setPendingMessages((prev) =>
           prev.filter((pending) => !normalized.some((message) => message.id === pending.id))
@@ -508,6 +604,9 @@ export function ChatClient() {
               if (!activeRoom || message.room !== activeRoom) {
                 return;
               }
+              if (message.file) {
+                return;
+              }
               message.status = 'pending';
               setPendingMessages((prev) => {
                 if (prev.some((m) => m.id === message.id)) return prev;
@@ -595,7 +694,14 @@ export function ChatClient() {
       event.preventDefault();
       if (!selectedRoom || !writerCtx || !isUserInitialized) return;
       const text = messageInput.trim();
-      if (!text) return;
+      const attachment = attachmentUrl.trim();
+      const normalizedAttachment = attachment ? normalizeFileUrl(attachment) : null;
+      if (attachment && !normalizedAttachment) {
+        setAttachmentError('Attachment must be a valid https:// URL');
+        return;
+      }
+      if (!text && !normalizedAttachment) return;
+      setAttachmentError(null);
 
       const messageId =
         typeof crypto !== 'undefined' && crypto.randomUUID
@@ -609,7 +715,7 @@ export function ChatClient() {
       const tempMessage: MessageRow = {
         id: messageId,
         text,
-        file: '',
+        file: normalizedAttachment ?? '',
         signature: 'pending',
         sender: senderAddress,
         displayName,
@@ -621,6 +727,8 @@ export function ChatClient() {
 
       // Clear input immediately and keep focus
       setMessageInput('');
+      setAttachmentUrl('');
+      setShowAttachmentInput(false);
       inputRef.current?.focus();
 
       setSendingMessage(true);
@@ -630,7 +738,7 @@ export function ChatClient() {
         const payload = {
           id: messageId,
           text,
-          file: '',
+          file: normalizedAttachment ?? '',
           sender: senderAddress,
           displayName: senderAddress ? shorten(senderAddress, 6) : 'Anonymous',
           avatarHue,
@@ -639,7 +747,7 @@ export function ChatClient() {
           room: selectedRoom.name,
         };
         const { tx } = await writeRowWeb(writerCtx, ROOT_ID, selectedRoom.name, JSON.stringify(payload));
-        await submitTransaction(tx);
+        const signature = await submitTransaction(tx);
         await loadMessages(selectedRoom, { skipLoadingState: true });
       } catch (error) {
         setPendingMessages((prev) => prev.filter((msg) => msg.id !== tempMessage.id));
@@ -648,7 +756,7 @@ export function ChatClient() {
         setSendingMessage(false);
       }
     },
-    [isUserInitialized, loadMessages, messageInput, selectedRoom, submitTransaction, writerCtx]
+    [attachmentUrl, connection, isUserInitialized, loadMessages, selectedRoom, submitTransaction, writerCtx, messageInput]
   );
 
   const rootStatusText = useMemo(() => {
@@ -683,6 +791,8 @@ export function ChatClient() {
     }
     return 'Account ready.';
   }, [isUserInitialized, isUserInitializing, userInitError, wallet.publicKey]);
+  const canSubmitMessage = messageInput.trim().length > 0 || attachmentUrl.trim().length > 0;
+  const sendDisabled = !canWrite || !canSubmitMessage || sendingMessage;
 
   const handleCopyAddress = useCallback(async () => {
     if (!wallet.publicKey) return;
@@ -703,6 +813,13 @@ export function ChatClient() {
     } catch (error) {
       console.error('Failed to copy sender address:', error);
     }
+  }, []);
+
+  const toggleAttachment = useCallback((messageId: string) => {
+    setExpandedAttachments((prev) => ({
+      ...prev,
+      [messageId]: !prev[messageId],
+    }));
   }, []);
 
   const scrollToBottom = useCallback(() => {
@@ -727,7 +844,6 @@ export function ChatClient() {
               {isUserInitialized && rootStatus === 'ready' ? (
                 <div className="border-2 border-green-500 bg-black/70 px-4 py-3 font-mono text-xs text-green-200 w-full">
                   <p className="text-green-300 text-sm uppercase">[STATUS: OK]</p>
-                  <div className="mt-2 space-y-1">
                     <div className="flex items-center gap-2 text-green-100">
                       <span className="text-green-300">TXREF</span>
                       <span className="text-[11px] text-green-400/70">ONLINE</span>
@@ -736,7 +852,6 @@ export function ChatClient() {
                       <span className="text-green-300">ROOMS</span>
                       <span className="text-[11px] text-green-400/70">SYNCED</span>
                     </div>
-                  </div>
                   <div className="mt-3 flex justify-end sm:justify-start">
                     <button
                       type="button"
@@ -938,6 +1053,8 @@ export function ChatClient() {
                     const bubbleName = isOwn ? 'You' : message.displayName || (message.sender ? shorten(message.sender) : 'Unknown');
                     const avatarHue = message.avatarHue ?? deriveAvatarHue(message.sender || bubbleName);
                     const isPending = message.status === 'pending';
+                    const fileUrl = normalizeFileUrl(message.file);
+                    const isAttachmentOpen = fileUrl ? !!expandedAttachments[message.id] : false;
                     const avatarStyle = { backgroundColor: `hsl(${avatarHue}, 65%, 48%)` };
                     return (
                       <div key={message.id} className={`flex w-full ${isOwn ? 'justify-end' : 'justify-start'}`}>
@@ -1006,6 +1123,22 @@ export function ChatClient() {
                               <span className="text-white/40">· {formatTimestamp(message.timestamp)}</span>
                             </div>
                             <div className="text-sm leading-relaxed">{message.text || '[empty]'}</div>
+                            {fileUrl && (
+                              <div className="mt-3 space-y-2 text-left">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleAttachment(message.id)}
+                                  className="text-[11px] font-mono uppercase tracking-wide text-green-300 underline decoration-dotted underline-offset-2 hover:text-green-200"
+                                >
+                                  {isAttachmentOpen ? 'Hide attachment' : 'Load attachment'}
+                                </button>
+                                {isAttachmentOpen && (
+                                  <div className="rounded-xl border border-white/10 bg-black/30 p-2">
+                                    <AttachmentPreview url={fileUrl} />
+                                  </div>
+                                )}
+                              </div>
+                            )}
                             <div className="mt-2 flex items-center gap-2 text-[11px] text-white/50">
                               <span>#{message.id.slice(0, 6)}</span>
                               <span>·</span>
@@ -1026,36 +1159,85 @@ export function ChatClient() {
                 </div>
               </div>
               <form onSubmit={handleSendMessage} className="border-t border-white/10 bg-black/40 px-6 py-4">
-                <div className="flex gap-3">
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={messageInput}
-                    onChange={(event) => setMessageInput(event.target.value)}
-                    placeholder="Type your message"
-                    className="flex-1 rounded bg-white/10 px-4 py-2 text-sm text-white placeholder-white/50 outline-none focus:ring-2"
-                    style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
-                    disabled={!canWrite}
-                  />
-                  <button
-                    type="submit"
-                    disabled={!canWrite || !messageInput.trim()}
-                    className="rounded px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
-                    style={{
-                      backgroundColor: !canWrite || !messageInput.trim() ? undefined : 'rgb(65, 255, 0)',
-                      color: !canWrite || !messageInput.trim() ? undefined : 'rgb(0, 33, 0)',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (canWrite && messageInput.trim()) {
-                        e.currentTarget.style.opacity = '0.85';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.opacity = '1';
-                    }}
-                  >
-                    Send
-                  </button>
+                <div className="flex flex-col gap-3">
+                  <div className="flex gap-3">
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      value={messageInput}
+                      onChange={(event) => setMessageInput(event.target.value)}
+                      placeholder="Type your message"
+                      className="flex-1 rounded bg-white/10 px-4 py-2 text-sm text-white placeholder-white/50 outline-none focus:ring-2"
+                      style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
+                      disabled={!canWrite}
+                    />
+                    <button
+                      type="submit"
+                      disabled={sendDisabled}
+                      className="rounded px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
+                      style={{
+                        backgroundColor: sendDisabled ? undefined : 'rgb(65, 255, 0)',
+                        color: sendDisabled ? undefined : 'rgb(0, 33, 0)',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!sendDisabled) {
+                          e.currentTarget.style.opacity = '0.85';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.opacity = '1';
+                      }}
+                    >
+                      {sendingMessage ? 'Sending…' : 'Send'}
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between text-xs text-white/60">
+                    <button
+                      type="button"
+                      onClick={() => setShowAttachmentInput((prev) => !prev)}
+                      className="font-mono uppercase tracking-wide text-green-300 underline decoration-dotted underline-offset-2 hover:text-green-200"
+                      disabled={!canWrite}
+                    >
+                      {showAttachmentInput ? '[HIDE ATTACHMENT]' : '[ADD ATTACHMENT]'}
+                    </button>
+                    {attachmentUrl.trim() && !attachmentError && (
+                      <span className="text-green-300">Attached: {shorten(attachmentUrl.trim(), 6)}</span>
+                    )}
+                  </div>
+                  {showAttachmentInput && (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex gap-2">
+                        <input
+                          type="url"
+                          value={attachmentUrl}
+                          onChange={(event) => {
+                            setAttachmentUrl(event.target.value);
+                            setAttachmentError(null);
+                          }}
+                          placeholder="https://example.com/asset.png"
+                          className="flex-1 rounded bg-white/5 px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2"
+                          style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
+                          disabled={!canWrite}
+                        />
+                        {attachmentUrl && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAttachmentUrl('');
+                              setAttachmentError(null);
+                            }}
+                            className="rounded border border-white/20 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:border-white/40"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-white/40">
+                        Paste a publicly accessible https:// link to media or files. Recipients load attachments on demand.
+                      </p>
+                    </div>
+                  )}
+                  {attachmentError && <p className="text-xs text-red-400">{attachmentError}</p>}
                 </div>
                 {!writerCtx && (
                   <p className="mt-2 text-xs text-orange-300">Connect your wallet to send messages.</p>

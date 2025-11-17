@@ -29,9 +29,7 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
         logo: 'https://iqlabs.dev/assets/iq_logo.svg',
         walletChainType: 'solana-only',
       },
-      // Prefer email/SMS for Privy authentication (embedded wallet creation)
-      // Users should connect their main wallet through the standard wallet adapter first
-      // But wallet login is available as a secondary option
+      // privy init
       loginMethods: ['email', 'sms', 'wallet'],
         fundingMethodConfig: {
           moonpay: {
