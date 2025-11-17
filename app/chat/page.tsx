@@ -1,4 +1,5 @@
 import { Nav } from '@/components/layout/nav';
+import { Footer } from '@/components/layout/footer';
 import { ChatClient } from '@/components/chat/chat-client';
 
 export default function ChatPage() {
@@ -10,6 +11,7 @@ export default function ChatPage() {
           <ChatClient />
         </div>
       </main>
+      <Footer />
     </div>
   );
 }
