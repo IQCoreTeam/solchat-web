@@ -7,6 +7,13 @@ import { WalletButton } from '@/components/ui/wallet-button';
 import { Button } from 'react95';
 import styled from 'styled-components';
 
+const LogoText = styled.span`
+  font-family: 'MS Sans Serif', 'Microsoft Sans Serif', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+  text-shadow: 2px 2px 0px rgba(0, 0, 0, 0.3);
+`;
+
 const StyledButton = styled(Button)`
   font-family: 'Courier New', monospace;
   background-color: black;
@@ -27,6 +34,7 @@ const StyledButton = styled(Button)`
 
 export function Nav() {
   const pathname = usePathname();
+  const isHomePage = pathname === '/';
 
   const isActive = (path: string) => {
     return pathname === path;
@@ -34,18 +42,16 @@ export function Nav() {
 
   return (
     <nav className="bg-black border-b-2 border-green-600 p-3 md:p-4">
-      <div className="max-w-7xl mx-auto">
-        {/* Mobile layout */}
-        <div className="flex flex-col gap-3 md:hidden">
-          <div className="flex items-center justify-between gap-3">
-            <Link href="/" className="flex items-center gap-2 text-green-400 font-mono text-xl font-bold">
-              <Image src="/iq_logo.svg" alt="IQ Labs" width={32} height={32} />
-              SOLCHAT
-            </Link>
-            <div style={{ marginLeft: 'auto' }}>
-              <WalletButton />
-            </div>
-          </div>
+      {/* Mobile layout */}
+      <div className="flex flex-col gap-3 md:hidden">
+        <div className="flex items-center justify-between gap-3">
+          <Link href="/" className="flex items-center gap-2 text-green-400 text-xl font-bold">
+            <Image src="/iq_logo.svg" alt="IQ Labs" width={32} height={32} />
+            <LogoText>SOLCHAT</LogoText>
+          </Link>
+          <WalletButton />
+        </div>
+        {!isHomePage && (
           <div className="flex gap-2">
             <Link href="/chat" style={{ flex: 1 }}>
               <StyledButton
@@ -66,16 +72,18 @@ export function Nav() {
               </StyledButton>
             </Link>
           </div>
-        </div>
+        )}
+      </div>
 
-        {/* Desktop layout */}
-        <div className="hidden md:flex items-center justify-between gap-4">
-          <div className="flex items-center gap-8">
-            <Link href="/" className="flex items-center gap-3 text-green-400 font-mono text-2xl font-bold">
-              <Image src="/iq_logo.svg" alt="IQ Labs" width={40} height={40} />
-              SOLCHAT
-            </Link>
+      {/* Desktop layout */}
+      <div className="hidden md:flex items-center justify-between gap-4 w-full">
+        <div className="flex items-center gap-8">
+          <Link href="/" className="flex items-center gap-3 text-green-400 text-2xl font-bold">
+            <Image src="/iq_logo.svg" alt="IQ Labs" width={40} height={40} />
+            <LogoText>SOLCHAT</LogoText>
+          </Link>
 
+          {!isHomePage && (
             <div className="flex gap-4">
               <Link href="/chat">
                 <StyledButton
@@ -97,12 +105,10 @@ export function Nav() {
                 </StyledButton>
               </Link>
             </div>
-          </div>
-
-          <div style={{ marginLeft: 'auto' }}>
-            <WalletButton />
-          </div>
+          )}
         </div>
+
+        <WalletButton />
       </div>
     </nav>
   );

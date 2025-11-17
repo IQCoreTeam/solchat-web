@@ -3,13 +3,14 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { Nav } from '@/components/layout/nav';
+import { Footer } from '@/components/layout/footer';
 import { ThemeProvider } from 'styled-components';
 import { Button } from 'react95';
 import matrix from 'react95/dist/themes/matrix';
 
 export default function Home() {
   return (
-    <div className="h-screen overflow-hidden flex flex-col" style={{ background: 'rgb(0, 33, 0)' }}>
+    <div className="min-h-screen flex flex-col" style={{ background: 'rgb(0, 33, 0)' }}>
       <Nav />
 
       <main className="flex-1 flex items-center justify-center p-8">
@@ -60,6 +61,8 @@ export default function Home() {
           </ThemeProvider>
         </div>
       </main>
+
+      <Footer />
     </div>
   );
 }
