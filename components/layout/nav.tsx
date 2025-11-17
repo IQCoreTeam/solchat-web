@@ -7,11 +7,37 @@ import { WalletButton } from '@/components/ui/wallet-button';
 import { Button } from 'react95';
 import styled from 'styled-components';
 
-const LogoText = styled.span`
+const LogoText = styled.span.attrs({ title: 'SOLCHAT' })`
   font-family: 'MS Sans Serif', 'Microsoft Sans Serif', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: #333333;
+  -webkit-text-fill-color: transparent;
+  position: relative;
+  display: inline-block;
   font-weight: bold;
   letter-spacing: 0.05em;
-  text-shadow: 2px 2px 0px rgba(0, 0, 0, 0.3);
+  font-size: inherit;
+
+  &::before {
+    content: attr(title);
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 2;
+    background: linear-gradient(to right, #10b981 0%, #22c55e 20%, #4ade80 40%, #86efac 60%, #4ade80 80%, #16a34a 100%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  &::after {
+    content: attr(title);
+    position: absolute;
+    left: -4px;
+    bottom: -6px;
+    z-index: 1;
+    -webkit-text-fill-color: rgba(0, 100, 0, 0.4);
+    transform: skew(40deg, 0deg) scaleY(0.5);
+  }
 `;
 
 const StyledButton = styled(Button)`
