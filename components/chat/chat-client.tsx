@@ -262,6 +262,7 @@ export function ChatClient() {
   const [showAttachmentInput, setShowAttachmentInput] = useState(false);
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const logSubscriptionsRef = useRef<number[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -816,10 +817,39 @@ export function ChatClient() {
   }, []);
 
   const toggleAttachment = useCallback((messageId: string) => {
-    setExpandedAttachments((prev) => ({
-      ...prev,
-      [messageId]: !prev[messageId],
-    }));
+    setExpandedAttachments((prev) => {
+      const newState = {
+        ...prev,
+        [messageId]: !prev[messageId],
+      };
+
+      // Scroll to entire message bubble after a brief delay to allow rendering
+      if (newState[messageId]) {
+        setTimeout(() => {
+          const element = document.getElementById(`message-${messageId}`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          }
+        }, 100);
+      }
+
+      return newState;
+    });
+  }, []);
+
+  const handleDownloadAttachment = useCallback(async (url: string) => {
+    try {
+      // Use Next.js API proxy to bypass CORS
+      const proxyUrl = `/api/download?url=${encodeURIComponent(url)}`;
+      const link = document.createElement('a');
+      link.href = proxyUrl;
+      link.download = url.split('/').pop() || 'attachment';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Failed to download attachment:', error);
+    }
   }, []);
 
   const scrollToBottom = useCallback(() => {
@@ -831,16 +861,37 @@ export function ChatClient() {
     scrollToBottom();
   }, [messages, pendingMessages, scrollToBottom]);
 
+  // Auto-close sidebar on mobile when room is selected
+  useEffect(() => {
+    if (selectedSeed && isSidebarOpen) {
+      setIsSidebarOpen(false);
+    }
+  }, [selectedSeed]);
+
   return (
     <div className="flex h-full flex-col bg-black/40 text-sm text-white">
-      <header className="border-b-2 border-green-600 bg-black px-6 py-4">
-        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-mono font-bold text-green-400">ON-CHAIN ROOMS</h1>
+      <header className="border-b-2 border-green-600 bg-black px-3 py-3 md:px-6 md:py-4">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="md:hidden flex items-center justify-center w-9 h-9 rounded border-2 border-green-600 bg-black/50 text-green-400 hover:bg-green-600/10 transition-colors"
+              aria-label="Toggle sidebar"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {isSidebarOpen ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                )}
+              </svg>
+            </button>
+            <h1 className="text-lg md:text-xl font-mono font-bold text-green-400">ON-CHAIN ROOMS</h1>
           </div>
 
           {wallet.publicKey ? (
-            <div className="flex w-full flex-col gap-3 items-end sm:w-auto sm:ml-auto sm:items-start">
+            <div className="flex flex-col gap-2 items-end ml-auto">
               {isUserInitialized && rootStatus === 'ready' ? (
                 <div className="border-2 border-green-500 bg-black/70 px-3 py-2 font-mono text-xs text-green-200">
                   <span className="text-green-300 text-xs uppercase">STATUS: OK</span>
@@ -903,8 +954,36 @@ export function ChatClient() {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
-        <aside className="flex w-72 flex-col border-r border-white/10 bg-black/30">
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Mobile backdrop */}
+        {isSidebarOpen && (
+          <div
+            className="md:hidden fixed inset-0 bg-black/70 backdrop-blur-md z-40"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+        )}
+
+        {/* Sidebar */}
+        <aside className={`
+          flex w-72 flex-col border-r border-white/10 bg-black z-50
+          absolute md:relative inset-y-0 left-0
+          transform transition-transform duration-300 ease-in-out
+          ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+        `}>
+          {/* Mobile close button */}
+          <div className="md:hidden flex justify-start p-3 border-b border-white/10">
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(false)}
+              className="flex items-center justify-center w-9 h-9 rounded border-2 border-green-600 bg-black text-green-400 hover:bg-green-600/10 transition-colors"
+              aria-label="Close sidebar"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
           <div className="border-b border-white/10 px-4 py-3">
             <form onSubmit={handleCreateRoom} className="space-y-2">
               <div className="text-xs font-semibold uppercase tracking-wide text-white/70">Create room</div>
@@ -993,14 +1072,14 @@ export function ChatClient() {
             </div>
           ) : (
             <>
-              <div className="border-b border-white/10 px-6 py-4">
+              <div className="border-b border-white/10 px-3 py-3 md:px-6 md:py-4">
                 <div className="text-xs uppercase tracking-wide text-white/60">Room</div>
-                <h2 className="text-xl font-semibold">{selectedRoom.name}</h2>
+                <h2 className="text-lg md:text-xl font-semibold">{selectedRoom.name}</h2>
                 <p className="text-xs text-white/50">
                   Table: {shorten(selectedRoom.tableAddress)} · Instruction: {shorten(selectedRoom.instructionAddress)}
                 </p>
               </div>
-              <div className="flex-1 overflow-y-auto bg-black/20 px-6 py-4">
+              <div className="flex-1 overflow-y-auto bg-black/20 px-3 py-3 md:px-6 md:py-4">
                 {messagesLoading && (
                   <div className="flex flex-col items-center justify-center h-full">
                     <div className="relative">
@@ -1031,20 +1110,20 @@ export function ChatClient() {
                     const isAttachmentOpen = fileUrl ? !!expandedAttachments[message.id] : false;
                     const avatarStyle = { backgroundColor: `hsl(${avatarHue}, 65%, 48%)` };
                     return (
-                      <div key={message.id} className={`flex w-full ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                      <div key={message.id} id={`message-${message.id}`} className={`flex w-full ${isOwn ? 'justify-end' : 'justify-start'}`}>
                         <div
-                          className={`flex max-w-[80%] items-end gap-3 ${
+                          className={`flex max-w-[90%] md:max-w-[80%] items-end gap-2 md:gap-3 ${
                             isOwn ? 'flex-row-reverse text-right' : 'text-left'
                           }`}
                         >
                           <div
-                            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white shadow-lg"
+                            className="flex h-8 w-8 md:h-9 md:w-9 flex-shrink-0 items-center justify-center rounded-full text-xs md:text-sm font-semibold text-white shadow-lg"
                             style={avatarStyle}
                           >
                             {getInitials(bubbleName)}
                           </div>
                           <div
-                            className="rounded-2xl border px-4 py-3 text-white"
+                            className="rounded-2xl border px-3 py-2 md:px-4 md:py-3 text-white"
                             style={
                               isOwn
                                 ? { backgroundColor: 'rgba(65, 255, 0, 0.2)', borderColor: 'rgba(65, 255, 0, 0.6)' }
@@ -1099,16 +1178,36 @@ export function ChatClient() {
                             <div className="text-sm leading-relaxed">{message.text || '[empty]'}</div>
                             {fileUrl && (
                               <div className="mt-3 space-y-2 text-left">
-                                <button
-                                  type="button"
-                                  onClick={() => toggleAttachment(message.id)}
-                                  className="text-[11px] font-mono uppercase tracking-wide text-green-300 underline decoration-dotted underline-offset-2 hover:text-green-200"
-                                >
-                                  {isAttachmentOpen ? 'Hide attachment' : 'Load attachment'}
-                                </button>
+                                {!isAttachmentOpen && (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleAttachment(message.id)}
+                                    className="text-[11px] font-mono uppercase tracking-wide text-green-400 underline decoration-dotted underline-offset-2 hover:text-green-300"
+                                  >
+                                    Load attachment
+                                  </button>
+                                )}
                                 {isAttachmentOpen && (
-                                  <div className="rounded-xl border border-white/10 bg-black/30 p-2">
-                                    <AttachmentPreview url={fileUrl} />
+                                  <div id={`attachment-${message.id}`}>
+                                    <div className="rounded-xl border border-white/10 bg-black/30 p-2">
+                                      <AttachmentPreview url={fileUrl} />
+                                    </div>
+                                    <div className="flex gap-4 items-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleAttachment(message.id)}
+                                        className="text-[11px] font-mono uppercase tracking-wide text-green-400 underline decoration-dotted underline-offset-2 hover:text-green-300"
+                                      >
+                                        Hide attachment
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDownloadAttachment(fileUrl)}
+                                        className="text-[11px] font-mono uppercase tracking-wide text-green-400 underline decoration-dotted underline-offset-2 hover:text-green-300"
+                                      >
+                                        Download
+                                      </button>
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -1132,9 +1231,9 @@ export function ChatClient() {
                   <div ref={messagesEndRef} />
                 </div>
               </div>
-              <form onSubmit={handleSendMessage} className="border-t border-white/10 bg-black/40 px-6 py-4">
-                <div className="flex flex-col gap-3">
-                  <div className="flex gap-3">
+              <form onSubmit={handleSendMessage} className="border-t border-white/10 bg-black/40 px-3 py-3 md:px-6 md:py-4">
+                <div className="flex flex-col gap-2 md:gap-3">
+                  <div className="flex gap-2 md:gap-3">
                     <input
                       ref={inputRef}
                       type="text"
@@ -1148,7 +1247,7 @@ export function ChatClient() {
                     <button
                       type="submit"
                       disabled={sendDisabled}
-                      className="rounded px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
+                      className="rounded px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60 whitespace-nowrap"
                       style={{
                         backgroundColor: sendDisabled ? undefined : 'rgb(65, 255, 0)',
                         color: sendDisabled ? undefined : 'rgb(0, 33, 0)',
@@ -1162,14 +1261,19 @@ export function ChatClient() {
                         e.currentTarget.style.opacity = '1';
                       }}
                     >
-                      {sendingMessage ? 'Sending…' : 'Send'}
+                      <span className="hidden sm:inline">{sendingMessage ? 'Sending…' : 'Send'}</span>
+                      <span className="sm:hidden">
+                        <svg className="w-5 h-5 rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                        </svg>
+                      </span>
                     </button>
                   </div>
                   <div className="flex flex-wrap items-center justify-between text-xs text-white/60">
                     <button
                       type="button"
                       onClick={() => setShowAttachmentInput((prev) => !prev)}
-                      className="font-mono uppercase tracking-wide text-green-300 underline decoration-dotted underline-offset-2 hover:text-green-200"
+                      className="font-mono uppercase tracking-wide text-green-400 underline decoration-dotted underline-offset-2 hover:text-green-300"
                       disabled={!canWrite}
                     >
                       {showAttachmentInput ? '[HIDE ATTACHMENT]' : '[ADD ATTACHMENT]'}
