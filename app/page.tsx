@@ -1,6 +1,11 @@
+'use client';
+
 import Link from 'next/link';
 import Image from 'next/image';
 import { Nav } from '@/components/layout/nav';
+import { ThemeProvider } from 'styled-components';
+import { Button } from 'react95';
+import matrix from 'react95/dist/themes/matrix';
 
 export default function Home() {
   return (
@@ -23,39 +28,36 @@ export default function Home() {
             />
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <Link
-            href="/chat"
-            className="inline-flex items-center justify-center gap-2 px-12 py-4 font-bold text-xl rounded-none m-0 cursor-pointer transition-all hover:opacity-90 active:scale-95"
-            style={{
-              textShadow: 'rgb(65, 255, 0) 0px 0px 50px, rgb(0, 255, 34) 0px 0px 10px',
-              fontFamily: 'monospace',
-              backgroundColor: 'rgb(65, 255, 0)',
-              color: 'rgb(0, 33, 0)',
-              border: '2px solid rgb(65, 255, 0)',
-              textDecoration: 'none',
-            }}
-          >
-            <span className="flex items-center gap-2">
-              &gt; [CHAT]
-            </span>
-          </Link>
+          <ThemeProvider theme={matrix}>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <Link href="/chat" passHref legacyBehavior>
+                <Button
+                  as="a"
+                  primary
+                  size="lg"
+                  className="inline-flex items-center justify-center gap-2 px-12 py-4 font-bold text-xl m-0 cursor-pointer transition-all hover:opacity-90 active:scale-95"
+                  style={{
+                    fontFamily: 'monospace',
+                  }}
+                >
+                  <span className="flex items-center gap-2">&gt; [CHAT]</span>
+                </Button>
+              </Link>
 
-          <Link
-            href="/account"
-            className="inline-flex items-center justify-center gap-2 px-8 py-3 text-lg rounded-none cursor-pointer transition-all hover:bg-[rgba(65,255,0,0.1)] active:scale-95"
-            style={{
-              borderColor: 'rgb(65, 255, 0)',
-              color: 'rgb(65, 255, 0)',
-              fontFamily: 'monospace',
-              backgroundColor: 'transparent',
-              border: '2px solid rgb(65, 255, 0)',
-              textDecoration: 'none',
-            }}
-          >
-            &gt; [ACCOUNT]
-          </Link>
-        </div>
+              <Link href="/account" passHref legacyBehavior>
+                <Button
+                  as="a"
+                  size="md"
+                  className="inline-flex items-center justify-center gap-2 px-8 py-3 text-lg cursor-pointer transition-all hover:opacity-90 active:scale-95"
+                  style={{
+                    fontFamily: 'monospace',
+                  }}
+                >
+                  &gt; [ACCOUNT]
+                </Button>
+              </Link>
+            </div>
+          </ThemeProvider>
         </div>
       </main>
     </div>

@@ -3,8 +3,93 @@
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { useEffect, useState, useRef } from 'react';
+import { Button, Window, WindowHeader, WindowContent } from 'react95';
+import styled from 'styled-components';
 
-const PANEL_WIDTH_CLASS = 'w-full sm:w-[240px]';
+const PANEL_WIDTH_CLASS = 'w-full sm:w-[180px]';
+
+const StyledButton = styled(Button)`
+  font-family: 'Courier New', monospace;
+  background-color: black;
+  color: #4ade80;
+  border: 2px solid #16a34a;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  width: auto;
+  min-width: 140px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  &:hover {
+    border-color: #4ade80;
+  }
+
+  &:active {
+    padding: 0.5rem 1rem;
+  }
+`;
+
+const DropdownWindow = styled(Window)`
+  position: absolute;
+  right: 0;
+  margin-top: 0.5rem;
+  width: 240px;
+  z-index: 50;
+  box-shadow: 0 10px 15px -3px rgba(74, 222, 128, 0.2);
+`;
+
+const StyledWindowHeader = styled(WindowHeader)`
+  background: linear-gradient(to right, #16a34a, #4ade80);
+  color: black;
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  font-weight: bold;
+`;
+
+const StyledWindowContent = styled(WindowContent)`
+  background-color: #c0c0c0;
+  padding: 0.5rem;
+`;
+
+const AddressBox = styled.div`
+  background-color: white;
+  border: 2px inset #808080;
+  padding: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-family: 'Courier New', monospace;
+`;
+
+const AddressLabel = styled.div`
+  font-size: 0.65rem;
+  color: #000;
+  font-weight: bold;
+  margin-bottom: 0.25rem;
+`;
+
+const AddressText = styled.div`
+  font-size: 0.75rem;
+  color: #000;
+  font-weight: bold;
+`;
+
+const StyledButton95 = styled(Button)<{ $variant?: 'danger' }>`
+  font-family: 'Courier New', monospace;
+  font-size: 0.875rem;
+  width: 100%;
+  margin-bottom: 0.5rem;
+  background-color: ${props => props.$variant === 'danger' ? '#dc2626' : '#c0c0c0'};
+  color: ${props => props.$variant === 'danger' ? 'white' : 'black'};
+  font-weight: bold;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+
+  &:active {
+    background-color: ${props => props.$variant === 'danger' ? '#b91c1c' : '#a0a0a0'};
+  }
+`;
 
 export function WalletButton() {
   const { wallet, publicKey, disconnect, connecting } = useWallet();
@@ -52,22 +137,22 @@ export function WalletButton() {
 
   if (!mounted) {
     return (
-      <div className={`bg-black border-2 border-green-600/50 text-green-400 font-mono text-sm px-4 py-2 opacity-50 ${PANEL_WIDTH_CLASS}`}>
+      <StyledButton disabled style={{ opacity: 0.5 }}>
         [LOADING...]
-      </div>
+      </StyledButton>
     );
   }
 
   // Not connected - show connect button
   if (!publicKey || !wallet) {
     return (
-      <button
+      <StyledButton
         onClick={() => setVisible(true)}
         disabled={connecting}
-        className={`bg-black border-2 border-green-600 hover:border-green-400 text-green-400 font-mono text-sm px-4 py-2 transition-colors disabled:opacity-50 ${PANEL_WIDTH_CLASS}`}
+        style={{ opacity: connecting ? 0.5 : 1 }}
       >
         {connecting ? '[CONNECTING...]' : '[CONNECT WALLET]'}
-      </button>
+      </StyledButton>
     );
   }
 
@@ -75,41 +160,40 @@ export function WalletButton() {
   const shortAddress = `${publicKey.toBase58().slice(0, 4)}...${publicKey.toBase58().slice(-4)}`;
 
   return (
-    <div className={`relative ${PANEL_WIDTH_CLASS}`} ref={dropdownRef}>
-      <button
-        onClick={() => setDropdownOpen(!dropdownOpen)}
-        className={`bg-black border-2 border-green-600/50 hover:border-green-400 text-green-400 font-mono text-sm px-4 py-2 flex items-center justify-between gap-2 transition-colors ${PANEL_WIDTH_CLASS}`}
-      >
+    <div style={{ position: 'relative', display: 'inline-block' }} ref={dropdownRef}>
+      <StyledButton onClick={() => setDropdownOpen(!dropdownOpen)}>
         <span>{shortAddress}</span>
         <svg
-          className={`w-4 h-4 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`}
+          style={{
+            width: '1rem',
+            height: '1rem',
+            transition: 'transform 0.2s',
+            transform: dropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)'
+          }}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
         >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
-      </button>
+      </StyledButton>
 
       {dropdownOpen && (
-        <div className="absolute right-0 mt-2 w-48 bg-black border-2 border-green-600 shadow-lg shadow-green-600/20 z-50">
-          <div className="p-2 border-b border-green-600/50">
-            <div className="text-xs font-mono text-green-400/70 mb-1">[WALLET ADDRESS]</div>
-            <div className="text-xs font-mono text-green-400">{shortAddress}</div>
-          </div>
-          <button
-            onClick={handleCopyAddress}
-            className="w-full text-left px-4 py-2 font-mono text-sm text-green-400 hover:bg-green-600/20 transition-colors border-b border-green-600/50"
-          >
-            {copied ? '[✓ COPIED]' : '[COPY ADDRESS]'}
-          </button>
-          <button
-            onClick={handleDisconnect}
-            className="w-full text-left px-4 py-2 font-mono text-sm text-red-400 hover:bg-red-600/20 transition-colors"
-          >
-            [DISCONNECT]
-          </button>
-        </div>
+        <DropdownWindow>
+          <StyledWindowHeader>[WALLET]</StyledWindowHeader>
+          <StyledWindowContent>
+            <AddressBox>
+              <AddressLabel>[ADDRESS]</AddressLabel>
+              <AddressText>{shortAddress}</AddressText>
+            </AddressBox>
+            <StyledButton95 onClick={handleCopyAddress}>
+              {copied ? '[✓ COPIED]' : '[COPY ADDRESS]'}
+            </StyledButton95>
+            <StyledButton95 $variant="danger" onClick={handleDisconnect}>
+              [DISCONNECT]
+            </StyledButton95>
+          </StyledWindowContent>
+        </DropdownWindow>
       )}
     </div>
   );
