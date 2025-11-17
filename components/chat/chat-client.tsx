@@ -1038,7 +1038,7 @@ export function ChatClient() {
                           }`}
                         >
                           <div
-                            className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold text-white shadow-lg"
+                            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white shadow-lg"
                             style={avatarStyle}
                           >
                             {getInitials(bubbleName)}
