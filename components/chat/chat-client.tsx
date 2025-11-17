@@ -840,36 +840,10 @@ export function ChatClient() {
           </div>
 
           {wallet.publicKey ? (
-            <div className="flex w-full flex-col gap-3 text-right sm:w-[240px] sm:ml-auto sm:text-left">
+            <div className="flex w-full flex-col gap-3 items-end sm:w-auto sm:ml-auto sm:items-start">
               {isUserInitialized && rootStatus === 'ready' ? (
-                <div className="border-2 border-green-500 bg-black/70 px-4 py-3 font-mono text-xs text-green-200 w-full">
-                  <p className="text-green-300 text-sm uppercase">[STATUS: OK]</p>
-                    <div className="flex items-center gap-2 text-green-100">
-                      <span className="text-green-300">TXREF</span>
-                      <span className="text-[11px] text-green-400/70">ONLINE</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-green-100">
-                      <span className="text-green-300">ROOMS</span>
-                      <span className="text-[11px] text-green-400/70">SYNCED</span>
-                    </div>
-                  <div className="mt-3 flex justify-end sm:justify-start">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (disconnectingPrivy) return;
-                        setDisconnectingPrivy(true);
-                        try {
-                          await logout();
-                        } finally {
-                          setDisconnectingPrivy(false);
-                        }
-                      }}
-                      className="text-[11px] text-red-300 underline decoration-dotted underline-offset-2 transition hover:text-red-200 disabled:opacity-50"
-                      disabled={disconnectingPrivy}
-                    >
-                      {disconnectingPrivy ? 'Disconnecting…' : 'Disconnect'}
-                    </button>
-                  </div>
+                <div className="border-2 border-green-500 bg-black/70 px-3 py-2 font-mono text-xs text-green-200">
+                  <span className="text-green-300 text-xs uppercase">STATUS: OK</span>
                 </div>
               ) : (
                 <div className="border-2 border-yellow-400 bg-black/70 px-4 py-3 font-mono text-xs text-yellow-100 w-full">
