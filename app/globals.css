@@ -1,51 +1,75 @@
 @import "tailwindcss";
 
 :root {
-    --background: #ffffff;
-    --foreground: #171717;
-
+    --background: #F2F3F7;
+    --foreground: #0A0A0F;
 
     /*
-     * Brand colors - IQ Labs Matrix Green
+     * Whisper Brand Colors - Encrypted Midnight Visual Identity
      *
-     * Usage:
-     * - In Tailwind classes: text-iq-green, bg-iq-green, border-iq-green
-     * - In inline styles: color: var(--iq-green) or rgb(var(--iq-green-rgb))
-     * - For rgba with opacity: rgba(var(--iq-green-rgb), 0.5)
-     *
-     * Example:
-     * <div className="text-iq-green">Text</div>
-     * <div style={{ color: 'var(--iq-green)' }}>Text</div>
-     * <div style={{ backgroundColor: 'rgba(var(--iq-green-rgb), 0.2)' }}>Text</div>
+     * Primary Colors
      */
-    --iq-green: #41FF00;
-    --iq-green-rgb: 65, 255, 0;
-    --iq-green-dark: #00FF22;
-    --iq-green-darker: #006400;
-    --brand-bg-dark: rgb(0, 33, 0);
+    --midnight-black: #0A0A0F;
+    --deep-night: #11121A;
+    --carbon-shadow: #1C1E27;
+
+    /*
+     * Accent Colors (Brand Signature)
+     */
+    --whisper-violet: #6C4DFF;
+    --encrypted-blue: #7A8CFF;
+    --cyber-aqua: #00E0E0;
+
+    --whisper-violet-rgb: 108, 77, 255;
+    --encrypted-blue-rgb: 122, 140, 255;
+    --cyber-aqua-rgb: 0, 224, 224;
+
+    /*
+     * Neutral Colors
+     */
+    --ghost-white: #F2F3F7;
+    --mist-grey: #9BA0AE;
+    --graphite: #2A2D36;
+
+    /*
+     * Semantic Colors
+     */
+    --success: #00C98D;
+    --error: #FF4D6C;
+    --warning: #FFD460;
+
+    /*
+     * UI Component Colors
+     */
+    --input-bg: #161820;
+    --card-bg: #11121A;
+    --border: #2A2D36;
 }
 
 @theme inline {
     --color-background: var(--background);
     --color-foreground: var(--foreground);
 
-    /* Brand green color palette */
-    --color-iq-green: var(--iq-green);
-    --color-iq-green-dark: var(--iq-green-dark);
-    --color-iq-green-darker: var(--iq-green-darker);
+    /* Whisper brand color palette */
+    --color-whisper-violet: var(--whisper-violet);
+    --color-encrypted-blue: var(--encrypted-blue);
+    --color-cyber-aqua: var(--cyber-aqua);
+    --color-midnight-black: var(--midnight-black);
+    --color-deep-night: var(--deep-night);
+    --color-ghost-white: var(--ghost-white);
 }
 
 @media (prefers-color-scheme: dark) {
     :root {
-        --background: #0a0a0a;
-        --foreground: #ededed;
+        --background: #0A0A0F;
+        --foreground: #F2F3F7;
     }
 }
 
 body {
     background: var(--background);
     color: var(--foreground);
-    font-family: var(--font-bitarray), 'MS Sans Serif', monospace, sans-serif;
+    font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 /* Custom scrollbar styling */
@@ -55,26 +79,26 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.3);
+    background: var(--carbon-shadow);
     border-radius: 6px;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(var(--iq-green-rgb), 0.3);
+    background: rgba(var(--whisper-violet-rgb), 0.4);
     border-radius: 6px;
-    border: 2px solid rgba(0, 0, 0, 0.3);
+    border: 2px solid var(--carbon-shadow);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(var(--iq-green-rgb), 0.5);
+    background: rgba(var(--whisper-violet-rgb), 0.6);
 }
 
 ::-webkit-scrollbar-thumb:active {
-    background: rgba(var(--iq-green-rgb), 0.7);
+    background: var(--whisper-violet);
 }
 
 /* Firefox scrollbar */
 * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(var(--iq-green-rgb), 0.3) rgba(0, 0, 0, 0.3);
+    scrollbar-color: rgba(var(--whisper-violet-rgb), 0.4) var(--carbon-shadow);
 }

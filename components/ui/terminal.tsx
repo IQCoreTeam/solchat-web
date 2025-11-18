@@ -20,7 +20,7 @@ export function Terminal({ lines, className = '' }: TerminalProps) {
   return (
     <div
       ref={terminalRef}
-      className={`bg-black text-green-400   text-sm p-4 overflow-y-auto border-2 border-green-600 ${className}`}
+      className={`bg-[#0A0A0F] text-[#7A8CFF]   text-sm p-4 overflow-y-auto border-2 border-[#6C4DFF] ${className}`}
 
     >
       {lines.map((line, index) => (

@@ -5,7 +5,7 @@ import { PrivyDebug } from '@/components/debug/privy-debug';
 
 export default function AccountPage() {
   return (
-    <div className="min-h-screen bg-black flex flex-col">
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#0A0A0F' }}>
       <Nav />
       <main className="flex-1 max-w-7xl mx-auto px-4 pt-4 w-full">
         <AccountClient />

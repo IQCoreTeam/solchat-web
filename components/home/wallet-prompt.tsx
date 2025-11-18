@@ -19,22 +19,22 @@ export function WalletPrompt() {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 bg-green-900/90 border-2 border-green-400 p-4 max-w-sm backdrop-blur-sm z-50">
+    <div className="fixed bottom-4 right-4 bg-[#1C1E27]/90 border-2 border-[#7A8CFF] p-4 max-w-sm backdrop-blur-sm z-50">
       <div className="flex items-start gap-3">
         <div className="flex-1">
-          <p className="text-green-400   text-sm mb-2">
+          <p className="text-[#7A8CFF]   text-sm mb-2">
             💡 <strong>Connect your wallet</strong> to start chatting
           </p>
           <button
             onClick={() => setVisible(true)}
-            className="bg-green-600 hover:bg-green-700 text-black   text-xs px-3 py-1.5 transition-colors"
+            className="bg-[#6C4DFF] hover:bg-[#5A3DE6] text-[#0A0A0F]   text-xs px-3 py-1.5 transition-colors"
           >
             Connect Wallet
           </button>
         </div>
         <button
           onClick={() => setDismissed(true)}
-          className="text-green-400 hover:text-green-300   text-lg leading-none"
+          className="text-[#7A8CFF] hover:text-[#00E0E0]   text-lg leading-none"
         >
           ×
         </button>

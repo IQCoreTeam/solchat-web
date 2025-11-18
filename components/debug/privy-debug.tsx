@@ -27,17 +27,17 @@ export function PrivyDebug() {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 bg-green-900 border border-green-600 p-3 rounded">
-      <p className="text-green-300   text-xs mb-2">
+    <div className="fixed bottom-4 right-4 bg-[#1C1E27] border border-[#6C4DFF] p-3 rounded">
+      <p className="text-[#00E0E0]   text-xs mb-2">
         ✓ Privy Ready
       </p>
-      <p className="text-green-400   text-xs">
+      <p className="text-[#7A8CFF]   text-xs">
         Auth: {authenticated ? '✓' : '✗'}
       </p>
       {!authenticated && (
         <button
           onClick={login}
-          className="mt-2 bg-green-600 text-black   text-xs px-2 py-1 hover:bg-green-500"
+          className="mt-2 bg-[#6C4DFF] text-[#0A0A0F]   text-xs px-2 py-1 hover:bg-[#7A8CFF]"
         >
           Test Login
         </button>

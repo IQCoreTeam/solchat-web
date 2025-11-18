@@ -1,49 +1,54 @@
 import type { Metadata } from "next";
-// import { Geist_Mono } from "next/font/google";
+import { Inter, Space_Grotesk } from "next/font/google";
 
 import "./globals.css";
 import { AppProviders } from "@/components/providers";
-import localFont from "next/font/local";
 
-const bitArrayA2 = localFont({
-    src: './fonts/bitArray-A2.ttf',
-    variable: "--font-bitarray",
+const inter = Inter({
+    subsets: ['latin'],
+    variable: "--font-inter",
     display: 'swap',
+    weight: ['300', '400', '500', '600', '700'],
 });
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://solchat.iqlabs.dev";
+const spaceGrotesk = Space_Grotesk({
+    subsets: ['latin'],
+    variable: "--font-space-grotesk",
+    display: 'swap',
+    weight: ['400', '500', '600', '700'],
+});
+
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://whisper.chat";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "SolChat by IQ Labs - Fully Decentralized On-Chain Chat on Solana",
-    template: "%s | SolChat",
+    default: "Whisper - Encrypted Messaging for People Who Care",
+    template: "%s | Whisper",
   },
   description:
-    "SolChat is a completely decentralized, censorship-resistant chat application built on Solana blockchain. Send on-chain messages with cryptographic security, no central servers, and full ownership of your data. Powered by IQ Labs.",
+    "Privacy isn't optional. Whisper is encrypted-by-default messaging for people who value their digital safety. No ads. No tracking. No compromises.",
   keywords: [
-    "Solana",
-    "blockchain",
-    "decentralized chat",
-    "Web3 messaging",
-    "on-chain chat",
-    "crypto messaging",
-    "dApp",
-    "IQ Labs",
-    "censorship-resistant",
-    "peer-to-peer chat",
-    "Solana dApp",
-    "decentralized application",
-    "blockchain messaging",
-    "Web3",
-    "cryptocurrency",
-    "smart contracts",
-    "Solana chat",
-    "trustless messaging",
+    "encrypted messaging",
+    "private chat",
+    "secure messaging",
+    "end-to-end encryption",
+    "privacy-first",
+    "encrypted chat app",
+    "secure communication",
+    "private messaging",
+    "whisper chat",
+    "encrypted conversations",
+    "privacy messaging",
+    "secure chat",
+    "encrypted app",
+    "privacy app",
+    "anonymous messaging",
+    "encrypted communication",
   ],
-  authors: [{ name: "IQ Labs", url: "https://iqlabs.io" }],
-  creator: "IQ Labs",
-  publisher: "IQ Labs",
+  authors: [{ name: "Whisper" }],
+  creator: "Whisper",
+  publisher: "Whisper",
   robots: {
     index: true,
     follow: true,
@@ -62,18 +67,18 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_US",
     url: siteUrl,
-    siteName: "SolChat",
-    title: "SolChat by IQ Labs - Fully Decentralized Messanging on Solana",
+    siteName: "Whisper",
+    title: "Whisper - Say Anything. Whisper Keeps It Safe.",
     description:
-      "Experience truly decentralized messaging on Solana. Every message is stored on-chain with full transparency and security. No servers, just pure blockchain communication.",
+      "Privacy isn't optional. Encrypted messaging for people who care. No ads. No tracking. No compromises. Your conversations belong to you.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "SolChat by IQ Labs - Decentralized On-Chain Chat",
+    title: "Whisper - Encrypted Messaging",
     description:
-      "Chat on Solana blockchain. Fully decentralized, messaging with cryptographic security.",
-    creator: "@iqlabs",
-    site: "@solchat",
+      "The quietest app in a loud world. Privacy-first encrypted messaging.",
+    creator: "@whisperapp",
+    site: "@whisperapp",
   },
   icons: {
     icon: [
@@ -88,19 +93,19 @@ export const metadata: Metadata = {
     ],
   },
   manifest: "/manifest.json",
-  applicationName: "SolChat",
+  applicationName: "Whisper",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "SolChat",
+    title: "Whisper",
   },
   formatDetection: {
     telephone: false,
   },
-  category: "technology",
-  classification: "Blockchain Application",
+  category: "social",
+  classification: "Encrypted Messaging Application",
   other: {
-    "theme-color": "#002100",
+    "theme-color": "#0A0A0F",
     "color-scheme": "dark",
   },
 };
@@ -113,9 +118,9 @@ export default function RootLayout({
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
-    name: "SolChat",
+    name: "Whisper",
     description:
-      "SolChat is a completely decentralized, chat application built on Solana blockchain. Send on-chain messages with cryptographic security, no central servers, and full ownership of your data.",
+      "Privacy isn't optional. Whisper is encrypted-by-default messaging for people who value their digital safety. No ads. No tracking. No compromises.",
     url: siteUrl,
     applicationCategory: "CommunicationApplication",
     operatingSystem: "Web",
@@ -126,8 +131,7 @@ export default function RootLayout({
     },
     creator: {
       "@type": "Organization",
-      name: "IQ Labs",
-      url: "https://iqlabs.io",
+      name: "Whisper",
     },
     screenshot: `${siteUrl}/og-image.svg`,
     softwareVersion: "1.0",
@@ -137,12 +141,12 @@ export default function RootLayout({
       ratingCount: "1",
     },
     featureList: [
-      "Decentralized messaging",
-      "On-chain data storage",
-      "Censorship-resistant",
-      "Solana blockchain integration",
-      "Wallet authentication",
-      "End-to-end security",
+      "End-to-end encryption",
+      "Private messaging",
+      "Secure communication",
+      "No ads or tracking",
+      "Privacy-first design",
+      "Encrypted conversations",
     ],
   };
 
@@ -154,7 +158,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
-      <body className={`${bitArrayA2.variable} antialiased bg-black text-green-400`}>
+      <body className={`${inter.variable} ${spaceGrotesk.variable} antialiased`} style={{ backgroundColor: 'var(--midnight-black)', color: 'var(--ghost-white)' }}>
         <AppProviders>{children}</AppProviders>
       </body>
     </html>

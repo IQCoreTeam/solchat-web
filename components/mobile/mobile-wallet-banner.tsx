@@ -28,19 +28,19 @@ export function MobileWalletBanner() {
   // If wallet is already detected, show success message
   if (mobileInfo.hasWallet) {
     return (
-      <div className="bg-green-900/50 border-2 border-green-400 p-4 mb-4">
+      <div className="bg-[#1C1E27]/50 border-2 border-[#7A8CFF] p-4 mb-4">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-green-400   text-sm">
+            <p className="text-[#7A8CFF]   text-sm">
               ✓ {mobileInfo.walletName || 'Mobile Wallet'} detected and ready!
             </p>
-            <p className="text-green-300   text-xs mt-1">
+            <p className="text-[#00E0E0]   text-xs mt-1">
               Click &quot;Select Wallet&quot; to connect
             </p>
           </div>
           <button
             onClick={() => setDismissed(true)}
-            className="text-green-400 hover:text-green-300   text-xl"
+            className="text-[#7A8CFF] hover:text-[#00E0E0]   text-xl"
           >
             ×
           </button>

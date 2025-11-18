@@ -9,10 +9,9 @@ import styled from 'styled-components';
 const PANEL_WIDTH_CLASS = 'w-full sm:w-[180px]';
 
 const StyledButton = styled(Button)`
-
-  background-color: black;
-  color: #4ade80;
-  border: 2px solid #16a34a;
+  background-color: #11121A;
+  color: #7A8CFF;
+  border: 2px solid #6C4DFF;
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   width: auto;
@@ -22,7 +21,7 @@ const StyledButton = styled(Button)`
   gap: 0.5rem;
 
   &:hover {
-    border-color: #4ade80;
+    border-color: #7A8CFF;
   }
 
   &:active {
@@ -36,13 +35,12 @@ const DropdownWindow = styled(Window)`
   margin-top: 0.5rem;
   width: 240px;
   z-index: 50;
-  box-shadow: 0 10px 15px -3px rgba(74, 222, 128, 0.2);
+  box-shadow: 0 10px 15px -3px rgba(108, 77, 255, 0.3);
 `;
 
 const StyledWindowHeader = styled(WindowHeader)`
-  background: linear-gradient(to right, #16a34a, #4ade80);
-  color: black;
-
+  background: linear-gradient(to right, #6C4DFF, #7A8CFF);
+  color: #F2F3F7;
   font-size: 0.75rem;
   font-weight: bold;
 `;

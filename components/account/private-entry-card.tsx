@@ -214,10 +214,10 @@ export function PrivateEntryCard({ privyWallet, onAfterAction, onRecordsChanged 
   };
 
   return (
-    <div className="bg-black border-2 border-green-600 p-6 mb-6">
+    <div className="bg-[#0A0A0F] border-2 border-[#6C4DFF] p-6 mb-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-green-400   text-xl">Private Funding Entry</h3>
-        <span className="text-xs text-green-300  ">Powered by Cloak</span>
+        <h3 className="text-[#7A8CFF]   text-xl">Private Funding Entry</h3>
+        <span className="text-xs text-[#00E0E0]  ">Powered by Cloak</span>
       </div>
 
       {!privyWallet && (
@@ -233,25 +233,25 @@ export function PrivateEntryCard({ privyWallet, onAfterAction, onRecordsChanged 
 
       <div className="space-y-4">
         <div>
-          <label className="text-green-400   text-sm block mb-2">Amount (SOL)</label>
+          <label className="text-[#7A8CFF]   text-sm block mb-2">Amount (SOL)</label>
           <input
             type="number"
             step="0.01"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="w-full bg-black border border-green-600 text-green-400   p-2 outline-none focus:border-green-400"
+            className="w-full bg-[#0A0A0F] border border-[#6C4DFF] text-[#7A8CFF]   p-2 outline-none focus:border-[#7A8CFF]"
             placeholder="0.00"
           />
         </div>
 
         <div>
-          <label className="text-green-400   text-sm block mb-2">Delay Minutes (optional)</label>
+          <label className="text-[#7A8CFF]   text-sm block mb-2">Delay Minutes (optional)</label>
           <input
             type="number"
             min="0"
             value={delayMinutes}
             onChange={(e) => setDelayMinutes(e.target.value)}
-            className="w-full bg-black border border-green-600 text-green-400   p-2 outline-none focus:border-green-400"
+            className="w-full bg-[#0A0A0F] border border-[#6C4DFF] text-[#7A8CFF]   p-2 outline-none focus:border-[#7A8CFF]"
             placeholder="0"
           />
         </div>
@@ -259,7 +259,7 @@ export function PrivateEntryCard({ privyWallet, onAfterAction, onRecordsChanged 
         <button
           onClick={handleFund}
           disabled={isProcessing || !wallet.connected}
-          className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-black   py-2 px-4 transition-colors"
+          className="w-full bg-[#6C4DFF] hover:bg-[#5A3DE6] disabled:bg-[#2A2D36] text-[#0A0A0F]   py-2 px-4 transition-colors"
         >
           {isProcessing ? 'Processing...' : 'Fund App Wallet Privately'}
         </button>
@@ -268,9 +268,9 @@ export function PrivateEntryCard({ privyWallet, onAfterAction, onRecordsChanged 
       {error && <p className="text-red-400   text-sm mt-4">{error}</p>}
 
       {statusLines.length > 0 && (
-        <div className="mt-4 border border-green-600 p-3 space-y-1 max-h-48 overflow-y-auto">
+        <div className="mt-4 border border-[#6C4DFF] p-3 space-y-1 max-h-48 overflow-y-auto">
           {statusLines.map((line, idx) => (
-            <p key={`${line}-${idx}`} className="text-green-300   text-xs">
+            <p key={`${line}-${idx}`} className="text-[#00E0E0]   text-xs">
               {line}
             </p>
           ))}

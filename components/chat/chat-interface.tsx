@@ -62,7 +62,7 @@ export function ChatInterface() {
 
   const [handle, setHandle] = useState('User');
   const [encryptionKey, setEncryptionKey] = useState<string | null>(null);
-  const [messageColor, setMessageColor] = useState('#1e90ff');
+  const [messageColor, setMessageColor] = useState('#7A8CFF');
   const [subscriptionId, setSubscriptionId] = useState<number | null>(null);
   const [lastTxid, setLastTxid] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
@@ -122,7 +122,7 @@ export function ChatInterface() {
     addToHistory('Available Commands:');
     addToHistory('  /help              - Show this help message');
     addToHistory('  /clear             - Clear screen');
-    addToHistory('  /color [color]     - Change message color (blue/red/green)');
+    addToHistory('  /color [color]     - Change message color (blue/red/violet/cyan)');
     addToHistory('  /pw [key]          - Set encryption key');
     addToHistory('  /pw off            - Disable encryption');
     addToHistory('  /balance           - Check wallet balance');
@@ -171,15 +171,15 @@ export function ChatInterface() {
             const colorMap: Record<string, string> = {
               blue: '#1e90ff',
               red: '#ff4444',
-              green: '#00ff00',
-              yellow: '#ffff00',
+              violet: '#6C4DFF',
+              cyan: '#00E0E0',
             };
             const newColor = colorMap[parts[1].toLowerCase()];
             if (newColor) {
               setMessageColor(newColor);
               addToHistory(`[SYSTEM] Message color changed to ${parts[1]}`);
             } else {
-              addToHistory('[ERROR] Unknown color. Available: blue, red, green, yellow');
+              addToHistory('[ERROR] Unknown color. Available: blue, red, violet, cyan');
             }
           }
           return;
@@ -472,7 +472,7 @@ export function ChatInterface() {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
-          <p className="text-green-400   text-xl mb-4">
+          <p className="text-[#7A8CFF]   text-xl mb-4">
             Please connect your wallet to use SolChat
           </p>
         </div>

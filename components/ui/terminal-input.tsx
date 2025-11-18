@@ -47,16 +47,16 @@ export function TerminalInput({ onSubmit, prompt = '>', disabled = false }: Term
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-black border-2 border-green-600 p-2">
+    <form onSubmit={handleSubmit} className="bg-[#0A0A0F] border-2 border-[#6C4DFF] p-2">
       <div className="flex items-center gap-2">
-        <span className="text-green-400      text-sm md:text-base">{prompt}</span>
+        <span className="text-[#7A8CFF]      text-sm md:text-base">{prompt}</span>
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={disabled}
-          className="flex-1 bg-transparent text-green-400   text-sm md:text-base outline-none border-none disabled:opacity-50"
+          className="flex-1 bg-transparent text-[#7A8CFF]   text-sm md:text-base outline-none border-none disabled:opacity-50"
           placeholder={disabled ? 'Waiting...' : 'Enter command...'}
           autoFocus
           autoComplete="off"

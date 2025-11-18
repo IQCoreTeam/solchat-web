@@ -23,10 +23,10 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
       appId={PRIVY_APP_ID}
       config={{
         appearance: {
-        accentColor: '#75e74f', // IQ Labs green
-        theme: '#222224', // Dark theme
+        accentColor: '#6C4DFF', // Whisper Violet
+        theme: '#0A0A0F', // Midnight Black theme
         showWalletLoginFirst: false, // Email/SMS first - prefer email/SMS for Privy auth
-        logo: 'https://iqlabs.dev/assets/iq_logo.svg',
+        logo: '/icon.svg',
         walletChainType: 'solana-only',
       },
       // privy init

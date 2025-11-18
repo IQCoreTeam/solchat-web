@@ -181,28 +181,28 @@ export function AccountInfo() {
     <div className="p-6 max-w-4xl mx-auto">
       {/* Show Privy wallet creation prompt only after main wallet is connected */}
       {!authenticated && (
-        <div className="bg-gradient-to-r from-green-900/30 to-green-800/30 border-2 border-green-500 p-8 mb-6 rounded-lg">
+        <div className="bg-gradient-to-r from-[#1C1E27]/30 to-[#11121A]/30 border-2 border-[#7A8CFF] p-8 mb-6 rounded-lg">
           <div className="flex items-center justify-between">
             <div className="flex-1">
-              <h2 className="text-green-400  text-2xl mb-2 flex items-center gap-2">
+              <h2 className="text-[#7A8CFF]  text-2xl mb-2 flex items-center gap-2">
                 🔒 Create Your Privacy Wallet
               </h2>
-              <p className="text-green-300  text-sm mb-3">
+              <p className="text-[#00E0E0]  text-sm mb-3">
                 Now create a secure embedded wallet with Privy for private transactions
               </p>
-              <ul className="text-xs text-green-400   space-y-1 mb-4">
+              <ul className="text-xs text-[#7A8CFF]   space-y-1 mb-4">
                 <li>✓ Enterprise-grade security</li>
                 <li>✓ Cross-device access</li>
                 <li>✓ No seed phrases to manage</li>
                 <li>✓ Required for Cloak privacy features</li>
               </ul>
-              <p className="text-xs text-green-300   mt-3 p-3 bg-green-900/30 rounded">
+              <p className="text-xs text-[#00E0E0]   mt-3 p-3 bg-[#1C1E27]/30 rounded">
                 💡 <strong>Note:</strong> Your main wallet ({wallet.publicKey?.toBase58().slice(0, 8)}...) will stay connected for funding. The Privy wallet will be used for private activities.
               </p>
             </div>
             <button
               onClick={login}
-              className="bg-green-600 hover:bg-green-500 text-black   px-8 py-4 text-lg    transition-all transform hover:scale-105"
+              className="bg-[#6C4DFF] hover:bg-[#7A8CFF] text-[#0A0A0F]   px-8 py-4 text-lg    transition-all transform hover:scale-105"
             >
               🚀 Create Privacy Wallet
             </button>
@@ -230,16 +230,16 @@ export function AccountInfo() {
       )}
 
       {authenticated && privyWallet && (
-        <div className="bg-green-900/20 border-2 border-green-600 p-6 mb-6">
+        <div className="bg-[#1C1E27]/20 border-2 border-[#6C4DFF] p-6 mb-6">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-green-400   text-xl mb-2 flex items-center gap-2">
+              <h3 className="text-[#7A8CFF]   text-xl mb-2 flex items-center gap-2">
                 🔒 Privy Wallet Active
               </h3>
-              <p className="text-green-300   text-sm break-all mb-2">
+              <p className="text-[#00E0E0]   text-sm break-all mb-2">
                 {privyWallet.address}
               </p>
-              <span className="text-xs bg-green-600 text-black   px-2 py-1">
+              <span className="text-xs bg-[#6C4DFF] text-[#0A0A0F]   px-2 py-1">
                 SECURED BY PRIVY
               </span>
             </div>
@@ -248,7 +248,7 @@ export function AccountInfo() {
                 await navigator.clipboard.writeText(privyWallet.address);
                 setMessage('Privy wallet address copied!');
               }}
-              className="bg-green-600 hover:bg-green-700 text-black   px-4 py-2 transition-colors"
+              className="bg-[#6C4DFF] hover:bg-[#5A3DE6] text-[#0A0A0F]   px-4 py-2 transition-colors"
             >
               Copy Address
             </button>
@@ -256,47 +256,47 @@ export function AccountInfo() {
         </div>
       )}
 
-      <div className="bg-black border-2 border-green-600 p-6 mb-6">
+      <div className="bg-[#0A0A0F] border-2 border-[#6C4DFF] p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-green-400   text-2xl">Main Wallet (Funding)</h2>
-          <span className="text-xs bg-blue-600 text-black   px-2 py-1">
+          <h2 className="text-[#7A8CFF]   text-2xl">Main Wallet (Funding)</h2>
+          <span className="text-xs bg-blue-600 text-[#0A0A0F]   px-2 py-1">
             PUBLIC WALLET
           </span>
         </div>
 
         <div className="space-y-3">
           <div>
-            <span className="text-green-400   text-sm">Connected Wallet:</span>
-            <p className="text-green-300   text-xs break-all">
+            <span className="text-[#7A8CFF]   text-sm">Connected Wallet:</span>
+            <p className="text-[#00E0E0]   text-xs break-all">
               {wallet.publicKey?.toBase58() || 'Not connected'}
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <span className="text-green-400   text-sm">SOL Balance:</span>
-              <p className="text-green-300   text-xl">
+              <span className="text-[#7A8CFF]   text-sm">SOL Balance:</span>
+              <p className="text-[#00E0E0]   text-xl">
                 {balance !== undefined ? balance.toFixed(4) : '...'} SOL
               </p>
             </div>
 
             <div>
-              <span className="text-green-400   text-sm">BONK Balance:</span>
-              <p className="text-green-300   text-xl">
+              <span className="text-[#7A8CFF]   text-sm">BONK Balance:</span>
+              <p className="text-[#00E0E0]   text-xl">
                 {bonkBalance !== undefined ? bonkBalance.toFixed(2) : '...'} BONK
               </p>
             </div>
           </div>
 
-          <p className="text-xs text-green-400   mt-2 p-2 bg-blue-900/20 rounded border border-blue-600/30">
+          <p className="text-xs text-[#7A8CFF]   mt-2 p-2 bg-blue-900/20 rounded border border-blue-600/30">
             💡 This is your public wallet used for funding private transactions
           </p>
         </div>
       </div>
 
-      <div className="bg-black border-2 border-green-600 p-6 mb-6">
+      <div className="bg-[#0A0A0F] border-2 border-[#6C4DFF] p-6 mb-6">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-          <h3 className="text-green-400   text-xl">App Wallet (Private)</h3>
+          <h3 className="text-[#7A8CFF]   text-xl">App Wallet (Private)</h3>
           <div className="flex flex-wrap items-center gap-2">
             {authenticated && (
               <button
@@ -317,17 +317,17 @@ export function AccountInfo() {
               </button>
             )}
             {privyWallet ? (
-              <span className="bg-green-600 text-black   px-3 py-1">
+              <span className="bg-[#6C4DFF] text-[#0A0A0F]   px-3 py-1">
                 🔒 Privy Secured
               </span>
             ) : authenticated ? (
-              <span className="bg-yellow-600 text-black   px-3 py-1">
+              <span className="bg-yellow-600 text-[#0A0A0F]   px-3 py-1">
                 Creating...
               </span>
             ) : (
               <button
                 onClick={login}
-                className="bg-green-600 hover:bg-green-700 text-black   px-3 py-1 transition-colors"
+                className="bg-[#6C4DFF] hover:bg-[#5A3DE6] text-[#0A0A0F]   px-3 py-1 transition-colors"
               >
                 Login with Privy
               </button>
@@ -337,33 +337,33 @@ export function AccountInfo() {
         {privyWallet ? (
           <div className="space-y-2">
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs bg-green-900 text-green-400   px-2 py-1">PRIVY MANAGED</span>
-              <span className="text-xs text-green-400  ">Secure, cross-device access</span>
+              <span className="text-xs bg-[#1C1E27] text-[#7A8CFF]   px-2 py-1">PRIVY MANAGED</span>
+              <span className="text-xs text-[#7A8CFF]  ">Secure, cross-device access</span>
             </div>
-            <p className="text-green-300   text-sm break-all">{privyWallet.address}</p>
+            <p className="text-[#00E0E0]   text-sm break-all">{privyWallet.address}</p>
             <button
               onClick={async () => {
                 await navigator.clipboard.writeText(privyWallet.address);
                 setMessage('Privy wallet address copied!');
               }}
-              className="bg-green-600 hover:bg-green-700 text-black   px-3 py-1 transition-colors"
+              className="bg-[#6C4DFF] hover:bg-[#5A3DE6] text-[#0A0A0F]   px-3 py-1 transition-colors"
             >
               Copy Address
             </button>
           </div>
         ) : wallet.connected ? (
           <div className="space-y-2">
-            <p className="text-green-300   text-sm">
+            <p className="text-[#00E0E0]   text-sm">
               Create a secure embedded wallet for private transactions.
             </p>
-            <p className="text-xs text-green-400   mb-3">
+            <p className="text-xs text-[#7A8CFF]   mb-3">
               ✓ Secure key management<br />
               ✓ Cross-device access<br />
               ✓ No seed phrases to manage
             </p>
             <button
               onClick={login}
-              className="w-full bg-green-600 hover:bg-green-700 text-black   px-4 py-2 transition-colors"
+              className="w-full bg-[#6C4DFF] hover:bg-[#5A3DE6] text-[#0A0A0F]   px-4 py-2 transition-colors"
             >
               Create Privacy Wallet
             </button>
@@ -380,31 +380,31 @@ export function AccountInfo() {
         )}
       </div>
 
-      <div className="bg-black border-2 border-green-600 p-6 mb-6">
-        <h3 className="text-green-400   text-xl mb-4">Send SOL</h3>
+      <div className="bg-[#0A0A0F] border-2 border-[#6C4DFF] p-6 mb-6">
+        <h3 className="text-[#7A8CFF]   text-xl mb-4">Send SOL</h3>
 
         <div className="space-y-4">
           <div>
-            <label className="text-green-400   text-sm block mb-2">
+            <label className="text-[#7A8CFF]   text-sm block mb-2">
               Recipient Address:
             </label>
             <input
               type="text"
               value={sendAddress}
               onChange={(e) => setSendAddress(e.target.value)}
-              className="w-full bg-black border border-green-600 text-green-400   p-2 outline-none focus:border-green-400"
+              className="w-full bg-[#0A0A0F] border border-[#6C4DFF] text-[#7A8CFF]   p-2 outline-none focus:border-[#7A8CFF]"
               placeholder="Enter Solana address..."
             />
           </div>
 
           <div>
-            <label className="text-green-400   text-sm block mb-2">Amount (SOL):</label>
+            <label className="text-[#7A8CFF]   text-sm block mb-2">Amount (SOL):</label>
             <input
               type="number"
               step="0.01"
               value={sendAmount}
               onChange={(e) => setSendAmount(e.target.value)}
-              className="w-full bg-black border border-green-600 text-green-400   p-2 outline-none focus:border-green-400"
+              className="w-full bg-[#0A0A0F] border border-[#6C4DFF] text-[#7A8CFF]   p-2 outline-none focus:border-[#7A8CFF]"
               placeholder="0.00"
             />
           </div>
@@ -412,20 +412,20 @@ export function AccountInfo() {
           <button
             onClick={handleSendSOL}
             disabled={sendingSOL || !sendAddress || !sendAmount}
-            className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-black   py-2 px-4 transition-colors"
+            className="w-full bg-[#6C4DFF] hover:bg-[#5A3DE6] disabled:bg-[#2A2D36] text-[#0A0A0F]   py-2 px-4 transition-colors"
           >
             {sendingSOL ? 'Sending...' : 'Send SOL'}
           </button>
         </div>
       </div>
 
-      <div className="bg-black border-2 border-green-600 p-6 mb-6">
-        <h3 className="text-green-400   text-xl mb-4">Request Airdrop (Devnet)</h3>
+      <div className="bg-[#0A0A0F] border-2 border-[#6C4DFF] p-6 mb-6">
+        <h3 className="text-[#7A8CFF]   text-xl mb-4">Request Airdrop (Devnet)</h3>
 
         <button
           onClick={handleAirdrop}
           disabled={requestingAirdrop}
-          className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-black   py-2 px-4 transition-colors"
+          className="w-full bg-[#6C4DFF] hover:bg-[#5A3DE6] disabled:bg-[#2A2D36] text-[#0A0A0F]   py-2 px-4 transition-colors"
         >
           {requestingAirdrop ? 'Requesting...' : 'Request 1 SOL'}
         </button>
@@ -444,14 +444,14 @@ export function AccountInfo() {
       />
 
       {tokens && tokens.length > 0 && (
-        <div className="bg-black border-2 border-green-600 p-6 mb-6">
-          <h3 className="text-green-400   text-xl mb-4">Token Accounts</h3>
+        <div className="bg-[#0A0A0F] border-2 border-[#6C4DFF] p-6 mb-6">
+          <h3 className="text-[#7A8CFF]   text-xl mb-4">Token Accounts</h3>
 
           <div className="space-y-2">
             {tokens.map((token, index) => (
-              <div key={index} className="border border-green-600 p-3">
-                <p className="text-green-400   text-xs break-all">Mint: {token.mint}</p>
-                <p className="text-green-300  ">
+              <div key={index} className="border border-[#6C4DFF] p-3">
+                <p className="text-[#7A8CFF]   text-xs break-all">Mint: {token.mint}</p>
+                <p className="text-[#00E0E0]  ">
                   Balance: {token.amount?.toFixed(token.decimals || 0) || 0}
                 </p>
               </div>
@@ -461,41 +461,41 @@ export function AccountInfo() {
       )}
 
       {privyWallet && (
-        <div className="bg-black border-2 border-green-600 p-6 mb-6">
+        <div className="bg-[#0A0A0F] border-2 border-[#6C4DFF] p-6 mb-6">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-green-400   text-xl">Cloak Transfer History</h3>
+            <h3 className="text-[#7A8CFF]   text-xl">Cloak Transfer History</h3>
             <button
               onClick={refreshCloakHistory}
-              className="text-xs text-green-300 underline"
+              className="text-xs text-[#00E0E0] underline"
             >
               Refresh
             </button>
           </div>
           {cloakHistory.length === 0 ? (
-            <p className="text-green-300   text-sm">No private transfers yet.</p>
+            <p className="text-[#00E0E0]   text-sm">No private transfers yet.</p>
           ) : (
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {cloakHistory.map((record) => (
-                <div key={record.id} className="border border-green-600 p-3">
+                <div key={record.id} className="border border-[#6C4DFF] p-3">
                   <div className="flex items-center justify-between text-xs  ">
-                    <span className="uppercase text-green-400">{record.type}</span>
-                    <span className="text-green-300">{record.status}</span>
+                    <span className="uppercase text-[#7A8CFF]">{record.type}</span>
+                    <span className="text-[#00E0E0]">{record.status}</span>
                   </div>
-                  <p className="text-green-300   text-sm">Amount: {record.amount} SOL</p>
-                  <p className="text-green-300   text-xs break-all">Recipient: {record.recipient}</p>
+                  <p className="text-[#00E0E0]   text-sm">Amount: {record.amount} SOL</p>
+                  <p className="text-[#00E0E0]   text-xs break-all">Recipient: {record.recipient}</p>
                   {record.delayedWithdrawalId && (
-                    <p className="text-green-300   text-xs">
+                    <p className="text-[#00E0E0]   text-xs">
                       Withdrawal ID: {record.delayedWithdrawalId}
                     </p>
                   )}
                   {record.executeAt && (
-                    <p className="text-green-500   text-xs">Executes at: {record.executeAt}</p>
+                    <p className="text-[#6C4DFF]   text-xs">Executes at: {record.executeAt}</p>
                   )}
                   {record.signature && (
-                    <p className="text-green-500   text-xs break-all">Signature: {record.signature}</p>
+                    <p className="text-[#6C4DFF]   text-xs break-all">Signature: {record.signature}</p>
                   )}
                   {record.note && (
-                    <p className="text-green-500   text-xs">{record.note}</p>
+                    <p className="text-[#6C4DFF]   text-xs">{record.note}</p>
                   )}
                 </div>
               ))}
@@ -505,8 +505,8 @@ export function AccountInfo() {
       )}
 
       {message && (
-        <div className="bg-black border-2 border-green-600 p-4">
-          <p className="text-green-400   text-sm">{message}</p>
+        <div className="bg-[#0A0A0F] border-2 border-[#6C4DFF] p-4">
+          <p className="text-[#7A8CFF]   text-sm">{message}</p>
         </div>
       )}
     </div>
