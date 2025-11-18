@@ -3,18 +3,16 @@
 import { useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { useCloakSdk } from '@/lib/cloak/use-cloak-sdk';
-import { addCloakRecord, updateCloakRecord } from '@/lib/cloak/storage';
+import type { TransactionSigner } from '@cloak-dev/sdk';
 import type { PrivyAppWallet } from '@/lib/wallet/privy-app-wallet';
-
-const uniqueId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 interface PrivateEntryCardProps {
   privyWallet: PrivyAppWallet | null;
   onAfterAction?: () => void;
-  onRecordsChanged?: () => void;
+  className?: string;
 }
 
-export function PrivateEntryCard({ privyWallet, onAfterAction, onRecordsChanged }: PrivateEntryCardProps) {
+export function PrivateEntryCard({ privyWallet, onAfterAction, className }: PrivateEntryCardProps) {
   const { connection } = useConnection();
   const wallet = useWallet(); // Use main wallet adapter for funding source
   const { getSdk } = useCloakSdk();
@@ -61,19 +59,6 @@ export function PrivateEntryCard({ privyWallet, onAfterAction, onRecordsChanged 
     resetStatus();
     setIsProcessing(true);
 
-    const recordId = uniqueId();
-    const recipient = destinationAddress;
-    addCloakRecord(recipient, {
-      id: recordId,
-      type: 'entry',
-      amount: parsedAmount,
-      createdAt: new Date().toISOString(),
-      status: 'pending',
-      recipient,
-      note: 'Private funding via Cloak',
-    });
-    onRecordsChanged?.();
-
     try {
       appendStatus('🔒 Initializing Cloak privacy protocol...');
       // Use main wallet SDK for the entire operation
@@ -83,7 +68,8 @@ export function PrivateEntryCard({ privyWallet, onAfterAction, onRecordsChanged 
       console.log('🔍 Wallet publicKey:', wallet.publicKey?.toBase58());
       
       appendStatus('📡 Getting Cloak SDK instance with main wallet...');
-      const sdk = await getSdk(wallet as any);
+      const signingWallet = wallet as unknown as TransactionSigner;
+      const sdk = await getSdk(signingWallet);
       
       appendStatus(`💰 Depositing ${parsedAmount} SOL from main wallet into privacy pool...`);
       appendStatus('⏳ Generating zero-knowledge proof (this may take a moment)...');
@@ -129,7 +115,7 @@ export function PrivateEntryCard({ privyWallet, onAfterAction, onRecordsChanged 
           } else {
             appendStatus(`⏳ Checking... (${elapsed}s)`);
           }
-        } catch (err) {
+        } catch {
           const elapsed = Math.round((Date.now() - startTime) / 1000);
           appendStatus(`⏳ Checking... (${elapsed}s)`);
         }
@@ -157,17 +143,6 @@ export function PrivateEntryCard({ privyWallet, onAfterAction, onRecordsChanged 
           appendStatus(`[Withdraw] ${line}`);
         },
       });
-
-      updateCloakRecord(recipient, recordId, {
-        status: withdrawResult.delayedWithdrawalId && !withdrawResult.success ? 'pending' : 'completed',
-        signature: withdrawResult.signature,
-        delayedWithdrawalId: withdrawResult.delayedWithdrawalId,
-        executeAt: withdrawResult.executeAt,
-        note: withdrawResult.delayedWithdrawalId
-          ? 'Withdrawal scheduled via Cloak relayer.'
-          : 'Withdrawal completed.',
-      });
-      onRecordsChanged?.();
 
       if (withdrawResult.delayedWithdrawalId) {
         appendStatus('');
@@ -203,18 +178,13 @@ export function PrivateEntryCard({ privyWallet, onAfterAction, onRecordsChanged 
       appendStatus(`❌ Error: ${message}`);
       appendStatus('Check browser console (F12) for full error details.');
       
-      updateCloakRecord(recipient, recordId, {
-        status: 'failed',
-        note: message,
-      });
-      onRecordsChanged?.();
     } finally {
       setIsProcessing(false);
     }
   };
 
   return (
-    <div className="bg-black border-2 border-green-600 p-6 mb-6">
+    <div className={`rounded-xl border border-green-600/60 bg-black/80 p-6 shadow-[0_0_25px_rgba(16,185,129,0.15)] ${className ?? ''}`}>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-green-400   text-xl">Private Funding Entry</h3>
         <span className="text-xs text-green-300  ">Powered by Cloak</span>
