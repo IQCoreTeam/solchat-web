@@ -3,23 +3,18 @@
 import { useEffect, useState } from 'react';
 import { PublicKey } from '@solana/web3.js';
 import { useCloakSdk } from '@/lib/cloak/use-cloak-sdk';
-import { addCloakRecord, updateCloakRecord } from '@/lib/cloak/storage';
 import type { PrivyAppWallet } from '@/lib/wallet/privy-app-wallet';
 import { usePrivyWalletAdapter } from '@/lib/wallet/privy-wallet-adapter';
-
-const uniqueId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 interface PrivateExitCardProps {
   privyWallet: PrivyAppWallet | null;
   onAfterAction?: () => void;
-  onRecordsChanged?: () => void;
+  className?: string;
 }
 
-export function PrivateExitCard({ privyWallet, onAfterAction, onRecordsChanged }: PrivateExitCardProps) {
+export function PrivateExitCard({ privyWallet, onAfterAction, className }: PrivateExitCardProps) {
   const wallet = usePrivyWalletAdapter();
   const { getSdk } = useCloakSdk();
-
-  const activeWalletAddress = privyWallet?.address || null;
 
   const [amount, setAmount] = useState('0.1');
   const [recipient, setRecipient] = useState('');
@@ -32,7 +27,7 @@ export function PrivateExitCard({ privyWallet, onAfterAction, onRecordsChanged }
     if (wallet.publicKey) {
       setRecipient(wallet.publicKey.toBase58());
     }
-  }, [wallet.publicKey?.toBase58()]);
+  }, [wallet.publicKey]);
 
   const appendStatus = (line: string) => setStatusLines((prev) => [...prev, line]);
   const resetStatus = () => {
@@ -62,23 +57,10 @@ export function PrivateExitCard({ privyWallet, onAfterAction, onRecordsChanged }
     }
 
     const walletForSdk = privyWallet.walletClient;
-    const appAddress = privyWallet.address;
     appendStatus('ℹ️  Note: Privy wallet signing requires user confirmation');
 
     resetStatus();
     setIsProcessing(true);
-
-    const recordId = uniqueId();
-    addCloakRecord(appAddress, {
-      id: recordId,
-      type: 'exit',
-      amount: parsedAmount,
-      createdAt: new Date().toISOString(),
-      status: 'pending',
-      recipient: recipientKey.toBase58(),
-      note: 'Private exit scheduled via Cloak',
-    });
-    onRecordsChanged?.();
 
     try {
       const sdk = await getSdk(walletForSdk);
@@ -104,17 +86,6 @@ export function PrivateExitCard({ privyWallet, onAfterAction, onRecordsChanged }
         onStatus: (line) => appendStatus(`[Withdraw] ${line}`),
       });
 
-      updateCloakRecord(appAddress, recordId, {
-        status: withdrawResult.delayedWithdrawalId && !withdrawResult.success ? 'pending' : 'completed',
-        signature: withdrawResult.signature,
-        delayedWithdrawalId: withdrawResult.delayedWithdrawalId,
-        executeAt: withdrawResult.executeAt,
-        note: withdrawResult.delayedWithdrawalId
-          ? 'Withdrawal scheduled via Cloak relayer.'
-          : 'Withdrawal completed.',
-      });
-      onRecordsChanged?.();
-
       if (withdrawResult.delayedWithdrawalId) {
         appendStatus(
           `[Withdraw] Scheduled with ID ${withdrawResult.delayedWithdrawalId} for ${withdrawResult.executeAt || 'later'}`
@@ -127,18 +98,13 @@ export function PrivateExitCard({ privyWallet, onAfterAction, onRecordsChanged }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      updateCloakRecord(appAddress, recordId, {
-        status: 'failed',
-        note: message,
-      });
-      onRecordsChanged?.();
     } finally {
       setIsProcessing(false);
     }
   };
 
   return (
-    <div className="bg-black border-2 border-green-600 p-6 mb-6">
+    <div className={`rounded-xl border border-green-600/60 bg-black/80 p-6 shadow-[0_0_25px_rgba(16,185,129,0.15)] ${className ?? ''}`}>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-green-400   text-xl">Private Exit</h3>
         <span className="text-xs text-green-300  ">Powered by Cloak</span>
