@@ -101,7 +101,7 @@ async function fetchAndDecode<T = any>(
   connection: Connection,
   coder: anchor.BorshAccountsCoder,
   pubkey: PublicKey,
-  accountName: 'Root' | 'Table' | 'TxRef' | 'InstructionTable'
+  accountName: 'Root' | 'Table' | 'TxRef' | 'InstructionTable' | 'DMTable'
 ): Promise<T | null> {
   const info = await connection.getAccountInfo(pubkey)
   if (!info) return null
@@ -142,6 +142,67 @@ async function getSignaturesFor(address: PublicKey, connection: Connection, limi
     before = chunk[chunk.length - 1].signature
   }
   return out
+}
+
+async function getTransactionsForAddress(
+  connection: Connection,
+  address: PublicKey,
+  limit: number
+): Promise<ParsedTransactionWithMeta[]> {
+  try {
+    const endpoint = (connection as any)._rpcEndpoint
+    if (!endpoint || !endpoint.includes('helius')) {
+      return await getFallbackTransactions(connection, address, limit)
+    }
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'helius-gtfa',
+        method: 'getTransactionsForAddress',
+        params: [
+          address.toBase58(),
+          {
+            limit,
+            commitment: 'confirmed',
+          }
+        ]
+      })
+    })
+
+    const data = await response.json()
+    if (data.result) {
+      return data.result as ParsedTransactionWithMeta[]
+    }
+    return await getFallbackTransactions(connection, address, limit)
+  } catch (error) {
+    console.warn('Helius getTransactionsForAddress failed, falling back:', error)
+    return await getFallbackTransactions(connection, address, limit)
+  }
+}
+
+async function getFallbackTransactions(
+  connection: Connection,
+  address: PublicKey,
+  limit: number
+): Promise<ParsedTransactionWithMeta[]> {
+  const sigs = await getSignaturesFor(address, connection, limit)
+  const BATCH_SIZE = 10
+  const transactions: any[] = []
+
+  for (let i = 0; i < sigs.length; i += BATCH_SIZE) {
+    const batch = sigs.slice(i, i + BATCH_SIZE)
+    const txs = await Promise.all(
+      batch.map(s =>
+        connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 })
+      )
+    )
+    transactions.push(...txs.filter(tx => tx !== null))
+  }
+
+  return transactions as ParsedTransactionWithMeta[]
 }
 
 function decodeAllIxsFromTx(
@@ -419,18 +480,22 @@ export async function readRowsByTable(
   // Scan signatures touching both table PDA and instruction PDA (if present)
   const ixCoder = makeIxCoder(idl)
   const programId = new PublicKey(programIdStr)
-  const lists = await Promise.all([tablePda, instPda].map(addr => getSignaturesFor(addr, connection, maxTx)))
-  const sigMap = new Map<string, ConfirmedSignatureInfo>()
-  for (const list of lists) {
-    for (const s of list) {
-      if (!sigMap.has(s.signature)) sigMap.set(s.signature, s)
+  const programIdB58 = programId.toBase58()
+
+  const allTxs = await Promise.all([
+    getTransactionsForAddress(connection, tablePda, maxTx),
+    getTransactionsForAddress(connection, instPda, maxTx)
+  ])
+
+  const txMap = new Map<string, ParsedTransactionWithMeta>()
+  for (const txList of allTxs) {
+    for (const tx of txList) {
+      if (tx?.transaction?.signatures?.[0]) {
+        txMap.set(tx.transaction.signatures[0], tx)
+      }
     }
   }
-  const sigs = Array.from(sigMap.values())
-    .sort((a, b) => (b.blockTime || 0) - (a.blockTime || 0))
-    .slice(0, maxTx)
 
-  const programIdB58 = programId.toBase58()
   type WriteRow = { signature: string; row: Row }
   const writeRows: WriteRow[] = []
   const instructionMap = new Map<string, Row>()
@@ -487,9 +552,7 @@ export async function readRowsByTable(
     return loose
   }
 
-  for (const s of sigs) {
-    const tx = await connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 })
-    if (!tx) continue
+  for (const [signature, tx] of txMap) {
     const decoded = decodeAllIxsFromTx(tx as any, programIdB58, ixCoder)
     for (const d of decoded) {
       try {
@@ -498,7 +561,7 @@ export async function readRowsByTable(
           if (seedHex !== targetSeedHex) continue
           const payloadStr = toStr(d.data.row_json_tx ?? d.data.rowJsonTx ?? d.data[1])
           const normalized = normalizeRow(tryParseJsonLoose(payloadStr))
-          writeRows.push({ signature: s.signature, row: normalized })
+          writeRows.push({ signature, row: normalized })
         } else if (d.name === 'database_instruction') {
           const seedHex = toHex(d.data.table_seed ?? d.data[0])
           if (seedHex !== targetSeedHex) continue
@@ -684,23 +747,26 @@ export async function readRowsByDmSeed(
 
   const ixCoder = makeIxCoder(idl)
   const programId = new PublicKey(programIdStr)
-  const lists = await Promise.all([dmTablePda, instPda, txRefPda].map(addr => getSignaturesFor(addr, connection, maxTx)))
-  const sigMap = new Map<string, ConfirmedSignatureInfo>()
-  for (const list of lists) {
-    for (const s of list) {
-      if (!sigMap.has(s.signature)) sigMap.set(s.signature, s)
+  const programIdB58 = programId.toBase58()
+
+  const allTxs = await Promise.all([
+    getTransactionsForAddress(connection, dmTablePda, maxTx),
+    getTransactionsForAddress(connection, instPda, maxTx),
+    getTransactionsForAddress(connection, txRefPda, maxTx)
+  ])
+
+  const txMap = new Map<string, ParsedTransactionWithMeta>()
+  for (const txList of allTxs) {
+    for (const tx of txList) {
+      if (tx?.transaction?.signatures?.[0]) {
+        txMap.set(tx.transaction.signatures[0], tx)
+      }
     }
   }
-  const sigs = Array.from(sigMap.values())
-    .sort((a, b) => (b.blockTime || 0) - (a.blockTime || 0))
-    .slice(0, maxTx)
 
-  const programIdB58 = programId.toBase58()
   const writeRows: { signature: string; row: Row }[] = []
 
-  for (const s of sigs) {
-    const tx = await connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 })
-    if (!tx) continue
+  for (const [signature, tx] of txMap) {
     const decoded = decodeAllIxsFromTx(tx as any, programIdB58, ixCoder)
     for (const d of decoded) {
       try {
@@ -709,7 +775,7 @@ export async function readRowsByDmSeed(
           if (seedHex !== targetSeedHex) continue
           const payloadStr = toStr(d.data.row_json_tx ?? d.data.rowJsonTx ?? d.data[2])
           const normalized = normalizeRow(tryParseJsonLoose(payloadStr))
-          writeRows.push({ signature: s.signature, row: normalized })
+          writeRows.push({ signature, row: normalized })
         }
       } catch {
         // skip decode errors

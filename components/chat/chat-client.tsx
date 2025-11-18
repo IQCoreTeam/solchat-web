@@ -602,7 +602,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
           tableName: room.name,
           userPublicKey: (wallet.publicKey ?? PublicKey.default).toBase58(),
           idl: idl as Idl,
-          maxTx: 50,
+          maxTx: 30,
         });
 
         const normalized = rows.map((row) => rowToMessage(row)).reverse();
@@ -634,7 +634,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
           dmSeed: dm.seedBytes,
           userPublicKey: (wallet.publicKey ?? PublicKey.default).toBase58(),
           idl: idl as Idl,
-          maxTx: 50,
+          maxTx: 20,
         });
         const normalized = rows.map((row) => rowToMessage(row)).reverse();
         setDmMessages(normalized);
