@@ -316,7 +316,7 @@ export function AccountInfo() {
           <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-[11px] uppercase tracking-[0.4em] text-green-300/70 ">Account Control</p>
-              <h1 className="text-3xl sm:text-4xl font-bold text-green-100 mt-2">Own your privacy on Solana</h1>
+              <h1 className="text-3xl sm:text-4xl  text-green-100 mt-2">Own your privacy on Solana</h1>
               <p className="text-green-100/80     text-sm mt-3 max-w-2xl">
                 Fund your chat wallet with Cloak for a completely private communication experience. Private entry and exit points combined with AES-256-GCM encryption ensure your messages remain secure.
               </p>

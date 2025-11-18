@@ -14,7 +14,7 @@ export const APP_DESCRIPTION = 'Decentralized messaging on Solana';
 
 // Transaction configuration
 export const TRANSACTION_SIZE_LIMIT = 900; // bytes
-export const COMMITMENT_LEVEL = 'finalized';
+export const COMMITMENT_LEVEL = 'confirmed';
 
 // Chat configuration
 export const MAX_MESSAGE_HISTORY = 50;
