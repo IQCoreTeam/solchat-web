@@ -472,7 +472,7 @@ export function ChatInterface() {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
-          <p className="text-green-400 font-mono text-xl mb-4">
+          <p className="text-green-400   text-xl mb-4">
             Please connect your wallet to use SolChat
           </p>
         </div>

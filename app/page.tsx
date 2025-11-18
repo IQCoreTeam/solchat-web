@@ -50,7 +50,7 @@ const StyledWindowHeader = styled(WindowHeader)`
   display: flex;
   align-items: stretch;
   justify-content: flex-end;
-  font-family: 'MS Sans Serif', sans-serif;
+
   font-weight: bold;
   background: linear-gradient(to right, #16a34a, #4ade80);
   color: black;
@@ -74,7 +74,7 @@ const WindowButton = styled.button`
   padding: 0;
   margin: 0;
   line-height: 0;
-  font-family: 'MS Sans Serif', sans-serif;
+ 
 
   &:active {
     border-color: #000000 #ffffff #ffffff #000000;
@@ -95,7 +95,6 @@ const StyledWindowContent = styled(WindowContent)`
 `;
 
 const WelcomeText = styled.div`
-  font-family: 'MS Sans Serif', 'Microsoft Sans Serif', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   font-size: 1.5rem;
   font-weight: bold;
   text-align: center;
@@ -204,7 +203,6 @@ const MonitorScreen = styled.div`
 `;
 
 const DescriptionText = styled.div`
-  font-family: 'Courier New', 'Courier', monospace;
   font-size: 0.9rem;
   text-align: center;
   color: #10b981;
@@ -257,7 +255,6 @@ const PopupHeader = styled.div`
   background: linear-gradient(to right, #16a34a, #4ade80);
   color: black;
   padding: 0.25rem 0.5rem;
-  font-family: 'MS Sans Serif', sans-serif;
   font-weight: bold;
   font-size: 0.875rem;
   display: flex;
@@ -280,7 +277,6 @@ const PopupClose = styled.button`
   padding: 0;
   margin: 0;
   line-height: 0;
-  font-family: 'MS Sans Serif', sans-serif;
 
   &:active {
     border-color: #000000 #ffffff #ffffff #000000;
@@ -294,7 +290,6 @@ const PopupBody = styled.div`
 
 const PopupText = styled.p`
   color: #000000;
-  font-family: 'MS Sans Serif', sans-serif;
   font-size: 0.875rem;
   line-height: 1.6;
   margin: 0;
@@ -339,9 +334,9 @@ export default function Home() {
                       as="a"
                       primary
                       size="lg"
-                      className="inline-flex items-center justify-center gap-2 px-20 py-6 font-bold m-0 cursor-pointer transition-all hover:opacity-90 active:scale-95"
+                      className="inline-flex items-center justify-center gap-2 px-20 py-6    m-0 cursor-pointer transition-all hover:opacity-90 active:scale-95"
                       style={{
-                        fontFamily: 'monospace',
+
                         minWidth: '280px',
                         fontSize: '1.25rem'
                       }}
@@ -355,9 +350,9 @@ export default function Home() {
                       as="a"
                       primary
                       size="lg"
-                      className="inline-flex items-center justify-center gap-2 px-20 py-6 font-bold cursor-pointer transition-all hover:opacity-90 active:scale-95"
+                      className="inline-flex items-center justify-center gap-2 px-20 py-6    cursor-pointer transition-all hover:opacity-90 active:scale-95"
                       style={{
-                        fontFamily: 'monospace',
+
                         minWidth: '280px',
                         fontSize: '1.25rem'
                       }}
@@ -374,7 +369,7 @@ export default function Home() {
                         size="sm"
                         className="cursor-pointer"
                         style={{
-                          fontFamily: 'monospace',
+
                           fontSize: '0.875rem',
                           background: '#2a2a2a',
                           color: '#10b981'
@@ -392,7 +387,7 @@ export default function Home() {
                     onClick={() => setIsPopupOpen(true)}
                     className="cursor-pointer"
                     style={{
-                      fontFamily: 'monospace',
+
                       fontSize: '0.875rem',
                       background: '#2a2a2a',
                       color: '#10b981'

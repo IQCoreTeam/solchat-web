@@ -20,8 +20,8 @@ export function Terminal({ lines, className = '' }: TerminalProps) {
   return (
     <div
       ref={terminalRef}
-      className={`bg-black text-green-400 font-mono text-sm p-4 overflow-y-auto border-2 border-green-600 ${className}`}
-      style={{ fontFamily: 'monospace' }}
+      className={`bg-black text-green-400   text-sm p-4 overflow-y-auto border-2 border-green-600 ${className}`}
+
     >
       {lines.map((line, index) => (
         <div key={index} className="whitespace-pre-wrap break-words">

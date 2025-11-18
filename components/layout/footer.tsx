@@ -6,7 +6,6 @@ const FooterContainer = styled.footer`
   background: #1a1a1a;
   border-top: 2px solid #16a34a;
   padding: 0.5rem 1rem;
-  font-family: 'Courier New', monospace;
   height: 30px;
   display: flex;
   align-items: center;

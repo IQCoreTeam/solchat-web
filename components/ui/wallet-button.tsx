@@ -9,7 +9,7 @@ import styled from 'styled-components';
 const PANEL_WIDTH_CLASS = 'w-full sm:w-[180px]';
 
 const StyledButton = styled(Button)`
-  font-family: 'Courier New', monospace;
+
   background-color: black;
   color: #4ade80;
   border: 2px solid #16a34a;
@@ -42,7 +42,7 @@ const DropdownWindow = styled(Window)`
 const StyledWindowHeader = styled(WindowHeader)`
   background: linear-gradient(to right, #16a34a, #4ade80);
   color: black;
-  font-family: 'Courier New', monospace;
+
   font-size: 0.75rem;
   font-weight: bold;
 `;
@@ -57,7 +57,7 @@ const AddressBox = styled.div`
   border: 2px inset #808080;
   padding: 0.5rem;
   margin-bottom: 0.75rem;
-  font-family: 'Courier New', monospace;
+ 
 `;
 
 const AddressLabel = styled.div`
@@ -74,7 +74,6 @@ const AddressText = styled.div`
 `;
 
 const StyledButton95 = styled(Button)<{ $variant?: 'danger' }>`
-  font-family: 'Courier New', monospace;
   font-size: 0.875rem;
   width: 100%;
   margin-bottom: 0.5rem;
