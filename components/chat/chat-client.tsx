@@ -11,14 +11,17 @@ import type { WalletAdapterLike } from '@/lib/onchainDB/web/provider';
 import {
   initializeRootWeb,
   createTableWeb,
+  createDmTableWeb,
   writeRowWeb,
+  writeDmRowWeb,
   type WriterCtx,
 } from '@/lib/onchainDB/web/writer';
-import { readRowsByTable, type Row } from '@/lib/onchainDB/web/reader';
-import { configs, pdaInstructionTable, pdaRoot, pdaTable, pdaTxRef } from '@/lib/onchainDB';
+import { readRowsByDmSeed, readRowsByTable, type Row } from '@/lib/onchainDB/web/reader';
+import { configs, pdaDmInstructionTable, pdaDmTable, pdaInstructionTable, pdaRoot, pdaTable, pdaTxRef } from '@/lib/onchainDB';
 import { useUserInit } from '@/lib/onchainDB/hooks/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
+import { deriveSeedBytes } from '@/lib/onchainDB/core/seed';
 
 const ROOT_ID = configs.defaultRootId;
 const DECODER = new TextDecoder();
@@ -48,6 +51,16 @@ type MessageRow = {
   timestamp?: number;
   status?: 'pending' | 'sent' | 'confirmed' | 'failed';
   room?: string;
+};
+
+type DmMeta = {
+  peerAddress: string;
+  seedBytes: Uint8Array;
+  seedHex: string;
+  tableAddress: string;
+  instructionAddress: string;
+  partyA: string;
+  partyB: string;
 };
 
 function bytesToHex(bytes: Uint8Array) {
@@ -119,6 +132,16 @@ function normalizeFileUrl(value?: string | null): string | null {
     return null;
   }
   return null;
+}
+
+function sortPubkeys(a: string, b: string) {
+  return [a, b].sort((left, right) => left.localeCompare(right)) as [string, string];
+}
+
+function deriveDmSeedPair(a: string, b: string) {
+  const [userA, userB] = sortPubkeys(a, b);
+  const seedBytes = deriveSeedBytes(`${userA}:${userB}`);
+  return { userA, userB, seedBytes, seedHex: bytesToHex(seedBytes) };
 }
 
 type AttachmentType = 'image' | 'video' | 'audio' | 'other';
@@ -221,7 +244,12 @@ function rowToMessage(row: Row): MessageRow {
   };
 }
 
-export function ChatClient() {
+type ChatClientProps = {
+  dmModalOpen?: boolean;
+  onCloseDm?: () => void;
+};
+
+export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) {
   const { connection } = useAppConnection();
   const wallet = useAppWallet();
   const {
@@ -263,11 +291,24 @@ export function ChatClient() {
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isDmModalOpen, setIsDmModalOpen] = useState(dmModalOpen);
+  const [dmPeerInput, setDmPeerInput] = useState('');
+  const [dmStatus, setDmStatus] = useState<'idle' | 'checking' | 'creating' | 'ready'>('idle');
+  const [dmError, setDmError] = useState<string | null>(null);
+  const [activeDm, setActiveDm] = useState<DmMeta | null>(null);
+  const [dmMessages, setDmMessages] = useState<MessageRow[]>([]);
+  const [dmPendingMessages, setDmPendingMessages] = useState<MessageRow[]>([]);
+  const [dmLoading, setDmLoading] = useState(false);
+  const [dmMessageInput, setDmMessageInput] = useState('');
+  const [dmSending, setDmSending] = useState(false);
 
   const logSubscriptionsRef = useRef<number[]>([]);
+  const dmLogSubscriptionsRef = useRef<number[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const dmMessagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesRef = useRef<MessageRow[]>([]);
+  const dmMessagesRef = useRef<MessageRow[]>([]);
   const selectedRoomRef = useRef<string | null>(null);
 
   const writerWallet = useMemo<WalletAdapterLike | null>(() => {
@@ -289,6 +330,26 @@ export function ChatClient() {
     };
   }, [connection, writerWallet]);
 
+  useEffect(() => {
+    setIsDmModalOpen(dmModalOpen);
+    if (!dmModalOpen) {
+      setDmStatus('idle');
+      setDmError(null);
+    }
+  }, [dmModalOpen]);
+
+  const closeDmModal = useCallback(() => {
+    setIsDmModalOpen(false);
+    setDmPeerInput('');
+    setActiveDm(null);
+    setDmMessages([]);
+    setDmPendingMessages([]);
+    setDmMessageInput('');
+    setDmStatus('idle');
+    setDmError(null);
+    onCloseDm?.();
+  }, [onCloseDm]);
+
   const canWrite = Boolean(writerCtx && isUserInitialized);
   const viewerAddress = wallet.publicKey?.toBase58() ?? '';
   const orderedMessages = useMemo(() => {
@@ -308,6 +369,23 @@ export function ChatClient() {
     });
   }, [messages, pendingMessages]);
 
+  const orderedDmMessages = useMemo(() => {
+    const deduped: MessageRow[] = [];
+    const seen = new Set<string>();
+    const addMessage = (msg: MessageRow) => {
+      if (seen.has(msg.id)) return;
+      seen.add(msg.id);
+      deduped.push(msg);
+    };
+    dmMessages.forEach(addMessage);
+    dmPendingMessages.forEach(addMessage);
+    return deduped.sort((a, b) => {
+      const tsA = a.timestamp ?? 0;
+      const tsB = b.timestamp ?? 0;
+      return tsA - tsB;
+    });
+  }, [dmMessages, dmPendingMessages]);
+
   const selectedRoom = useMemo(
     () => rooms.find((room) => room.seedHex === selectedSeed) ?? null,
     [rooms, selectedSeed]
@@ -318,6 +396,10 @@ export function ChatClient() {
   }, [messages]);
 
   useEffect(() => {
+    dmMessagesRef.current = dmMessages;
+  }, [dmMessages]);
+
+  useEffect(() => {
     if (!pendingMessages.length) return;
     setPendingMessages((prev) =>
       prev.filter((pending) => !messages.some((message) => message.id === pending.id))
@@ -325,8 +407,25 @@ export function ChatClient() {
   }, [messages, pendingMessages.length]);
 
   useEffect(() => {
+    if (!dmPendingMessages.length) return;
+    setDmPendingMessages((prev) =>
+      prev.filter((pending) => !dmMessages.some((message) => message.id === pending.id))
+    );
+  }, [dmMessages, dmPendingMessages.length]);
+
+  useEffect(() => {
     selectedRoomRef.current = selectedRoom?.name ?? null;
   }, [selectedRoom]);
+
+  useEffect(() => {
+    if (!wallet.publicKey) {
+      setActiveDm(null);
+      setDmMessages([]);
+      setDmPendingMessages([]);
+      setDmMessageInput('');
+      setDmStatus('idle');
+    }
+  }, [wallet.publicKey]);
 
   const submitTransaction = useCallback(
     async (tx: Transaction) => {
@@ -522,6 +621,37 @@ export function ChatClient() {
     [connection, wallet.publicKey]
   );
 
+  const loadDmMessages = useCallback(
+    async (dm: DmMeta, options?: { skipLoadingState?: boolean }) => {
+      if (!options?.skipLoadingState) {
+        setDmLoading(true);
+        setDmError(null);
+      }
+      try {
+        const rows = await readRowsByDmSeed({
+          connection,
+          rootId: ROOT_ID,
+          dmSeed: dm.seedBytes,
+          userPublicKey: (wallet.publicKey ?? PublicKey.default).toBase58(),
+          idl: idl as Idl,
+          maxTx: 50,
+        });
+        const normalized = rows.map((row) => rowToMessage(row)).reverse();
+        setDmMessages(normalized);
+        setDmPendingMessages((prev) =>
+          prev.filter((pending) => !normalized.some((message) => message.id === pending.id))
+        );
+      } catch (error) {
+        setDmError((error as Error).message);
+      } finally {
+        if (!options?.skipLoadingState) {
+          setDmLoading(false);
+        }
+      }
+    },
+    [connection, wallet.publicKey]
+  );
+
   useEffect(() => {
     if (!selectedRoom) {
       setMessages([]);
@@ -647,6 +777,55 @@ export function ChatClient() {
     };
   }, [connection, loadMessages, selectedRoom]);
 
+  useEffect(() => {
+    dmLogSubscriptionsRef.current.forEach((subId) => {
+      connection.removeOnLogsListener(subId).catch(() => undefined);
+    });
+    dmLogSubscriptionsRef.current = [];
+
+    if (!activeDm) return;
+
+    let cancelled = false;
+    const subscriptions: number[] = [];
+    const txRefPk = pdaTxRef(ROOT_ID);
+
+    const subscribe = async () => {
+      const tablePk = new PublicKey(activeDm.tableAddress);
+
+      const register = async (pubkey: PublicKey, commitment: 'processed' | 'confirmed', handler: () => void) => {
+        try {
+          const id = await connection.onLogs(pubkey, handler, commitment);
+          if (cancelled) {
+            connection.removeOnLogsListener(id).catch(() => undefined);
+            return;
+          }
+          subscriptions.push(id);
+        } catch (error) {
+          console.warn('Failed to subscribe to DM logs', error);
+        }
+      };
+
+      await register(tablePk, 'confirmed', () => {
+        loadDmMessages(activeDm, { skipLoadingState: true });
+      });
+      await register(txRefPk, 'confirmed', () => {
+        loadDmMessages(activeDm, { skipLoadingState: true });
+      });
+
+      dmLogSubscriptionsRef.current = subscriptions;
+    };
+
+    subscribe();
+
+    return () => {
+      cancelled = true;
+      subscriptions.forEach((subId) => {
+        connection.removeOnLogsListener(subId).catch(() => undefined);
+      });
+      dmLogSubscriptionsRef.current = [];
+    };
+  }, [activeDm, connection, loadDmMessages]);
+
   const handleCreateRoom = useCallback(
     async (event: FormEvent) => {
       event.preventDefault();
@@ -760,6 +939,143 @@ export function ChatClient() {
     [attachmentUrl, connection, isUserInitialized, loadMessages, selectedRoom, submitTransaction, writerCtx, messageInput]
   );
 
+  const handleStartDm = useCallback(
+    async (event?: FormEvent) => {
+      event?.preventDefault();
+      if (!writerCtx || !wallet.publicKey || !isUserInitialized) {
+        setDmError('Connect your wallet to start a DM.');
+        return;
+      }
+      if (rootStatus !== 'ready') {
+        setDmError('Root is still initializing. Try again in a moment.');
+        return;
+      }
+      const peer = dmPeerInput.trim();
+      if (!peer) {
+        setDmError('상대방의 퍼블릭 키를 입력하세요.');
+        return;
+      }
+      let peerPk: PublicKey;
+      try {
+        peerPk = new PublicKey(peer);
+      } catch {
+        setDmError('퍼블릭 키 형식이 올바르지 않습니다.');
+        return;
+      }
+      const viewer = wallet.publicKey.toBase58();
+      const peerAddress = peerPk.toBase58();
+      if (peerAddress === viewer) {
+        setDmError('다른 지갑 주소를 입력하세요.');
+        return;
+      }
+
+      const { userA, userB, seedBytes, seedHex } = deriveDmSeedPair(viewer, peerAddress);
+      const dmTablePk = pdaDmTable(rootPubkey, seedBytes);
+      const instTablePk = pdaDmInstructionTable(rootPubkey, seedBytes);
+
+      setActiveDm(null);
+      setDmMessages([]);
+      setDmPendingMessages([]);
+      setDmStatus('checking');
+      setDmError(null);
+
+      try {
+        const existing = await connection.getAccountInfo(dmTablePk);
+        if (!existing) {
+          setDmStatus('creating');
+          const dmName = `dm-${shorten(userA, 4)}-${shorten(userB, 4)}`;
+          const { tx } = await createDmTableWeb(writerCtx, ROOT_ID, seedBytes, dmName, MESSAGE_COLUMNS, {
+            idColumn: 'id',
+            extKeys: [],
+            partyA: userA,
+            partyB: userB,
+          });
+          await submitTransaction(tx);
+        }
+
+        const dmMeta: DmMeta = {
+          peerAddress,
+          seedBytes,
+          seedHex,
+          tableAddress: dmTablePk.toBase58(),
+          instructionAddress: instTablePk.toBase58(),
+          partyA: userA,
+          partyB: userB,
+        };
+
+        setActiveDm(dmMeta);
+        setDmStatus('ready');
+        await loadDmMessages(dmMeta);
+        setTimeout(() => {
+          dmMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 50);
+      } catch (error) {
+        setDmStatus('idle');
+        setDmError((error as Error).message);
+      }
+    },
+    [connection, dmPeerInput, isUserInitialized, loadDmMessages, rootPubkey, rootStatus, submitTransaction, wallet.publicKey, writerCtx]
+  );
+
+  const handleSendDmMessage = useCallback(
+    async (event?: FormEvent) => {
+      event?.preventDefault();
+      if (!activeDm || !writerCtx || !isUserInitialized) return;
+      const text = dmMessageInput.trim();
+      if (!text) return;
+
+      const messageId =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID().slice(0, 12)
+          : Math.random().toString(36).slice(2, 10);
+      const senderAddress = wallet.publicKey?.toBase58() ?? '';
+      const displayName = senderAddress ? `You (${shorten(senderAddress)})` : 'You';
+      const avatarHue = deriveAvatarHue(senderAddress);
+      const timestamp = Date.now();
+
+      const tempMessage: MessageRow = {
+        id: messageId,
+        text,
+        signature: 'pending',
+        sender: senderAddress,
+        displayName,
+        avatarHue,
+        timestamp,
+        status: 'pending',
+        room: `dm-${activeDm.seedHex.slice(0, 6)}`,
+      };
+
+      setDmMessageInput('');
+      setDmSending(true);
+      setDmError(null);
+      setDmPendingMessages((prev) => [...prev, tempMessage]);
+
+      try {
+        const payload = {
+          id: messageId,
+          text,
+          sender: senderAddress,
+          displayName: senderAddress ? shorten(senderAddress, 6) : 'Anonymous',
+          avatarHue,
+          timestamp,
+          status: 'sent',
+          room: `dm-${activeDm.seedHex.slice(0, 6)}`,
+          parties: [activeDm.partyA, activeDm.partyB],
+        };
+        const { tx } = await writeDmRowWeb(writerCtx, ROOT_ID, activeDm.seedBytes, JSON.stringify(payload));
+        await submitTransaction(tx);
+        await loadDmMessages(activeDm, { skipLoadingState: true });
+      } catch (error) {
+        setDmPendingMessages((prev) => prev.filter((msg) => msg.id !== tempMessage.id));
+        setDmError((error as Error).message);
+      } finally {
+        setDmSending(false);
+      }
+    },
+    [activeDm, dmMessageInput, isUserInitialized, loadDmMessages, submitTransaction, wallet.publicKey, writerCtx]
+  );
+
+
   const rootStatusText = useMemo(() => {
     switch (rootStatus) {
       case 'checking':
@@ -794,6 +1110,7 @@ export function ChatClient() {
   }, [isUserInitialized, isUserInitializing, userInitError, wallet.publicKey]);
   const canSubmitMessage = messageInput.trim().length > 0 || attachmentUrl.trim().length > 0;
   const sendDisabled = !canWrite || !canSubmitMessage || sendingMessage;
+  const dmSendDisabled = !canWrite || !dmMessageInput.trim() || dmSending || !activeDm;
 
   const handleCopyAddress = useCallback(async () => {
     if (!wallet.publicKey) return;
@@ -856,10 +1173,18 @@ export function ChatClient() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
+  const scrollDmToBottom = useCallback(() => {
+    dmMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
   // Auto-scroll when messages or pending messages change
   useEffect(() => {
     scrollToBottom();
   }, [messages, pendingMessages, scrollToBottom]);
+
+  useEffect(() => {
+    scrollDmToBottom();
+  }, [dmMessages, dmPendingMessages, scrollDmToBottom]);
 
   // Auto-close sidebar on mobile when room is selected
   useEffect(() => {
@@ -1335,6 +1660,157 @@ export function ChatClient() {
           )}
         </section>
       </div>
+
+      {isDmModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-3">
+          <div className="w-full max-w-3xl overflow-hidden rounded-lg border-2 border-green-500 bg-black shadow-2xl shadow-green-500/20">
+            <div className="flex items-center justify-between border-b border-green-500/40 px-4 py-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.25em] text-green-300">Direct Message</p>
+                <p className="text-[11px] text-white/60">
+                  {activeDm
+                    ? `DM with ${shorten(activeDm.peerAddress, 6)} · table ${shorten(activeDm.tableAddress, 5)}`
+                    : 'Enter a public key to open a private channel'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleStartDm}
+                  disabled={!canWrite || !dmPeerInput.trim()}
+                  className="rounded border border-green-500 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-green-200 transition hover:bg-green-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {dmStatus === 'creating' ? 'Creating…' : dmStatus === 'checking' ? 'Checking…' : 'Start/Load'}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeDmModal}
+                  className="rounded border border-white/30 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-white/10"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <form onSubmit={handleStartDm} className="border-b border-white/10 bg-black/60 px-4 py-3 space-y-2">
+              <label className="text-[11px] uppercase tracking-[0.2em] text-white/60">Recipient public key</label>
+              <input
+                type="text"
+                value={dmPeerInput}
+                onChange={(event) => {
+                  setDmPeerInput(event.target.value);
+                  setDmError(null);
+                }}
+                placeholder="Enter the other participant's wallet address"
+                className="w-full rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2"
+                style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
+                disabled={!canWrite || dmStatus === 'creating'}
+              />
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
+                <span>Status:</span>
+                <span className="rounded border border-white/10 px-2 py-1 text-green-200">
+                  {dmStatus === 'idle' && 'Idle'}
+                  {dmStatus === 'checking' && 'Checking table…'}
+                  {dmStatus === 'creating' && 'Creating table…'}
+                  {dmStatus === 'ready' && 'Ready'}
+                </span>
+                {activeDm && (
+                  <span className="text-green-300">
+                    Seed {activeDm.seedHex.slice(0, 8)}… · PDA {shorten(activeDm.tableAddress, 4)}
+                  </span>
+                )}
+              </div>
+              {dmError && <p className="text-xs text-red-400">{dmError}</p>}
+              {!wallet.publicKey && <p className="text-xs text-orange-300">Connect your wallet to start a DM.</p>}
+            </form>
+
+            <div className="max-h-[50vh] overflow-y-auto bg-black/40 px-4 py-3 space-y-3">
+              {dmLoading && <div className="text-white/60">Loading DM messages…</div>}
+              {dmStatus === 'idle' && !activeDm && <div className="text-white/50">대상을 입력하고 DM을 시작하세요.</div>}
+              {!dmLoading && activeDm && orderedDmMessages.length === 0 && (
+                <div className="text-white/50">No DM messages yet. Say hi!</div>
+              )}
+              {orderedDmMessages.map((message) => {
+                const isOwn = message.sender && viewerAddress && message.sender === viewerAddress;
+                const bubbleName = isOwn ? 'You' : message.displayName || (message.sender ? shorten(message.sender) : 'Unknown');
+                const avatarHue = message.avatarHue ?? deriveAvatarHue(message.sender || bubbleName);
+                const isPending = message.status === 'pending';
+                return (
+                  <div key={message.id} className={`flex w-full ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                    <div
+                      className={`flex max-w-[90%] items-end gap-3 ${isOwn ? 'flex-row-reverse text-right' : 'text-left'}`}
+                    >
+                      <div
+                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white shadow-lg"
+                        style={{ backgroundColor: `hsl(${avatarHue}, 65%, 48%)` }}
+                      >
+                        {getInitials(bubbleName)}
+                      </div>
+                      <div
+                        className="rounded-2xl border px-3 py-2 text-white"
+                        style={
+                          isOwn
+                            ? { backgroundColor: 'rgba(65, 255, 0, 0.15)', borderColor: 'rgba(65, 255, 0, 0.4)' }
+                            : { backgroundColor: 'rgba(255, 255, 255, 0.05)', borderColor: 'rgba(255, 255, 255, 0.1)' }
+                        }
+                      >
+                        <div className="mb-1 flex items-center gap-2 text-[11px] uppercase tracking-wide text-white/70">
+                          <span>{bubbleName}</span>
+                          {message.sender && (
+                            <span className="text-white/40">{shorten(message.sender)}</span>
+                          )}
+                        </div>
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed">{message.text}</div>
+                        <div className="mt-1 flex items-center gap-2 text-[11px] text-white/50">
+                          <span>{formatTimestamp(message.timestamp)}</span>
+                          <span>·</span>
+                          <span>{isPending ? 'Pending' : 'Confirmed'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={dmMessagesEndRef} />
+            </div>
+
+            {activeDm && (
+              <form onSubmit={handleSendDmMessage} className="border-t border-white/10 bg-black/60 px-4 py-3">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={dmMessageInput}
+                    onChange={(event) => setDmMessageInput(event.target.value)}
+                    placeholder="Send a private message"
+                    className="flex-1 rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/50 outline-none focus:ring-2"
+                    style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
+                    disabled={!canWrite || dmStatus !== 'ready'}
+                  />
+                  <button
+                    type="submit"
+                    disabled={dmSendDisabled || dmStatus !== 'ready'}
+                    className="rounded px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
+                    style={{
+                      backgroundColor: dmSendDisabled || dmStatus !== 'ready' ? undefined : 'rgb(65, 255, 0)',
+                      color: dmSendDisabled || dmStatus !== 'ready' ? undefined : 'rgb(0, 33, 0)',
+                    }}
+                  >
+                    {dmSending ? 'Sending…' : 'Send DM'}
+                  </button>
+                </div>
+                {!canWrite && (
+                  <p className="mt-1 text-xs text-orange-300">
+                    Connect your wallet and initialize your account to send messages.
+                  </p>
+                )}
+                {dmStatus !== 'ready' && (
+                  <p className="mt-1 text-xs text-white/60">DM channel must be ready to send.</p>
+                )}
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

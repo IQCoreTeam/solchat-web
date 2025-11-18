@@ -3,7 +3,7 @@
 import type { Idl, Program } from '@coral-xyz/anchor'
 import { Connection, PublicKey, SystemProgram } from '@solana/web3.js'
 import { configs } from '../configs'
-import { deriveSeedBytes, rootIdToBytes, type BytesLike } from '../core/seed'
+import { deriveSeedBytes, rootIdToBytes, toBytes, type BytesLike } from '../core/seed'
 import { getAnchorProvider, getProgram, type WalletAdapterLike } from './provider'
 
 const enc = new TextEncoder()
@@ -56,6 +56,33 @@ function pdaInstructionTableDyn(programId: PublicKey, rootPk: PublicKey, tableNa
       programId.toBuffer(),
       rootPk.toBuffer(),
       Buffer.from(tableSeed),
+      Buffer.from(configs.instructionSeed),
+    ],
+    programId
+  )[0]
+}
+
+function pdaDmTableDyn(programId: PublicKey, rootPk: PublicKey, dmSeed: BytesLike) {
+  const seed = Buffer.from(toBytes(dmSeed))
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from(configs.dmTableSeed),
+      programId.toBuffer(),
+      rootPk.toBuffer(),
+      seed,
+    ],
+    programId
+  )[0]
+}
+
+function pdaDmInstructionTableDyn(programId: PublicKey, rootPk: PublicKey, dmSeed: BytesLike) {
+  const seed = Buffer.from(toBytes(dmSeed))
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from(configs.dmTableSeed),
+      programId.toBuffer(),
+      rootPk.toBuffer(),
+      seed,
       Buffer.from(configs.instructionSeed),
     ],
     programId
@@ -209,6 +236,76 @@ export async function createTableWeb<T extends Idl>(
     .transaction()
 
   return { tx, table: table.toBase58(), instructionTable: instTable.toBase58() }
+}
+
+/**
+ * createDmTableWeb
+ * - Create a private DM table for two participants using the CreateDMTable instruction.
+ * - DM tables are derived from a sorted pair seed instead of the global table list.
+ */
+export async function createDmTableWeb<T extends Idl>(
+  ctx: WriterCtx<T>,
+  rootId: BytesLike,
+  dmSeed: BytesLike,
+  tableName: string,
+  columnNames: string[],
+  options: { idColumn?: string | number; extKeys?: string[]; partyA: PublicKey | string; partyB: PublicKey | string }
+) {
+  const program = programFromCtx(ctx)
+  const signer = program.provider.publicKey!
+  const programId = programPkFromCtx(ctx)
+  const rootIdBuf = Buffer.from(rootIdToBytes(rootId))
+
+  const root = pdaRootDyn(programId, rootId)
+  const dmTable = pdaDmTableDyn(programId, root, dmSeed)
+  const instTable = pdaDmInstructionTableDyn(programId, root, dmSeed)
+
+  const methods = (program as any).methods as Record<string, any>
+  const createDm = methods?.create_dm_table ?? methods?.createDmTable
+  if (!createDm) {
+    throw new Error('Instruction "create_dm_table" not found in IDL')
+  }
+
+  const seedBuf = Buffer.from(toBytes(dmSeed))
+  const nameBuf = Buffer.from(tableName, 'utf8')
+  const colBufs = columnNames.map((s) => Buffer.from(s, 'utf8'))
+
+  const idOpt = options?.idColumn
+  const idName =
+    typeof idOpt === 'string'
+      ? idOpt
+      : typeof idOpt === 'number' && columnNames[idOpt]
+      ? columnNames[idOpt]
+      : columnNames[0]
+  if (!idName) throw new Error('idColumn is required to create DM table')
+  const idColBuf = Buffer.from(idName, 'utf8')
+
+  const extKeys = options?.extKeys ?? []
+  const extKeysBufs = extKeys.map((s) => Buffer.from(String(s), 'utf8'))
+
+  const partyA = typeof options.partyA === 'string' ? new PublicKey(options.partyA) : options.partyA
+  const partyB = typeof options.partyB === 'string' ? new PublicKey(options.partyB) : options.partyB
+
+  const tx = await createDm(
+    rootIdBuf,
+    seedBuf,
+    nameBuf,
+    colBufs,
+    idColBuf,
+    extKeysBufs,
+    partyA,
+    partyB
+  )
+    .accounts({
+      signer,
+      root,
+      dm_table: dmTable,
+      instruction_table: instTable,
+      system_program: SystemProgram.programId,
+    })
+    .transaction()
+
+  return { tx, table: dmTable.toBase58(), instructionTable: instTable.toBase58() }
 }
 
 export async function createExtTableWeb<T extends Idl>(
@@ -374,6 +471,43 @@ export async function writeRowWeb<T extends Idl>(
       table,
       tx_ref: txRef,
       signerAta,
+      signer,
+    })
+    .transaction()
+
+  return { tx }
+}
+
+/**
+ * writeDmRowWeb
+ * - Write a JSON row into a DM table using UseDMTable / write_dm_data.
+ */
+export async function writeDmRowWeb<T extends Idl>(
+  ctx: WriterCtx<T>,
+  rootId: BytesLike,
+  dmSeed: BytesLike,
+  rowJson: string
+) {
+  const program = programFromCtx(ctx)
+  const signer = program.provider.publicKey!
+  const programId = programPkFromCtx(ctx)
+  const rootIdBuf = Buffer.from(rootIdToBytes(rootId))
+  const root = pdaRootDyn(programId, rootId)
+  const txRef = pdaTxRefDyn(programId, rootId)
+  const dmTable = pdaDmTableDyn(programId, root, dmSeed)
+
+  const methods = (program as any).methods as Record<string, any>
+  const writeDm = methods?.write_dm_data ?? methods?.writeDmData ?? methods?.useDmTable
+  if (!writeDm) {
+    throw new Error('Instruction "write_dm_data" not found in IDL')
+  }
+
+  const seedBuf = Buffer.from(toBytes(dmSeed))
+  const tx = await writeDm(rootIdBuf, seedBuf, Buffer.from(rowJson, 'utf8'))
+    .accounts({
+      root,
+      dm_table: dmTable,
+      tx_ref: txRef,
       signer,
     })
     .transaction()

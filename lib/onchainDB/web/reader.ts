@@ -7,8 +7,8 @@ import { Connection, PublicKey, ParsedTransactionWithMeta, ConfirmedSignatureInf
 import bs58 from 'bs58'
 import { Buffer } from 'buffer'
 import { configs } from '../configs'
-import { deriveSeedHex, rootIdToBytes, type BytesLike } from '../core/seed'
-import { pdaRoot, pdaTable, pdaTxRef, pdaInstructionTable } from '../provider/pda.provider'
+import { deriveSeedHex, rootIdToBytes, toBytes, type BytesLike } from '../core/seed'
+import { pdaRoot, pdaTable, pdaTxRef, pdaInstructionTable, pdaDmTable, pdaDmInstructionTable } from '../provider/pda.provider'
 
 export type Row = Record<string, any>
 
@@ -225,6 +225,10 @@ async function collectRowsFromTxRef(
         if (d.name === 'write_data') {
           const seedHex = toHex(d.data.table_seed ?? d.data[0])
           const payloadStr = toStr(d.data.row_json_tx ?? d.data[2])
+          pushRow(byTable, seedHex, tryParseJsonLoose(payloadStr))
+        } else if (d.name === 'write_dm_data') {
+          const seedHex = toHex(d.data.dm_seed ?? d.data._dm_seed ?? d.data[1])
+          const payloadStr = toStr(d.data.row_json_tx ?? d.data.rowJsonTx ?? d.data[2])
           pushRow(byTable, seedHex, tryParseJsonLoose(payloadStr))
         } else if (d.name === 'database_instruction') {
           const seedHex = toHex(d.data.table_seed ?? d.data[0])
@@ -619,6 +623,128 @@ export async function readRowsByTable(
   return perTableLimit ? filteredRows.slice(0, perTableLimit) : filteredRows
 }
 
+/**
+ * readRowsByDmSeed
+ * - Scan UseDMTable/write_dm_data instructions for a specific DM seed.
+ */
+export async function readRowsByDmSeed(
+  params: ReaderParams & { dmSeed: BytesLike }
+): Promise<Row[]> {
+  const endpoint = params.endpoint || configs.network
+  const connection = params.connection || new Connection(endpoint, 'confirmed')
+  const programIdStr = params.programId || configs.programId
+  const user = new PublicKey(params.userPublicKey)
+  const rootIdBytes = rootIdToBytes(params.rootId)
+  const idl = params.idl
+  const dmSeedBytes = toBytes(params.dmSeed)
+  const maxTx = params.maxTx || 100
+  const perTableLimit = params.perTableLimit
+
+  if (!idl) return []
+
+  let idColumnName: string | undefined
+
+  const normalizeRow = (input: Row): Row => {
+    if (!input || typeof input !== 'object') return input
+    const clone: Row = { ...input }
+    if (idColumnName && Object.prototype.hasOwnProperty.call(clone, idColumnName)) {
+      try {
+        Object.defineProperty(clone, '__rowId', {
+          value: (clone as any)[idColumnName],
+          enumerable: false,
+          configurable: true,
+          writable: true,
+        })
+      } catch {
+        ;(clone as any).__rowId = (clone as any)[idColumnName]
+      }
+    }
+    return clone
+  }
+
+  try {
+    const meta = await readDmTableMeta({ ...params, connection })
+    if (typeof meta.idColumn === 'string') {
+      idColumnName = meta.idColumn
+    } else if (typeof meta.idColumn === 'number' && meta.columns?.[meta.idColumn]) {
+      idColumnName = meta.columns[meta.idColumn]
+    }
+    if (!idColumnName && meta.columns && meta.columns.length > 0) {
+      idColumnName = meta.columns[0]
+    }
+  } catch {
+    // best-effort
+  }
+
+  const rootPda = pdaRoot(rootIdBytes)
+  const dmTablePda = pdaDmTable(rootPda, dmSeedBytes)
+  const instPda = pdaDmInstructionTable(rootPda, dmSeedBytes)
+  const txRefPda = pdaTxRef(rootIdBytes)
+  const targetSeedHex = Buffer.from(dmSeedBytes).toString('hex')
+
+  const ixCoder = makeIxCoder(idl)
+  const programId = new PublicKey(programIdStr)
+  const lists = await Promise.all([dmTablePda, instPda, txRefPda].map(addr => getSignaturesFor(addr, connection, maxTx)))
+  const sigMap = new Map<string, ConfirmedSignatureInfo>()
+  for (const list of lists) {
+    for (const s of list) {
+      if (!sigMap.has(s.signature)) sigMap.set(s.signature, s)
+    }
+  }
+  const sigs = Array.from(sigMap.values())
+    .sort((a, b) => (b.blockTime || 0) - (a.blockTime || 0))
+    .slice(0, maxTx)
+
+  const programIdB58 = programId.toBase58()
+  const writeRows: { signature: string; row: Row }[] = []
+
+  for (const s of sigs) {
+    const tx = await connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 })
+    if (!tx) continue
+    const decoded = decodeAllIxsFromTx(tx as any, programIdB58, ixCoder)
+    for (const d of decoded) {
+      try {
+        if (d.name === 'write_dm_data' || d.name === 'use_dm_table') {
+          const seedHex = toHex(d.data.dm_seed ?? d.data._dm_seed ?? d.data[1])
+          if (seedHex !== targetSeedHex) continue
+          const payloadStr = toStr(d.data.row_json_tx ?? d.data.rowJsonTx ?? d.data[2])
+          const normalized = normalizeRow(tryParseJsonLoose(payloadStr))
+          writeRows.push({ signature: s.signature, row: normalized })
+        }
+      } catch {
+        // skip decode errors
+      }
+    }
+  }
+
+  const attachHiddenMeta = (row: Row, signature: string): Row => {
+    if (!row || typeof row !== 'object') return row
+    const clone: Row = { ...row }
+    const defineHidden = (key: string, value: string) => {
+      try {
+        Object.defineProperty(clone, key, {
+          value,
+          enumerable: false,
+          configurable: false,
+          writable: false,
+        })
+      } catch {
+        ;(clone as any)[key] = value
+      }
+    }
+    defineHidden('__txSignature', signature)
+    defineHidden('__tableSeed', targetSeedHex)
+    return clone
+  }
+
+  const filteredRows: Row[] = []
+  for (const { signature, row } of writeRows) {
+    filteredRows.push(attachHiddenMeta(row, signature))
+  }
+
+  return perTableLimit ? filteredRows.slice(0, perTableLimit) : filteredRows
+}
+
 
 export async function readTableMeta(
   params: ReaderParams & { tableName: string }
@@ -681,5 +807,80 @@ export async function readTableMeta(
     return { name, columns, idColumn, extTableName, extKeys, tablePda: tablePda.toBase58(), instPda: instPda ? instPda.toBase58() : null }
   } catch {
     return { name: toStr(tableName), columns: [], idColumn: null, extTableName: null, extKeys: [], tablePda: tablePda.toBase58(), instPda: instPda ? instPda.toBase58() : null }
+  }
+}
+
+export async function readDmTableMeta(
+  params: ReaderParams & { dmSeed: BytesLike }
+): Promise<{ name: string; columns: string[]; idColumn?: string | number | null; extKeys?: string[]; tablePda: string; instPda: string | null; partyA?: string | null; partyB?: string | null }> {
+  const endpoint = params.endpoint || configs.network
+  const connection = params.connection || new Connection(endpoint, 'confirmed')
+  const user = new PublicKey(params.userPublicKey)
+  const rootIdBytes = rootIdToBytes(params.rootId)
+  const idl = params.idl
+
+  const rootPda = pdaRoot(rootIdBytes)
+  const dmTablePda = pdaDmTable(rootPda, params.dmSeed)
+  const instPda = pdaDmInstructionTable(rootPda, params.dmSeed)
+
+  if (!idl) {
+    return {
+      name: toStr(params.dmSeed),
+      columns: [],
+      idColumn: null,
+      extKeys: [],
+      tablePda: dmTablePda.toBase58(),
+      instPda: instPda ? instPda.toBase58() : null,
+      partyA: null,
+      partyB: null,
+    }
+  }
+
+  const accCoder = makeAccountsCoder(idl)
+  try {
+    const tableAcc = await fetchAndDecode<any>(connection, accCoder, dmTablePda, 'DMTable')
+    const name = tableAcc ? toStr(tableAcc.name ?? params.dmSeed) : toStr(params.dmSeed)
+    const columns = tableAcc ? (tableAcc.column_names ?? tableAcc.columns ?? []).map((v: any) => toStr(v)) : []
+    const idRaw =
+      tableAcc?.id_col ??
+      tableAcc?.id_column ??
+      tableAcc?.idColumn ??
+      tableAcc?.id_index ??
+      tableAcc?.idIndex ??
+      null
+
+    let idColumn: string | number | null | undefined = null
+    if (typeof idRaw === 'string') {
+      idColumn = idRaw
+    } else if (typeof idRaw === 'number') {
+      idColumn = idRaw
+    } else if (idRaw && typeof idRaw === 'object') {
+      idColumn = toStr(idRaw)
+    } else {
+      idColumn = null
+    }
+
+    const extKeysRaw = tableAcc?.ext_keys ?? tableAcc?.extKeys ?? []
+    const extKeys = Array.isArray(extKeysRaw) ? extKeysRaw.map((v: any) => toStr(v)).filter((s: string) => s.length > 0) : []
+
+    if ((idColumn == null || idColumn === '') && columns.length > 0) {
+      idColumn = columns[0]
+    }
+
+    const partyA = tableAcc?.party_a ? new PublicKey(tableAcc.party_a).toBase58() : null
+    const partyB = tableAcc?.party_b ? new PublicKey(tableAcc.party_b).toBase58() : null
+
+    return { name, columns, idColumn, extKeys, tablePda: dmTablePda.toBase58(), instPda: instPda ? instPda.toBase58() : null, partyA, partyB }
+  } catch {
+    return {
+      name: toStr(params.dmSeed),
+      columns: [],
+      idColumn: null,
+      extKeys: [],
+      tablePda: dmTablePda.toBase58(),
+      instPda: instPda ? instPda.toBase58() : null,
+      partyA: null,
+      partyB: null,
+    }
   }
 }

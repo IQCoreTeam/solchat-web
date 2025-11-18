@@ -56,7 +56,11 @@ const StyledButton = styled(Button)`
   }
 `;
 
-export function Nav() {
+type NavProps = {
+  onOpenDm?: () => void;
+};
+
+export function Nav({ onOpenDm }: NavProps) {
   const pathname = usePathname();
   const isHomePage = pathname === '/';
 
@@ -95,6 +99,17 @@ export function Nav() {
                 [ACCOUNT]
               </StyledButton>
             </Link>
+            {onOpenDm && (
+              <button type="button" onClick={onOpenDm} style={{ flex: 1 }}>
+                <StyledButton
+                  style={{
+                    borderColor: '#16a34a'
+                  }}
+                >
+                  [DM]
+                </StyledButton>
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -128,6 +143,18 @@ export function Nav() {
                   [ACCOUNT]
                 </StyledButton>
               </Link>
+
+              {onOpenDm && (
+                <button type="button" onClick={onOpenDm}>
+                  <StyledButton
+                    style={{
+                      borderColor: '#16a34a'
+                    }}
+                  >
+                    [DM]
+                  </StyledButton>
+                </button>
+              )}
             </div>
           )}
         </div>
