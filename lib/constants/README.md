@@ -74,7 +74,7 @@ import { BRAND_CLASSES } from '@/lib/constants/colors';
 ### Button with Green Glow
 ```tsx
 <button
-  className="px-12 py-4 font-bold text-xl"
+  className="px-12 py-4    text-xl"
   style={{
     backgroundColor: 'rgb(65, 255, 0)',
     color: 'rgb(0, 33, 0)',
@@ -88,7 +88,7 @@ import { BRAND_CLASSES } from '@/lib/constants/colors';
 ### Status Badge
 ```tsx
 <div className="bg-black/60 border border-green-600/50 rounded px-3 py-1.5">
-  <span className="text-xs font-mono text-green-400">
+  <span className="text-xs   text-green-400">
     [CONNECTED]
   </span>
 </div>
@@ -108,5 +108,5 @@ import { BRAND_CLASSES } from '@/lib/constants/colors';
 1. **Use Tailwind classes when possible** - Better for tree-shaking and consistency
 2. **Use CSS variables for dynamic opacity** - `rgba(var(--iq-green-rgb), 0.x)`
 3. **Import TypeScript constants for complex logic** - Type-safe and maintainable
-4. **Keep mono font** - Use `font-mono` for the terminal/matrix aesthetic
+4. **Keep mono font** - Use ` ` for the terminal/matrix aesthetic
 5. **Add brackets** - Wrap text in `[]` for consistent styling: `[TEXT]`

@@ -159,13 +159,13 @@ export function AccountInfo() {
         <div className="bg-gradient-to-r from-yellow-900/30 to-yellow-800/30 border-2 border-yellow-500 p-8 mb-6 rounded-lg">
           <div className="flex items-center justify-between">
             <div className="flex-1">
-              <h2 className="text-yellow-400 font-mono text-2xl mb-2 flex items-center gap-2">
+              <h2 className="text-yellow-400  text-2xl mb-2 flex items-center gap-2">
                 👋 Welcome! Connect Your Wallet First
               </h2>
-              <p className="text-yellow-300 font-mono text-sm mb-3">
+              <p className="text-yellow-300  text-sm mb-3">
                 Connect your main wallet (Phantom, Solflare, etc.) to get started
               </p>
-              <ul className="text-xs text-yellow-400 font-mono space-y-1 mb-4">
+              <ul className="text-xs text-yellow-400  space-y-1 mb-4">
                 <li>1️⃣ Connect your main wallet using the button in the top right</li>
                 <li>2️⃣ Then create a Privy wallet for private transactions</li>
                 <li>3️⃣ Fund your Privy wallet privately using Cloak</li>
@@ -184,25 +184,25 @@ export function AccountInfo() {
         <div className="bg-gradient-to-r from-green-900/30 to-green-800/30 border-2 border-green-500 p-8 mb-6 rounded-lg">
           <div className="flex items-center justify-between">
             <div className="flex-1">
-              <h2 className="text-green-400 font-mono text-2xl mb-2 flex items-center gap-2">
+              <h2 className="text-green-400  text-2xl mb-2 flex items-center gap-2">
                 🔒 Create Your Privacy Wallet
               </h2>
-              <p className="text-green-300 font-mono text-sm mb-3">
+              <p className="text-green-300  text-sm mb-3">
                 Now create a secure embedded wallet with Privy for private transactions
               </p>
-              <ul className="text-xs text-green-400 font-mono space-y-1 mb-4">
+              <ul className="text-xs text-green-400   space-y-1 mb-4">
                 <li>✓ Enterprise-grade security</li>
                 <li>✓ Cross-device access</li>
                 <li>✓ No seed phrases to manage</li>
                 <li>✓ Required for Cloak privacy features</li>
               </ul>
-              <p className="text-xs text-green-300 font-mono mt-3 p-3 bg-green-900/30 rounded">
+              <p className="text-xs text-green-300   mt-3 p-3 bg-green-900/30 rounded">
                 💡 <strong>Note:</strong> Your main wallet ({wallet.publicKey?.toBase58().slice(0, 8)}...) will stay connected for funding. The Privy wallet will be used for private activities.
               </p>
             </div>
             <button
               onClick={login}
-              className="bg-green-600 hover:bg-green-500 text-black font-mono px-8 py-4 text-lg font-bold transition-all transform hover:scale-105"
+              className="bg-green-600 hover:bg-green-500 text-black   px-8 py-4 text-lg    transition-all transform hover:scale-105"
             >
               🚀 Create Privacy Wallet
             </button>
@@ -215,13 +215,13 @@ export function AccountInfo() {
           <div className="flex items-center gap-4">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-yellow-400"></div>
             <div>
-              <h3 className="text-yellow-400 font-mono text-xl mb-2">
+              <h3 className="text-yellow-400   text-xl mb-2">
                 ⏳ Creating Privy Wallet...
               </h3>
-              <p className="text-yellow-300 font-mono text-sm">
+              <p className="text-yellow-300   text-sm">
                 Please wait while we set up your secure embedded wallet. This should only take a moment.
               </p>
-              <p className="text-yellow-200 font-mono text-xs mt-2">
+              <p className="text-yellow-200   text-xs mt-2">
                 If this persists, try refreshing the page.
               </p>
             </div>
@@ -233,13 +233,13 @@ export function AccountInfo() {
         <div className="bg-green-900/20 border-2 border-green-600 p-6 mb-6">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-green-400 font-mono text-xl mb-2 flex items-center gap-2">
+              <h3 className="text-green-400   text-xl mb-2 flex items-center gap-2">
                 🔒 Privy Wallet Active
               </h3>
-              <p className="text-green-300 font-mono text-sm break-all mb-2">
+              <p className="text-green-300   text-sm break-all mb-2">
                 {privyWallet.address}
               </p>
-              <span className="text-xs bg-green-600 text-black font-mono px-2 py-1">
+              <span className="text-xs bg-green-600 text-black   px-2 py-1">
                 SECURED BY PRIVY
               </span>
             </div>
@@ -248,7 +248,7 @@ export function AccountInfo() {
                 await navigator.clipboard.writeText(privyWallet.address);
                 setMessage('Privy wallet address copied!');
               }}
-              className="bg-green-600 hover:bg-green-700 text-black font-mono px-4 py-2 transition-colors"
+              className="bg-green-600 hover:bg-green-700 text-black   px-4 py-2 transition-colors"
             >
               Copy Address
             </button>
@@ -258,37 +258,37 @@ export function AccountInfo() {
 
       <div className="bg-black border-2 border-green-600 p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-green-400 font-mono text-2xl">Main Wallet (Funding)</h2>
-          <span className="text-xs bg-blue-600 text-black font-mono px-2 py-1">
+          <h2 className="text-green-400   text-2xl">Main Wallet (Funding)</h2>
+          <span className="text-xs bg-blue-600 text-black   px-2 py-1">
             PUBLIC WALLET
           </span>
         </div>
 
         <div className="space-y-3">
           <div>
-            <span className="text-green-400 font-mono text-sm">Connected Wallet:</span>
-            <p className="text-green-300 font-mono text-xs break-all">
+            <span className="text-green-400   text-sm">Connected Wallet:</span>
+            <p className="text-green-300   text-xs break-all">
               {wallet.publicKey?.toBase58() || 'Not connected'}
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <span className="text-green-400 font-mono text-sm">SOL Balance:</span>
-              <p className="text-green-300 font-mono text-xl">
+              <span className="text-green-400   text-sm">SOL Balance:</span>
+              <p className="text-green-300   text-xl">
                 {balance !== undefined ? balance.toFixed(4) : '...'} SOL
               </p>
             </div>
 
             <div>
-              <span className="text-green-400 font-mono text-sm">BONK Balance:</span>
-              <p className="text-green-300 font-mono text-xl">
+              <span className="text-green-400   text-sm">BONK Balance:</span>
+              <p className="text-green-300   text-xl">
                 {bonkBalance !== undefined ? bonkBalance.toFixed(2) : '...'} BONK
               </p>
             </div>
           </div>
 
-          <p className="text-xs text-green-400 font-mono mt-2 p-2 bg-blue-900/20 rounded border border-blue-600/30">
+          <p className="text-xs text-green-400   mt-2 p-2 bg-blue-900/20 rounded border border-blue-600/30">
             💡 This is your public wallet used for funding private transactions
           </p>
         </div>
@@ -296,7 +296,7 @@ export function AccountInfo() {
 
       <div className="bg-black border-2 border-green-600 p-6 mb-6">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-          <h3 className="text-green-400 font-mono text-xl">App Wallet (Private)</h3>
+          <h3 className="text-green-400   text-xl">App Wallet (Private)</h3>
           <div className="flex flex-wrap items-center gap-2">
             {authenticated && (
               <button
@@ -311,23 +311,23 @@ export function AccountInfo() {
                   }
                 }}
                 disabled={disconnectingPrivy}
-                className="text-xs font-mono uppercase tracking-wide text-red-300 underline decoration-dotted underline-offset-2 disabled:opacity-60"
+                className="text-xs   uppercase tracking-wide text-red-300 underline decoration-dotted underline-offset-2 disabled:opacity-60"
               >
                 {disconnectingPrivy ? 'Disconnecting…' : 'Disconnect Privy'}
               </button>
             )}
             {privyWallet ? (
-              <span className="bg-green-600 text-black font-mono px-3 py-1">
+              <span className="bg-green-600 text-black   px-3 py-1">
                 🔒 Privy Secured
               </span>
             ) : authenticated ? (
-              <span className="bg-yellow-600 text-black font-mono px-3 py-1">
+              <span className="bg-yellow-600 text-black   px-3 py-1">
                 Creating...
               </span>
             ) : (
               <button
                 onClick={login}
-                className="bg-green-600 hover:bg-green-700 text-black font-mono px-3 py-1 transition-colors"
+                className="bg-green-600 hover:bg-green-700 text-black   px-3 py-1 transition-colors"
               >
                 Login with Privy
               </button>
@@ -337,43 +337,43 @@ export function AccountInfo() {
         {privyWallet ? (
           <div className="space-y-2">
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs bg-green-900 text-green-400 font-mono px-2 py-1">PRIVY MANAGED</span>
-              <span className="text-xs text-green-400 font-mono">Secure, cross-device access</span>
+              <span className="text-xs bg-green-900 text-green-400   px-2 py-1">PRIVY MANAGED</span>
+              <span className="text-xs text-green-400  ">Secure, cross-device access</span>
             </div>
-            <p className="text-green-300 font-mono text-sm break-all">{privyWallet.address}</p>
+            <p className="text-green-300   text-sm break-all">{privyWallet.address}</p>
             <button
               onClick={async () => {
                 await navigator.clipboard.writeText(privyWallet.address);
                 setMessage('Privy wallet address copied!');
               }}
-              className="bg-green-600 hover:bg-green-700 text-black font-mono px-3 py-1 transition-colors"
+              className="bg-green-600 hover:bg-green-700 text-black   px-3 py-1 transition-colors"
             >
               Copy Address
             </button>
           </div>
         ) : wallet.connected ? (
           <div className="space-y-2">
-            <p className="text-green-300 font-mono text-sm">
+            <p className="text-green-300   text-sm">
               Create a secure embedded wallet for private transactions.
             </p>
-            <p className="text-xs text-green-400 font-mono mb-3">
+            <p className="text-xs text-green-400   mb-3">
               ✓ Secure key management<br />
               ✓ Cross-device access<br />
               ✓ No seed phrases to manage
             </p>
             <button
               onClick={login}
-              className="w-full bg-green-600 hover:bg-green-700 text-black font-mono px-4 py-2 transition-colors"
+              className="w-full bg-green-600 hover:bg-green-700 text-black   px-4 py-2 transition-colors"
             >
               Create Privacy Wallet
             </button>
           </div>
         ) : (
           <div className="space-y-2">
-            <p className="text-yellow-300 font-mono text-sm">
+            <p className="text-yellow-300   text-sm">
               ⚠️ Connect your main wallet first (top right corner)
             </p>
-            <p className="text-xs text-yellow-400 font-mono">
+            <p className="text-xs text-yellow-400  ">
               You need a connected wallet to fund your privacy wallet
             </p>
           </div>
@@ -381,30 +381,30 @@ export function AccountInfo() {
       </div>
 
       <div className="bg-black border-2 border-green-600 p-6 mb-6">
-        <h3 className="text-green-400 font-mono text-xl mb-4">Send SOL</h3>
+        <h3 className="text-green-400   text-xl mb-4">Send SOL</h3>
 
         <div className="space-y-4">
           <div>
-            <label className="text-green-400 font-mono text-sm block mb-2">
+            <label className="text-green-400   text-sm block mb-2">
               Recipient Address:
             </label>
             <input
               type="text"
               value={sendAddress}
               onChange={(e) => setSendAddress(e.target.value)}
-              className="w-full bg-black border border-green-600 text-green-400 font-mono p-2 outline-none focus:border-green-400"
+              className="w-full bg-black border border-green-600 text-green-400   p-2 outline-none focus:border-green-400"
               placeholder="Enter Solana address..."
             />
           </div>
 
           <div>
-            <label className="text-green-400 font-mono text-sm block mb-2">Amount (SOL):</label>
+            <label className="text-green-400   text-sm block mb-2">Amount (SOL):</label>
             <input
               type="number"
               step="0.01"
               value={sendAmount}
               onChange={(e) => setSendAmount(e.target.value)}
-              className="w-full bg-black border border-green-600 text-green-400 font-mono p-2 outline-none focus:border-green-400"
+              className="w-full bg-black border border-green-600 text-green-400   p-2 outline-none focus:border-green-400"
               placeholder="0.00"
             />
           </div>
@@ -412,7 +412,7 @@ export function AccountInfo() {
           <button
             onClick={handleSendSOL}
             disabled={sendingSOL || !sendAddress || !sendAmount}
-            className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-black font-mono py-2 px-4 transition-colors"
+            className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-black   py-2 px-4 transition-colors"
           >
             {sendingSOL ? 'Sending...' : 'Send SOL'}
           </button>
@@ -420,12 +420,12 @@ export function AccountInfo() {
       </div>
 
       <div className="bg-black border-2 border-green-600 p-6 mb-6">
-        <h3 className="text-green-400 font-mono text-xl mb-4">Request Airdrop (Devnet)</h3>
+        <h3 className="text-green-400   text-xl mb-4">Request Airdrop (Devnet)</h3>
 
         <button
           onClick={handleAirdrop}
           disabled={requestingAirdrop}
-          className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-black font-mono py-2 px-4 transition-colors"
+          className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-black   py-2 px-4 transition-colors"
         >
           {requestingAirdrop ? 'Requesting...' : 'Request 1 SOL'}
         </button>
@@ -445,13 +445,13 @@ export function AccountInfo() {
 
       {tokens && tokens.length > 0 && (
         <div className="bg-black border-2 border-green-600 p-6 mb-6">
-          <h3 className="text-green-400 font-mono text-xl mb-4">Token Accounts</h3>
+          <h3 className="text-green-400   text-xl mb-4">Token Accounts</h3>
 
           <div className="space-y-2">
             {tokens.map((token, index) => (
               <div key={index} className="border border-green-600 p-3">
-                <p className="text-green-400 font-mono text-xs break-all">Mint: {token.mint}</p>
-                <p className="text-green-300 font-mono">
+                <p className="text-green-400   text-xs break-all">Mint: {token.mint}</p>
+                <p className="text-green-300  ">
                   Balance: {token.amount?.toFixed(token.decimals || 0) || 0}
                 </p>
               </div>
@@ -463,7 +463,7 @@ export function AccountInfo() {
       {privyWallet && (
         <div className="bg-black border-2 border-green-600 p-6 mb-6">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-green-400 font-mono text-xl">Cloak Transfer History</h3>
+            <h3 className="text-green-400   text-xl">Cloak Transfer History</h3>
             <button
               onClick={refreshCloakHistory}
               className="text-xs text-green-300 underline"
@@ -472,30 +472,30 @@ export function AccountInfo() {
             </button>
           </div>
           {cloakHistory.length === 0 ? (
-            <p className="text-green-300 font-mono text-sm">No private transfers yet.</p>
+            <p className="text-green-300   text-sm">No private transfers yet.</p>
           ) : (
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {cloakHistory.map((record) => (
                 <div key={record.id} className="border border-green-600 p-3">
-                  <div className="flex items-center justify-between text-xs font-mono">
+                  <div className="flex items-center justify-between text-xs  ">
                     <span className="uppercase text-green-400">{record.type}</span>
                     <span className="text-green-300">{record.status}</span>
                   </div>
-                  <p className="text-green-300 font-mono text-sm">Amount: {record.amount} SOL</p>
-                  <p className="text-green-300 font-mono text-xs break-all">Recipient: {record.recipient}</p>
+                  <p className="text-green-300   text-sm">Amount: {record.amount} SOL</p>
+                  <p className="text-green-300   text-xs break-all">Recipient: {record.recipient}</p>
                   {record.delayedWithdrawalId && (
-                    <p className="text-green-300 font-mono text-xs">
+                    <p className="text-green-300   text-xs">
                       Withdrawal ID: {record.delayedWithdrawalId}
                     </p>
                   )}
                   {record.executeAt && (
-                    <p className="text-green-500 font-mono text-xs">Executes at: {record.executeAt}</p>
+                    <p className="text-green-500   text-xs">Executes at: {record.executeAt}</p>
                   )}
                   {record.signature && (
-                    <p className="text-green-500 font-mono text-xs break-all">Signature: {record.signature}</p>
+                    <p className="text-green-500   text-xs break-all">Signature: {record.signature}</p>
                   )}
                   {record.note && (
-                    <p className="text-green-500 font-mono text-xs">{record.note}</p>
+                    <p className="text-green-500   text-xs">{record.note}</p>
                   )}
                 </div>
               ))}
@@ -506,7 +506,7 @@ export function AccountInfo() {
 
       {message && (
         <div className="bg-black border-2 border-green-600 p-4">
-          <p className="text-green-400 font-mono text-sm">{message}</p>
+          <p className="text-green-400   text-sm">{message}</p>
         </div>
       )}
     </div>

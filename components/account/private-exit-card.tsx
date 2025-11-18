@@ -140,42 +140,42 @@ export function PrivateExitCard({ privyWallet, onAfterAction, onRecordsChanged }
   return (
     <div className="bg-black border-2 border-green-600 p-6 mb-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-green-400 font-mono text-xl">Private Exit</h3>
-        <span className="text-xs text-green-300 font-mono">Powered by Cloak</span>
+        <h3 className="text-green-400   text-xl">Private Exit</h3>
+        <span className="text-xs text-green-300  ">Powered by Cloak</span>
       </div>
 
       <div className="space-y-4">
         <div>
-          <label className="text-green-400 font-mono text-sm block mb-2">Recipient Address</label>
+          <label className="text-green-400   text-sm block mb-2">Recipient Address</label>
           <input
             type="text"
             value={recipient}
             onChange={(e) => setRecipient(e.target.value)}
-            className="w-full bg-black border border-green-600 text-green-400 font-mono p-2 outline-none focus:border-green-400"
+            className="w-full bg-black border border-green-600 text-green-400   p-2 outline-none focus:border-green-400"
             placeholder="Destination address"
           />
         </div>
 
         <div>
-          <label className="text-green-400 font-mono text-sm block mb-2">Amount (SOL)</label>
+          <label className="text-green-400   text-sm block mb-2">Amount (SOL)</label>
           <input
             type="number"
             step="0.01"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="w-full bg-black border border-green-600 text-green-400 font-mono p-2 outline-none focus:border-green-400"
+            className="w-full bg-black border border-green-600 text-green-400   p-2 outline-none focus:border-green-400"
             placeholder="0.00"
           />
         </div>
 
         <div>
-          <label className="text-green-400 font-mono text-sm block mb-2">Delay Minutes (optional)</label>
+          <label className="text-green-400   text-sm block mb-2">Delay Minutes (optional)</label>
           <input
             type="number"
             min="0"
             value={delayMinutes}
             onChange={(e) => setDelayMinutes(e.target.value)}
-            className="w-full bg-black border border-green-600 text-green-400 font-mono p-2 outline-none focus:border-green-400"
+            className="w-full bg-black border border-green-600 text-green-400   p-2 outline-none focus:border-green-400"
             placeholder="0"
           />
         </div>
@@ -183,28 +183,28 @@ export function PrivateExitCard({ privyWallet, onAfterAction, onRecordsChanged }
         <button
           onClick={handleExit}
           disabled={isProcessing || !privyWallet}
-          className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-black font-mono py-2 px-4 transition-colors"
+          className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-black   py-2 px-4 transition-colors"
         >
           {isProcessing ? 'Processing...' : 'Withdraw Privately'}
         </button>
         {!privyWallet && (
-          <p className="text-yellow-300 font-mono text-xs">
+          <p className="text-yellow-300   text-xs">
             Login with Privy to enable private exits.
           </p>
         )}
         {privyWallet && (
-          <p className="text-xs text-green-400 font-mono mt-2">
+          <p className="text-xs text-green-400   mt-2">
             🔒 Using secure Privy wallet
           </p>
         )}
       </div>
 
-      {error && <p className="text-red-400 font-mono text-sm mt-4">{error}</p>}
+      {error && <p className="text-red-400   text-sm mt-4">{error}</p>}
 
       {statusLines.length > 0 && (
         <div className="mt-4 border border-green-600 p-3 space-y-1 max-h-48 overflow-y-auto">
           {statusLines.map((line, idx) => (
-            <p key={`${line}-${idx}`} className="text-green-300 font-mono text-xs">
+            <p key={`${line}-${idx}`} className="text-green-300   text-xs">
               {line}
             </p>
           ))}

@@ -887,17 +887,17 @@ export function ChatClient() {
                 )}
               </svg>
             </button>
-            <h1 className="text-lg md:text-xl font-mono font-bold text-green-400">ON-CHAIN ROOMS</h1>
+            <h1 className="text-lg md:text-xl      text-green-400">ON-CHAIN ROOMS</h1>
           </div>
 
           {wallet.publicKey ? (
             <div className="flex flex-col gap-2 items-end ml-auto">
               {isUserInitialized && rootStatus === 'ready' ? (
-                <div className="border-2 border-green-500 bg-black/70 px-3 py-2 font-mono text-xs text-green-200">
+                <div className="border-2 border-green-500 bg-black/70 px-3 py-2   text-xs text-green-200">
                   <span className="text-green-300 text-xs uppercase">STATUS: OK</span>
                 </div>
               ) : (
-                <div className="border-2 border-yellow-400 bg-black/70 px-4 py-3 font-mono text-xs text-yellow-100 w-full">
+                <div className="border-2 border-yellow-400 bg-black/70 px-4 py-3   text-xs text-yellow-100 w-full">
                   <p className="text-yellow-200 text-sm tracking-[0.3em] uppercase">[STATUS: INIT]</p>
                   <div className="mt-2 space-y-1">
                     {rootStatus !== 'ready' && (
@@ -946,7 +946,7 @@ export function ChatClient() {
             </div>
           ) : (
             <div className="flex items-center gap-2 bg-black/60 border border-green-600/50 rounded px-3 py-1.5 shadow-lg shadow-green-600/10">
-              <span className="text-xs font-mono text-green-400">
+              <span className="text-xs   text-green-400">
                 [CONNECT WALLET TO START]
               </span>
             </div>
@@ -1087,7 +1087,7 @@ export function ChatClient() {
                       <div className="absolute inset-0 w-12 h-12 border-4 border-transparent rounded-full animate-spin" style={{ borderRightColor: 'rgba(65, 255, 0, 0.4)', animationDuration: '1.5s', animationDirection: 'reverse' }}></div>
                     </div>
                     <div className="mt-4 flex items-center gap-1">
-                      <span className="text-sm font-mono" style={{ color: 'rgb(65, 255, 0)' }}>LOADING</span>
+                      <span className="text-sm  " style={{ color: 'rgb(65, 255, 0)' }}>LOADING</span>
                       <span className="flex gap-0.5">
                         <span className="w-1 h-1 rounded-full animate-bounce" style={{ backgroundColor: 'rgb(65, 255, 0)', animationDelay: '0ms' }}></span>
                         <span className="w-1 h-1 rounded-full animate-bounce" style={{ backgroundColor: 'rgb(65, 255, 0)', animationDelay: '150ms' }}></span>
@@ -1182,7 +1182,7 @@ export function ChatClient() {
                                   <button
                                     type="button"
                                     onClick={() => toggleAttachment(message.id)}
-                                    className="text-[11px] font-mono uppercase tracking-wide text-green-400 underline decoration-dotted underline-offset-2 hover:text-green-300"
+                                    className="text-[11px]   uppercase tracking-wide text-green-400 underline decoration-dotted underline-offset-2 hover:text-green-300"
                                   >
                                     Load attachment
                                   </button>
@@ -1196,14 +1196,14 @@ export function ChatClient() {
                                       <button
                                         type="button"
                                         onClick={() => toggleAttachment(message.id)}
-                                        className="text-[11px] font-mono uppercase tracking-wide text-green-400 underline decoration-dotted underline-offset-2 hover:text-green-300"
+                                        className="text-[11px]   uppercase tracking-wide text-green-400 underline decoration-dotted underline-offset-2 hover:text-green-300"
                                       >
                                         Hide attachment
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => handleDownloadAttachment(fileUrl)}
-                                        className="text-[11px] font-mono uppercase tracking-wide text-green-400 underline decoration-dotted underline-offset-2 hover:text-green-300"
+                                        className="text-[11px]   uppercase tracking-wide text-green-400 underline decoration-dotted underline-offset-2 hover:text-green-300"
                                       >
                                         Download
                                       </button>
@@ -1273,7 +1273,7 @@ export function ChatClient() {
                     <button
                       type="button"
                       onClick={() => setShowAttachmentInput((prev) => !prev)}
-                      className="font-mono uppercase tracking-wide text-green-400 underline decoration-dotted underline-offset-2 hover:text-green-300"
+                      className="  uppercase tracking-wide text-green-400 underline decoration-dotted underline-offset-2 hover:text-green-300"
                       disabled={!canWrite}
                     >
                       {showAttachmentInput ? '[HIDE ATTACHMENT]' : '[ADD ATTACHMENT]'}

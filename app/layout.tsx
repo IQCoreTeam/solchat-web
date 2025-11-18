@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
-import { Geist_Mono } from "next/font/google";
+// import { Geist_Mono } from "next/font/google";
+
 import "./globals.css";
 import { AppProviders } from "@/components/providers";
+import localFont from "next/font/local";
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+const bitArrayA2 = localFont({
+    src: './bitArray-A2.ttf',  // or './fonts/her-font.ttf' if in app/fonts/
+    variable: "--font-custom",
+    display: 'swap',
 });
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://solchat.iqlabs.dev";
@@ -151,7 +154,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
-      <body className={`${geistMono.variable} antialiased bg-black text-green-400`}>
+      <body className={`${bitArrayA2.variable} antialiased bg-black text-green-400`}>
         <AppProviders>{children}</AppProviders>
       </body>
     </html>

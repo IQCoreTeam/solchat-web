@@ -27,7 +27,7 @@ export default async function Image() {
             linear-gradient(90deg, rgba(65, 255, 0, 0.03) 1px, transparent 1px)
           `,
           backgroundSize: '100% 100%, 50px 50px, 50px 50px',
-          fontFamily: 'monospace',
+
         }}
       >
         {/* IQ Labs Logo - Simplified representation */}

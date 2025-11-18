@@ -31,16 +31,16 @@ export function MobileWalletBanner() {
       <div className="bg-green-900/50 border-2 border-green-400 p-4 mb-4">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-green-400 font-mono text-sm">
+            <p className="text-green-400   text-sm">
               ✓ {mobileInfo.walletName || 'Mobile Wallet'} detected and ready!
             </p>
-            <p className="text-green-300 font-mono text-xs mt-1">
+            <p className="text-green-300   text-xs mt-1">
               Click &quot;Select Wallet&quot; to connect
             </p>
           </div>
           <button
             onClick={() => setDismissed(true)}
-            className="text-green-400 hover:text-green-300 font-mono text-xl"
+            className="text-green-400 hover:text-green-300   text-xl"
           >
             ×
           </button>
@@ -54,10 +54,10 @@ export function MobileWalletBanner() {
     <div className="bg-yellow-900/50 border-2 border-yellow-400 p-4 mb-4">
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <p className="text-yellow-400 font-mono text-sm font-bold mb-2">
+          <p className="text-yellow-400   text-sm    mb-2">
             📱 Mobile Wallet Required
           </p>
-          <div className="text-yellow-300 font-mono text-xs space-y-1">
+          <div className="text-yellow-300   text-xs space-y-1">
             <p>To use SolChat on mobile:</p>
             <ol className="list-decimal list-inside ml-2 mt-2 space-y-1">
               <li>Open Phantom or Solflare mobile app</li>
@@ -72,7 +72,7 @@ export function MobileWalletBanner() {
         </div>
         <button
           onClick={() => setDismissed(true)}
-          className="text-yellow-400 hover:text-yellow-300 font-mono text-xl ml-2"
+          className="text-yellow-400 hover:text-yellow-300   text-xl ml-2"
         >
           ×
         </button>

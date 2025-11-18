@@ -8,7 +8,6 @@ import { Button } from 'react95';
 import styled from 'styled-components';
 
 const LogoText = styled.span.attrs({ title: 'SOLCHAT' })`
-  font-family: 'MS Sans Serif', 'Microsoft Sans Serif', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   color: #333333;
   -webkit-text-fill-color: transparent;
   position: relative;
@@ -41,7 +40,6 @@ const LogoText = styled.span.attrs({ title: 'SOLCHAT' })`
 `;
 
 const StyledButton = styled(Button)`
-  font-family: 'Courier New', monospace;
   background-color: black;
   color: #4ade80;
   border: 2px solid;
@@ -71,7 +69,7 @@ export function Nav() {
       {/* Mobile layout */}
       <div className="flex flex-col gap-3 md:hidden">
         <div className="flex items-center justify-between gap-3">
-          <Link href="/" className="flex items-center gap-2 text-green-400 text-xl font-bold">
+          <Link href="/" className="flex items-center gap-2 text-green-400 text-xl   ">
             <Image src="/iq_logo.svg" alt="IQ Labs" width={32} height={32} />
             <LogoText>SOLCHAT</LogoText>
           </Link>
@@ -104,7 +102,7 @@ export function Nav() {
       {/* Desktop layout */}
       <div className="hidden md:flex items-center justify-between gap-4 w-full">
         <div className="flex items-center gap-8">
-          <Link href="/" className="flex items-center gap-3 text-green-400 text-2xl font-bold">
+          <Link href="/" className="flex items-center gap-3 text-green-400 text-2xl   ">
             <Image src="/iq_logo.svg" alt="IQ Labs" width={40} height={40} />
             <LogoText>SOLCHAT</LogoText>
           </Link>
