@@ -8,6 +8,7 @@ export const configs = {
    */
   rootSeed: 'solchat-root',
   tableSeed: 'iqdb-table',
+  dmTableSeed: 'iqdb-dm-table',
   txRefSeed: 'iqdb-txref',
   instructionSeed: 'instruction',
   targetSeed: 'target',

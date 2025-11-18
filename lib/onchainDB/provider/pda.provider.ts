@@ -9,6 +9,10 @@ function tableSeedBytes(input: string | BytesLike) {
   return typeof input === "string" ? deriveSeedBytes(input) : toBytes(input);
 }
 
+function dmSeedBytes(input: BytesLike) {
+  return toBytes(input);
+}
+
 export function pdaRoot(rootId: BytesLike) {
   const rootBytes = Buffer.from(rootIdToBytes(rootId));
   return PublicKey.findProgramAddressSync(
@@ -59,6 +63,33 @@ export function pdaInstructionTable(root: PublicKey, tableNameOrSeed: string | B
       PROGRAM_ID.toBuffer(),
       root.toBuffer(),
       Buffer.from(tableSeed),
+      Buffer.from(configs.instructionSeed),
+    ],
+    PROGRAM_ID
+  )[0];
+}
+
+export function pdaDmTable(root: PublicKey, dmSeed: BytesLike) {
+  const seed = dmSeedBytes(dmSeed);
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from(configs.dmTableSeed),
+      PROGRAM_ID.toBuffer(),
+      root.toBuffer(),
+      Buffer.from(seed),
+    ],
+    PROGRAM_ID
+  )[0];
+}
+
+export function pdaDmInstructionTable(root: PublicKey, dmSeed: BytesLike) {
+  const seed = dmSeedBytes(dmSeed);
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from(configs.dmTableSeed),
+      PROGRAM_ID.toBuffer(),
+      root.toBuffer(),
+      Buffer.from(seed),
       Buffer.from(configs.instructionSeed),
     ],
     PROGRAM_ID

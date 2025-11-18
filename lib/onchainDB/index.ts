@@ -5,12 +5,12 @@
 export { configs } from './configs'
 
 // Import locally so we can use them in this module (e.g., inside getPdas)
-import { pdaRoot, pdaTxRef, pdaTargetTxRef, pdaTable, pdaInstructionTable, pdaExternalRecord, pdaExternalRecordFromStrings, pdaExtTable } from './provider/pda.provider'
-export { pdaRoot, pdaTxRef, pdaTargetTxRef, pdaTable, pdaInstructionTable, pdaExternalRecord, pdaExternalRecordFromStrings, pdaExtTable }
+import { pdaRoot, pdaTxRef, pdaTargetTxRef, pdaTable, pdaInstructionTable, pdaExternalRecord, pdaExternalRecordFromStrings, pdaExtTable, pdaDmTable, pdaDmInstructionTable } from './provider/pda.provider'
+export { pdaRoot, pdaTxRef, pdaTargetTxRef, pdaTable, pdaInstructionTable, pdaExternalRecord, pdaExternalRecordFromStrings, pdaExtTable, pdaDmTable, pdaDmInstructionTable }
 
 // Web reader API (UI-friendly)
 export type { ReaderParams, ReaderResult, Row } from './web/reader'
-export { readRecentRows, readRowsByTable, readTableMeta } from './web/reader'
+export { readRecentRows, readRowsByTable, readRowsByDmSeed, readTableMeta, readDmTableMeta } from './web/reader'
 export type { BytesLike } from './core/seed'
 
 // Web writer API (wallet-adapter + Anchor Program)
@@ -19,8 +19,10 @@ export {
   initializeRootWeb,
   createTableWeb,
   createExtTableWeb,
+  createDmTableWeb,
   updateTableColumnsWeb,
   writeRowWeb,
+  writeDmRowWeb,
   pushDbInstructionWeb,
 } from './web/writer'
 
