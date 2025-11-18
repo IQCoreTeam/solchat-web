@@ -6,8 +6,8 @@ import { AppProviders } from "@/components/providers";
 import localFont from "next/font/local";
 
 const bitArrayA2 = localFont({
-    src: '/bitArray-A2.ttf',  // or './fonts/her-font.ttf' if in app/fonts/
-    variable: "--font-custom",
+    src: './fonts/bitArray-A2.ttf',
+    variable: "--font-bitarray",
     display: 'swap',
 });
 
@@ -154,7 +154,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
-      <body className={` antialiased bg-black text-green-400`} style={{fontFamily: bitArrayA2.style.fontFamily}}>
+      <body className={`${bitArrayA2.variable} antialiased bg-black text-green-400`}>
         <AppProviders>{children}</AppProviders>
       </body>
     </html>
