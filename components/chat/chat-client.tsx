@@ -1726,7 +1726,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
 
             <div className="max-h-[50vh] overflow-y-auto bg-black/40 px-4 py-3 space-y-3">
               {dmLoading && <div className="text-white/60">Loading DM messages…</div>}
-              {dmStatus === 'idle' && !activeDm && <div className="text-white/50">대상을 입력하고 DM을 시작하세요.</div>}
+              {dmStatus === 'idle' && !activeDm && <div className="text-white/50">Enter a recipient to start a DM.</div>}
               {!dmLoading && activeDm && orderedDmMessages.length === 0 && (
                 <div className="text-white/50">No DM messages yet. Say hi!</div>
               )}
