@@ -136,7 +136,7 @@ async function getSignaturesFor(address: PublicKey, connection: Connection, limi
   const out: ConfirmedSignatureInfo[] = []
   let before: string | undefined = undefined
   while (out.length < limit) {
-    const chunk = await connection.getSignaturesForAddress(address, { limit: Math.min(1000, limit - out.length), before })
+    const chunk = await connection.getSignaturesForAddress(address, { limit: Math.min(1000, limit - out.length), before }, 'confirmed')
     if (chunk.length === 0) break
     out.push(...chunk)
     before = chunk[chunk.length - 1].signature
@@ -166,7 +166,7 @@ async function getTransactionsForAddress(
           address.toBase58(),
           {
             limit,
-            commitment: 'confirmed',
+            commitment: 'processed',
           }
         ]
       })
@@ -196,7 +196,7 @@ async function getFallbackTransactions(
     const batch = sigs.slice(i, i + BATCH_SIZE)
     const txs = await Promise.all(
       batch.map(s =>
-        connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 })
+        connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0, commitment: 'confirmed' })
       )
     )
     transactions.push(...txs.filter(tx => tx !== null))
@@ -278,7 +278,7 @@ async function collectRowsFromTxRef(
   const byTable: Record<string, Row[]> = {}
 
   for (const s of sigs) {
-    const tx = await connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 })
+    const tx = await connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0, commitment: 'confirmed' })
     if (!tx) continue
     const decoded = decodeAllIxsFromTx(tx as any, programIdB58, ixCoder)
     for (const d of decoded) {
@@ -310,7 +310,7 @@ async function collectRowsFromTxRef(
  */
 export async function readRecentRows(params: ReaderParams): Promise<ReaderResult> {
   const endpoint = params.endpoint || configs.network
-  const connection = params.connection || new Connection(endpoint, 'confirmed')
+  const connection = params.connection || new Connection(endpoint, 'processed')
   const programIdStr = params.programId || configs.programId
   const user = new PublicKey(params.userPublicKey)
   const rootIdBytes = rootIdToBytes(params.rootId)
@@ -425,7 +425,7 @@ export async function readRowsByTable(
   params: ReaderParams & { tableName: string }
 ): Promise<Row[]> {
   const endpoint = params.endpoint || configs.network
-  const connection = params.connection || new Connection(endpoint, 'confirmed')
+  const connection = params.connection || new Connection(endpoint, 'processed')
   const programIdStr = params.programId || configs.programId
   const user = new PublicKey(params.userPublicKey)
   const rootIdBytes = rootIdToBytes(params.rootId)
@@ -694,7 +694,7 @@ export async function readRowsByDmSeed(
   params: ReaderParams & { dmSeed: BytesLike }
 ): Promise<Row[]> {
   const endpoint = params.endpoint || configs.network
-  const connection = params.connection || new Connection(endpoint, 'confirmed')
+  const connection = params.connection || new Connection(endpoint, 'processed')
   const programIdStr = params.programId || configs.programId
   const user = new PublicKey(params.userPublicKey)
   const rootIdBytes = rootIdToBytes(params.rootId)
@@ -816,7 +816,7 @@ export async function readTableMeta(
   params: ReaderParams & { tableName: string }
 ): Promise<{ name: string; columns: string[]; idColumn?: string | number | null; extTableName?: string | null; extKeys?: string[]; tablePda: string; instPda: string | null }> {
   const endpoint = params.endpoint || configs.network
-  const connection = params.connection || new Connection(endpoint, 'confirmed')
+  const connection = params.connection || new Connection(endpoint, 'processed')
   const user = new PublicKey(params.userPublicKey)
   const rootIdBytes = rootIdToBytes(params.rootId)
   const idl = params.idl
@@ -880,7 +880,7 @@ export async function readDmTableMeta(
   params: ReaderParams & { dmSeed: BytesLike }
 ): Promise<{ name: string; columns: string[]; idColumn?: string | number | null; extKeys?: string[]; tablePda: string; instPda: string | null; partyA?: string | null; partyB?: string | null }> {
   const endpoint = params.endpoint || configs.network
-  const connection = params.connection || new Connection(endpoint, 'confirmed')
+  const connection = params.connection || new Connection(endpoint, 'processed')
   const user = new PublicKey(params.userPublicKey)
   const rootIdBytes = rootIdToBytes(params.rootId)
   const idl = params.idl

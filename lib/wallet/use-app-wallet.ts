@@ -130,11 +130,11 @@ export function useAppWallet(): AppWallet {
       // Send the signed transaction
       const signature = await connection.sendRawTransaction(signed.serialize(), {
         skipPreflight: false,
-        preflightCommitment: 'confirmed',
+        preflightCommitment: 'processed',
       });
 
       // Confirm the transaction
-      await connection.confirmTransaction(signature, 'confirmed');
+      await connection.confirmTransaction(signature, 'processed');
 
       return signature;
     };
@@ -156,6 +156,6 @@ export function useAppWallet(): AppWallet {
  * Connection hook - returns consistent Solana connection
  */
 export function useAppConnection() {
-  const connection = useMemo(() => new Connection(RPC_URL, 'confirmed'), []);
+  const connection = useMemo(() => new Connection(RPC_URL, 'processed'), []);
   return { connection };
 }

@@ -428,7 +428,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
       if (!wallet.publicKey) {
         throw new Error('Connect your wallet to continue');
       }
-      const { blockhash } = await connection.getLatestBlockhash('confirmed');
+      const { blockhash } = await connection.getLatestBlockhash('processed');
       tx.feePayer = wallet.publicKey;
       tx.recentBlockhash = blockhash;
       return wallet.sendTransaction(tx, connection);
@@ -657,7 +657,12 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
     // Clear old messages immediately when switching rooms for better UX
     setMessages([]);
     setPendingMessages([]);
-    loadMessages(selectedRoom);
+    loadMessages(selectedRoom).then(() => {
+      // Scroll to bottom after messages load
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 50);
+    });
   }, [selectedRoom, loadMessages]);
 
   useEffect(() => {
@@ -688,10 +693,10 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
         }
       };
 
-      await register(tablePk, 'confirmed', () => {
+      await register(tablePk, 'processed', () => {
         loadMessages(selectedRoom, { skipLoadingState: true });
       });
-      await register(instructionPk, 'confirmed', () => {
+      await register(instructionPk, 'processed', () => {
         loadMessages(selectedRoom, { skipLoadingState: true });
       });
 
@@ -755,7 +760,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
               loadMessages(selectedRoom, { skipLoadingState: true });
             }
           },
-          'confirmed'
+          'processed'
         );
         subscriptions.push(confirmedId);
       } catch (error) {
@@ -801,10 +806,10 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
         }
       };
 
-      await register(tablePk, 'confirmed', () => {
+      await register(tablePk, 'processed', () => {
         loadDmMessages(activeDm, { skipLoadingState: true });
       });
-      await register(txRefPk, 'confirmed', () => {
+      await register(txRefPk, 'processed', () => {
         loadDmMessages(activeDm, { skipLoadingState: true });
       });
 
@@ -1105,7 +1110,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
     return 'Account ready.';
   }, [isUserInitialized, isUserInitializing, userInitError, wallet.publicKey]);
   const canSubmitMessage = messageInput.trim().length > 0 || attachmentUrl.trim().length > 0;
-  const sendDisabled = !canWrite || !canSubmitMessage || sendingMessage;
+  const sendDisabled = !canWrite || !canSubmitMessage;
   const dmSendDisabled = !canWrite || !dmMessageInput.trim() || dmSending || !activeDm;
 
   const handleCopyAddress = useCallback(async () => {
@@ -1582,7 +1587,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
                         e.currentTarget.style.opacity = '1';
                       }}
                     >
-                      <span className="hidden sm:inline">{sendingMessage ? 'Sending…' : 'Send'}</span>
+                      <span className="hidden sm:inline">Send</span>
                       <span className="sm:hidden">
                         <svg className="w-5 h-5 rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
