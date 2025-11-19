@@ -13,7 +13,7 @@ import { useFriends } from '@/lib/friends/use-friends';
 import { FriendCard } from './friend-card';
 import { AddFriendForm } from './add-friend-form';
 import { configs, requestDmWeb, manageDmWeb, writeDmRowWeb, type WriterCtx } from '@/lib/onchainDB';
-import { readRowsByDmSeed, type Row } from '@/lib/onchainDB/web/reader';
+import { readRowsByDmSeed, type Row } from '@/lib/onchainDB/web/cached-reader-integration';
 import { deriveDmSeed, shortenAddress } from '@/lib/friends/utils';
 import { DM_STATUS } from '@/lib/friends/types';
 import type { Friend } from '@/lib/friends/types';
@@ -89,6 +89,7 @@ export function FriendsList() {
   const [chatMessages, setChatMessages] = useState<Row[]>([]);
   const [chatPendingMessages, setChatPendingMessages] = useState<Row[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
+  const [showChatLoadingSpinner, setShowChatLoadingSpinner] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [chatMessageInput, setChatMessageInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
@@ -339,7 +340,7 @@ export function FriendsList() {
   };
 
   const scrollChatToBottom = useCallback(() => {
-    chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    chatMessagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
   }, []);
 
   const loadChatHistory = useCallback(
@@ -374,15 +375,14 @@ export function FriendsList() {
 
   const handleOpenChat = async (friend: Friend) => {
     setChatFriend(friend);
-    setChatMessages([]);
-    setChatPendingMessages([]);
+    // Don't clear messages to prevent flash - let new messages replace old ones
     setChatError(null);
     setChatMessageInput('');
     setChatOpen(true);
     await loadChatHistory(friend);
     setTimeout(() => {
       scrollChatToBottom();
-    }, 50);
+    }, 0);
   };
 
   const handleSendChatMessage = async (event?: FormEvent) => {
@@ -446,6 +446,18 @@ export function FriendsList() {
       setChatSending(false);
     }
   };
+
+  // Debounced loading spinner - only show if loading takes longer than 300ms
+  useEffect(() => {
+    if (chatLoading) {
+      const timer = setTimeout(() => {
+        setShowChatLoadingSpinner(true);
+      }, 300);
+      return () => clearTimeout(timer);
+    } else {
+      setShowChatLoadingSpinner(false);
+    }
+  }, [chatLoading]);
 
   // Auto-scroll when messages or pending messages change
   useEffect(() => {
@@ -561,12 +573,9 @@ export function FriendsList() {
             <h3 className="text-green-400 font-bold">
               DM with {shortenAddress(chatFriend.address)}
             </h3>
-            <button
-              onClick={closeChatModal}
-              className="text-green-400 hover:text-green-300 text-xl leading-none"
-            >
-              ×
-            </button>
+            <Button onClick={closeChatModal} size="sm" style={{ fontFamily: 'monospace', fontSize: '11px' }}>
+              X
+            </Button>
           </div>
 
           {/* Info banner */}
@@ -590,7 +599,7 @@ export function FriendsList() {
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 min-h-0">
-            {chatLoading ? (
+            {showChatLoadingSpinner && orderedChatMessages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full px-8">
                 <p className="text-green-400 text-sm mb-4">Loading messages...</p>
                 <div style={{ width: '100%', maxWidth: '400px' }}>
@@ -618,12 +627,10 @@ export function FriendsList() {
               </div>
             ) : chatError ? (
               <p className="text-red-400 text-sm">Error: {chatError}</p>
-            ) : orderedChatMessages.length === 0 ? (
+            ) : !chatLoading && orderedChatMessages.length === 0 && !chatError ? (
               <p className="text-green-600 text-sm">No messages yet. Start the conversation!</p>
             ) : null}
-            {!chatLoading &&
-              !chatError &&
-              orderedChatMessages.map((row, index) => {
+            {orderedChatMessages.map((row, index) => {
                 const meta = row as Record<string, any>;
                 const key = meta.__rowId ?? meta.id ?? meta.signature ?? index;
                 const sender = meta.sender ?? meta.author ?? 'Unknown';
