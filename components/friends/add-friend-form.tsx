@@ -45,7 +45,7 @@ export function AddFriendForm({ onSubmit, disabled }: AddFriendFormProps) {
   return (
     <form onSubmit={handleSubmit} className="bg-black/40 border-2 border-green-700/50 p-4 rounded">
       <div className="mb-3">
-        <label htmlFor="friendAddress" className="block text-green-400 text-sm font-mono mb-2">
+        <label htmlFor="friendAddress" className="block text-green-400 text-sm   mb-2">
           Add Friend
         </label>
         <input
@@ -55,15 +55,15 @@ export function AddFriendForm({ onSubmit, disabled }: AddFriendFormProps) {
           onChange={(e) => setFriendAddress(e.target.value)}
           placeholder="Enter wallet address..."
           disabled={disabled || loading}
-          className="w-full bg-black border-2 border-green-700 text-green-400 px-3 py-2 rounded font-mono text-sm focus:border-green-500 focus:outline-none placeholder:text-green-900 disabled:opacity-50"
+          className="w-full bg-black border-2 border-green-700 text-green-400 px-3 py-2 rounded   text-sm focus:border-green-500 focus:outline-none placeholder:text-green-900 disabled:opacity-50"
         />
-        {error && <p className="text-red-400 text-xs mt-2 font-mono">{error}</p>}
+        {error && <p className="text-red-400 text-xs mt-2  ">{error}</p>}
       </div>
 
       <button
         type="submit"
         disabled={disabled || loading || !friendAddress.trim()}
-        className="w-full bg-green-700 hover:bg-green-600 disabled:bg-green-900 disabled:opacity-50 text-green-100 px-4 py-2 rounded font-mono text-sm transition-colors"
+        className="w-full bg-green-700 hover:bg-green-600 disabled:bg-green-900 disabled:opacity-50 text-green-100 px-4 py-2 rounded   text-sm transition-colors"
       >
         {loading ? '[SENDING...]' : '[SEND REQUEST]'}
       </button>

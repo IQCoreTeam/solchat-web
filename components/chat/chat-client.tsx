@@ -21,7 +21,7 @@ import { configs, pdaDmInstructionTable, pdaDmTable, pdaInstructionTable, pdaRoo
 import { useUserInit } from '@/lib/onchainDB/hooks/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
-import { deriveSeedBytes } from '@/lib/onchainDB/core/seed';
+import { sortPubkeys, deriveDmSeed } from '@/lib/friends/utils';
 
 const ROOT_ID = configs.defaultRootId;
 const DECODER = new TextDecoder();
@@ -134,13 +134,9 @@ function normalizeFileUrl(value?: string | null): string | null {
   return null;
 }
 
-function sortPubkeys(a: string, b: string) {
-  return [a, b].sort((left, right) => left.localeCompare(right)) as [string, string];
-}
-
 function deriveDmSeedPair(a: string, b: string) {
   const [userA, userB] = sortPubkeys(a, b);
-  const seedBytes = deriveSeedBytes(`${userA}:${userB}`);
+  const seedBytes = deriveDmSeed(userA, userB);
   return { userA, userB, seedBytes, seedHex: bytesToHex(seedBytes) };
 }
 

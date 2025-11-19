@@ -1,9 +1,10 @@
 'use client'
 
-import idl from '../idl.json'
+import defaultIdl from '../idl.json'
 import * as anchor from '@coral-xyz/anchor'
 import type { Idl, AnchorProvider, Program } from '@coral-xyz/anchor'
 import { Connection, PublicKey, Commitment } from '@solana/web3.js'
+import { configs } from '../configs'
 
 export type WalletAdapterLike = {
   publicKey: PublicKey | null
@@ -45,9 +46,26 @@ export function getAnchorProvider(
  * - Instantiate an Anchor Program from IDL and programId.
  */
 export function getProgram(
-
-  provider: AnchorProvider
+  provider: AnchorProvider,
+  idlOverride?: Idl,
+  programIdOverride?: string | PublicKey
 ): Program {
-
-  return new anchor.Program(idl as Idl, provider)
+  const candidateIdl = (idlOverride as Idl) ?? (defaultIdl as Idl)
+  const resolvedIdl =
+    candidateIdl && Array.isArray((candidateIdl as any).accounts) && (candidateIdl as any).types
+      ? candidateIdl
+      : (defaultIdl as Idl)
+  const programAddress =
+    programIdOverride ??
+    (resolvedIdl as any)?.address ??
+    configs.programId
+  const programPublicKey =
+    programAddress instanceof PublicKey
+      ? programAddress
+      : new PublicKey(programAddress)
+  const idlWithAddress = {
+    ...(resolvedIdl as any),
+    address: programPublicKey.toBase58(),
+  } as Idl
+  return new anchor.Program(idlWithAddress, provider)
 }

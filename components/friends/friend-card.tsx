@@ -54,11 +54,11 @@ export function FriendCard({
         {/* Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-green-400 font-mono text-sm">
+            <span className="text-green-400   text-sm">
               {shortenAddress(friend.address)}
             </span>
             <span
-              className={`text-xs px-2 py-0.5 rounded border ${statusColor} font-mono uppercase`}
+              className={`text-xs px-2 py-0.5 rounded border ${statusColor}   uppercase`}
             >
               {friend.status}
             </span>
@@ -78,13 +78,13 @@ export function FriendCard({
               <>
                 <button
                   onClick={() => onOpenChat?.(friend)}
-                  className="px-3 py-1 bg-green-700 hover:bg-green-600 text-green-100 rounded text-xs font-mono transition-colors"
+                  className="px-3 py-1 bg-green-700 hover:bg-green-600 text-green-100 rounded text-xs   transition-colors"
                 >
                   [CHAT]
                 </button>
                 <button
                   onClick={() => onBlock?.(friend)}
-                  className="px-3 py-1 bg-red-900/50 hover:bg-red-900/70 text-red-400 rounded text-xs font-mono transition-colors border border-red-700"
+                  className="px-3 py-1 bg-red-900/50 hover:bg-red-900/70 text-red-400 rounded text-xs   transition-colors border border-red-700"
                 >
                   [BLOCK]
                 </button>
@@ -95,13 +95,13 @@ export function FriendCard({
               <>
                 <button
                   onClick={() => onApprove?.(friend)}
-                  className="px-3 py-1 bg-green-700 hover:bg-green-600 text-green-100 rounded text-xs font-mono transition-colors"
+                  className="px-3 py-1 bg-green-700 hover:bg-green-600 text-green-100 rounded text-xs   transition-colors"
                 >
                   [APPROVE]
                 </button>
                 <button
                   onClick={() => onBlock?.(friend)}
-                  className="px-3 py-1 bg-red-900/50 hover:bg-red-900/70 text-red-400 rounded text-xs font-mono transition-colors border border-red-700"
+                  className="px-3 py-1 bg-red-900/50 hover:bg-red-900/70 text-red-400 rounded text-xs   transition-colors border border-red-700"
                 >
                   [DECLINE]
                 </button>
@@ -111,7 +111,7 @@ export function FriendCard({
             {isBlocked && (
               <button
                 onClick={() => onUnblock?.(friend)}
-                className="px-3 py-1 bg-yellow-900/50 hover:bg-yellow-900/70 text-yellow-400 rounded text-xs font-mono transition-colors border border-yellow-700"
+                className="px-3 py-1 bg-yellow-900/50 hover:bg-yellow-900/70 text-yellow-400 rounded text-xs   transition-colors border border-yellow-700"
               >
                 [UNBLOCK]
               </button>
