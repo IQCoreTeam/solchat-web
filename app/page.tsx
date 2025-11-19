@@ -225,8 +225,8 @@ const ButtonContainer = styled.div`
   }
 `;
 
-const PopupOverlay = styled.div<{ isOpen: boolean }>`
-  display: ${props => props.isOpen ? 'flex' : 'none'};
+const PopupOverlay = styled.div<{ $isOpen: boolean }>`
+  display: ${props => props.$isOpen ? 'flex' : 'none'};
   position: fixed;
   top: 0;
   left: 0;
@@ -403,7 +403,7 @@ export default function Home() {
 
         <Footer />
 
-        <PopupOverlay isOpen={isPopupOpen} onClick={() => setIsPopupOpen(false)}>
+        <PopupOverlay $isOpen={isPopupOpen} onClick={() => setIsPopupOpen(false)}>
           <PopupContent onClick={(e) => e.stopPropagation()}>
             <PopupHeader>
               <span>About SolChat</span>

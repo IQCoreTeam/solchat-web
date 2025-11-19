@@ -21,6 +21,9 @@ import idl from '@/lib/onchainDB/idl.json';
 import {Idl} from "@coral-xyz/anchor";
 import { Window, WindowHeader, WindowContent, Button, TextField, Tabs, Tab, TabBody, Frame, Cutout, Separator, ProgressBar } from 'react95';
 import { ThemeProvider, createGlobalStyle } from 'styled-components';
+import { MessageBubble } from '@/components/ui/message-bubble';
+import { MessageInputForm } from '@/components/chat/message-input-form';
+import { normalizeFileUrl } from '@/lib/utils/message-utils';
 
 const GlobalStyles = createGlobalStyle`
   @keyframes slide {
@@ -94,9 +97,14 @@ export function FriendsList() {
   const [chatMessageInput, setChatMessageInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const chatMessagesEndRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLInputElement>(null);
   const [addFriendModalOpen, setAddFriendModalOpen] = useState(false);
   const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
   const [friendToBlock, setFriendToBlock] = useState<Friend | null>(null);
+  const [showAttachmentInput, setShowAttachmentInput] = useState(false);
+  const [attachmentUrl, setAttachmentUrl] = useState('');
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
 
   const writerCtx = useMemo<WriterCtx | null>(() => {
     if (!wallet) return null;
@@ -137,7 +145,20 @@ export function FriendsList() {
     setChatError(null);
     setChatMessageInput('');
     setChatSending(false);
+    setAttachmentUrl('');
+    setAttachmentError(null);
+    setShowAttachmentInput(false);
   };
+
+  const handleCopyAddress = useCallback((address: string, messageId: string) => {
+    navigator.clipboard?.writeText(address);
+    setCopiedMessageId(messageId);
+    setTimeout(() => setCopiedMessageId(null), 2000);
+  }, []);
+
+  const handleDownloadAttachment = useCallback((url: string) => {
+    window.open(url, '_blank');
+  }, []);
 
   // Fetch friends
   const { friends, loading, error: friendsError, refetch } = useFriends({
@@ -395,6 +416,13 @@ export function FriendsList() {
       return;
     }
 
+    // Validate attachment URL
+    const fileUrl = normalizeFileUrl(attachmentUrl);
+    if (attachmentUrl.trim() && !fileUrl) {
+      setAttachmentError('Invalid attachment URL. Must be a valid https:// link.');
+      return;
+    }
+
     // Generate unique message ID
     const messageId =
       typeof crypto !== 'undefined' && crypto.randomUUID
@@ -407,6 +435,7 @@ export function FriendsList() {
     const tempMessage: Row = {
       id: messageId,
       text,
+      file: fileUrl || undefined,
       sender: userAddress,
       displayName: shortenAddress(userAddress, 6),
       timestamp,
@@ -415,7 +444,7 @@ export function FriendsList() {
       __rowId: `temp-${messageId}`,
     } as Row;
 
-    const payload = {
+    const payload: any = {
       id: messageId,
       text,
       sender: userAddress,
@@ -425,8 +454,15 @@ export function FriendsList() {
       room: `dm-${chatFriend.dmSeedHex.slice(0, 6)}`,
     };
 
-    // Clear input immediately (before sending)
+    if (fileUrl) {
+      payload.file = fileUrl;
+    }
+
+    // Clear inputs immediately (before sending)
     setChatMessageInput('');
+    setAttachmentUrl('');
+    setAttachmentError(null);
+    setShowAttachmentInput(false);
     setChatSending(true);
     setChatError(null);
 
@@ -633,95 +669,58 @@ export function FriendsList() {
             {orderedChatMessages.map((row, index) => {
                 const meta = row as Record<string, any>;
                 const key = meta.__rowId ?? meta.id ?? meta.signature ?? index;
-                const sender = meta.sender ?? meta.author ?? 'Unknown';
+                const sender = meta.sender ?? meta.author ?? userAddress;
                 const textContent =
                   typeof meta.text === 'string'
                     ? meta.text
                     : typeof meta.message === 'string'
                     ? meta.message
                     : JSON.stringify(meta);
-                const tsValue = meta.timestamp ?? meta.createdAt ?? meta.time;
-                let formattedTime = '';
-                if (typeof tsValue === 'number') {
-                  formattedTime = new Date(tsValue).toLocaleString();
-                } else if (typeof tsValue === 'string' && tsValue) {
-                  const asNumber = Number(tsValue);
-                  if (!Number.isNaN(asNumber)) {
-                    formattedTime = new Date(asNumber).toLocaleString();
-                  }
-                }
                 const isSender = sender === userAddress;
-                const messageStatus = meta.status === 'pending' ? 'Pending' : 'Sent';
-                const isPending = meta.status === 'pending';
                 return (
-                  <div
+                  <MessageBubble
                     key={key}
-                    className={`flex ${isSender ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`max-w-[80%] rounded-lg px-3 py-2 ${
-                        isSender
-                          ? isPending
-                            ? 'bg-green-900/30 border border-yellow-600'
-                            : 'bg-green-900/50 border border-green-700'
-                          : 'bg-green-900/20 border border-green-800'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 mb-1 text-xs text-green-600">
-                        <span>{shortenAddress(sender, 6)}</span>
-                        {formattedTime && <span>• {formattedTime}</span>}
-                        {isPending && <span className="text-yellow-500">• {messageStatus}</span>}
-                      </div>
-                      <p className="text-green-300 text-sm whitespace-pre-wrap break-words">
-                        {textContent}
-                      </p>
-                    </div>
-                  </div>
+                    id={meta.id || key}
+                    text={textContent}
+                    sender={sender}
+                    displayName={meta.displayName || shortenAddress(sender, 6)}
+                    avatarHue={meta.avatarHue}
+                    timestamp={meta.timestamp}
+                    status={meta.status || 'confirmed'}
+                    signature={meta.signature}
+                    file={meta.file}
+                    isOwn={isSender}
+                    viewerAddress={userAddress || ''}
+                    mode="friend"
+                    onCopyAddress={handleCopyAddress}
+                    onDownloadAttachment={handleDownloadAttachment}
+                    copiedMessageId={copiedMessageId}
+                  />
                 );
               })}
             <div ref={chatMessagesEndRef} />
           </div>
 
           {/* Input form */}
-          <form onSubmit={handleSendChatMessage} className="border-t border-green-700/50 bg-black/70 px-4 py-3 flex flex-col gap-2 rounded-b-xl flex-shrink-0">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={chatMessageInput}
-                onChange={(e) => setChatMessageInput(e.target.value)}
-                placeholder="Type your message..."
-                disabled={!writerCtx || !chatFriend || !canSendChatToFriend(chatFriend)}
-                className="flex-1 bg-black border-2 border-green-700 text-green-400 px-3 py-2 rounded text-sm focus:border-green-500 focus:outline-none placeholder:text-green-900 disabled:opacity-50"
-              />
-              <button
-                type="submit"
-                disabled={
-                  !writerCtx ||
-                  !chatMessageInput.trim() ||
-                  !chatFriend ||
-                  !canSendChatToFriend(chatFriend) ||
-                  chatSending
-                }
-                className="bg-green-700 hover:bg-green-600 disabled:bg-green-900 disabled:opacity-50 text-green-100 px-4 py-2 rounded text-sm transition-colors"
-              >
-                {chatSending ? 'Sending...' : 'Send'}
-              </button>
-            </div>
-            {!writerCtx && (
-              <p className="text-yellow-500 text-xs">
-                Connect your wallet to send messages
-              </p>
-            )}
-            {chatFriend && !canSendChatToFriend(chatFriend) && (
-              <p className="text-yellow-500 text-xs">
-                {chatFriend.status === 'pending'
-                  ? isRequesterForFriend(chatFriend)
-                    ? 'Request pending. Waiting for approval from the recipient.'
-                    : 'Approve this request before replying.'
-                  : 'Unblock this DM to continue the conversation.'}
-              </p>
-            )}
-          </form>
+          <div className="rounded-b-xl overflow-hidden">
+            <MessageInputForm
+              messageInput={chatMessageInput}
+              setMessageInput={setChatMessageInput}
+              attachmentUrl={attachmentUrl}
+              setAttachmentUrl={setAttachmentUrl}
+              showAttachmentInput={showAttachmentInput}
+              setShowAttachmentInput={setShowAttachmentInput}
+              attachmentError={attachmentError}
+              setAttachmentError={setAttachmentError}
+              onSubmit={handleSendChatMessage}
+              canWrite={!!writerCtx && !!chatFriend && canSendChatToFriend(chatFriend)}
+              canSubmit={!!writerCtx && !!chatMessageInput.trim() && !!chatFriend && canSendChatToFriend(chatFriend) && !chatSending}
+              writerCtx={writerCtx}
+              isUserInitialized={true}
+              userInitError={null}
+              inputRef={chatInputRef}
+            />
+          </div>
         </div>
       </div>
     )}
