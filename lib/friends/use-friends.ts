@@ -11,7 +11,7 @@ import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
 import bs58 from 'bs58';
 import type { Friend } from './types';
 import { STATUS_LABELS } from './types';
-import { deriveDmSeed, bytesToHex } from './utils';
+import { deriveDmSeed, deriveLegacyDmSeed, bytesToHex } from './utils';
 import { pdaRoot, pdaDmTable } from '@/lib/onchainDB';
 
 /**
@@ -74,9 +74,8 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
       console.log('[useFriends] Found', dmTableAccounts.length, 'DMTable accounts');
 
       const friendsList: Friend[] = [];
-      // Use the same ROOT_ID that's used in the app
       const ROOT_ID = process.env.NEXT_PUBLIC_ROOT_ID || 'solchat-root';
-      const rootPda = pdaRoot(ROOT_ID);
+      const rootPda = pdaRoot(ROOT_ID, programPubkey);
 
       for (const { account, pubkey } of dmTableAccounts) {
         try {
@@ -93,22 +92,35 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
 
           const friendAddress = partyA === userAddress ? partyB : partyA;
 
-          // Derive the seed and verify it matches the PDA
-          const dmSeed = deriveDmSeed(partyA, partyB);
-          const expectedPda = pdaDmTable(rootPda, dmSeed);
+          const primarySeed = deriveDmSeed(partyA, partyB);
+          const primaryPda = pdaDmTable(rootPda, primarySeed, programPubkey);
+          const legacySeed = deriveLegacyDmSeed(partyA, partyB);
+          const legacyPda = pdaDmTable(rootPda, legacySeed, programPubkey);
 
-          // Verify the PDA matches - if not, skip this account
-          if (expectedPda.toBase58() !== pubkey.toBase58()) {
+          let dmSeed: Uint8Array | null = null;
+          let dmSeedHex: string | null = null;
+          const actualAddress = pubkey.toBase58();
+
+          if (primaryPda.toBase58() === actualAddress) {
+            dmSeed = primarySeed;
+            dmSeedHex = bytesToHex(primarySeed);
+          } else if (legacyPda.toBase58() === actualAddress) {
+            dmSeed = legacySeed;
+            dmSeedHex = bytesToHex(legacySeed);
+          } else {
             console.warn('[useFriends] PDA mismatch, skipping account:', {
-              expected: expectedPda.toBase58(),
-              actual: pubkey.toBase58(),
+              expected: primaryPda.toBase58(),
+              legacyExpected: legacyPda.toBase58(),
+              actual: actualAddress,
             });
             continue;
           }
 
-          const dmSeedHex = bytesToHex(dmSeed);
-
           // Map status number to label
+          if (!dmSeed || !dmSeedHex) {
+            continue;
+          }
+
           const status = STATUS_LABELS[decoded.status] || 'pending';
 
           friendsList.push({
@@ -118,7 +130,7 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
             blocker: decoded.blocker,
             dmSeed,
             dmSeedHex,
-            tableAddress: pubkey.toBase58(),
+            tableAddress: actualAddress,
             partyA,
             partyB,
           });

@@ -31,7 +31,7 @@ export function FriendsList() {
   const [error, setError] = useState<string | null>(null);
 
   // Fetch friends
-  const { friends, loading, refetch } = useFriends({
+  const { friends, loading, error: friendsError, refetch } = useFriends({
     connection,
     userAddress: userAddress || '',
     programId: configs.programId,
@@ -74,6 +74,7 @@ export function FriendsList() {
 
   // Send friend request
   const handleAddFriend = async (friendAddress: string) => {
+    setError(null);
     if (!userAddress || !wallet) {
       throw new Error('Wallet not connected');
     }
@@ -96,19 +97,25 @@ export function FriendsList() {
       idl: idl as any,
     };
 
-    const { tx } = await requestDmWeb(
-      writerCtx,
-      ROOT_ID,
-      dmSeed,
-      'dm',
-      MESSAGE_COLUMNS,
-      friendAddress,
-      JSON.stringify({ type: 'friend_request' }),
-      { idColumn: 'id' }
-    );
+    try {
+      const { tx } = await requestDmWeb(
+        writerCtx,
+        ROOT_ID,
+        dmSeed,
+        'dm',
+        MESSAGE_COLUMNS,
+        friendAddress,
+        JSON.stringify({ type: 'friend_request' }),
+        { idColumn: 'id' }
+      );
 
-    await sendTx(tx, '[FriendsList] Friend request sent:');
-    await refetch();
+      await sendTx(tx, '[FriendsList] Friend request sent:');
+      await refetch();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to send request';
+      setError(message);
+      throw err;
+    }
   };
 
   // Approve friend request
@@ -129,13 +136,26 @@ export function FriendsList() {
       idl: idl as any,
     };
 
-    const { tx, dmTable } = await manageDmWeb(writerCtx, ROOT_ID, friend.dmSeed, DM_STATUS.APPROVED);
+    setError(null);
 
-    console.log('[FriendsList] DMTable PDA:', dmTable);
-    console.log('[FriendsList] Expected:', friend.tableAddress);
+    try {
+      const { tx, dmTable } = await manageDmWeb(
+        writerCtx,
+        ROOT_ID,
+        friend.dmSeed,
+        DM_STATUS.APPROVED
+      );
 
-    await sendTx(tx, '[FriendsList] Friend approved:');
-    await refetch();
+      console.log('[FriendsList] DMTable PDA:', dmTable);
+      console.log('[FriendsList] Expected:', friend.tableAddress);
+
+      await sendTx(tx, '[FriendsList] Friend approved:');
+      await refetch();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to approve friend';
+      setError(message);
+      console.error('[FriendsList] Failed to approve friend', err);
+    }
   };
 
   // Block/decline friend
@@ -148,10 +168,18 @@ export function FriendsList() {
       idl: idl as any,
     };
 
-    const { tx } = await manageDmWeb(writerCtx, ROOT_ID, friend.dmSeed, DM_STATUS.BLOCKED);
+    setError(null);
 
-    await sendTx(tx, '[FriendsList] Friend blocked:');
-    await refetch();
+    try {
+      const { tx } = await manageDmWeb(writerCtx, ROOT_ID, friend.dmSeed, DM_STATUS.BLOCKED);
+
+      await sendTx(tx, '[FriendsList] Friend blocked:');
+      await refetch();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to block friend';
+      setError(message);
+      console.error('[FriendsList] Failed to block friend', err);
+    }
   };
 
   // Unblock friend
@@ -164,10 +192,18 @@ export function FriendsList() {
       idl: idl as any,
     };
 
-    const { tx } = await manageDmWeb(writerCtx, ROOT_ID, friend.dmSeed, DM_STATUS.APPROVED);
+    setError(null);
 
-    await sendTx(tx, '[FriendsList] Friend unblocked:');
-    await refetch();
+    try {
+      const { tx } = await manageDmWeb(writerCtx, ROOT_ID, friend.dmSeed, DM_STATUS.APPROVED);
+
+      await sendTx(tx, '[FriendsList] Friend unblocked:');
+      await refetch();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to unblock friend';
+      setError(message);
+      console.error('[FriendsList] Failed to unblock friend', err);
+    }
   };
 
   // Open chat (placeholder)
@@ -179,13 +215,20 @@ export function FriendsList() {
   return (
     <div className="flex-1 p-4 md:p-6 max-w-4xl mx-auto w-full">
       <div className="mb-6">
-        <h1 className="text-2xl md:text-3xl font-bold text-green-400 font-mono mb-2">
+        <h1 className="text-2xl md:text-3xl font-bold text-green-400   mb-2">
           [FRIENDS]
         </h1>
-        <p className="text-green-600 text-sm font-mono">
+        <p className="text-green-600 text-sm  ">
           Manage your on-chain friendships
         </p>
       </div>
+
+      {/* Error Banner */}
+      {(error || friendsError) && (
+        <div className="mb-4 border border-red-700 bg-red-900/30 text-red-300 px-4 py-2   text-sm rounded">
+          {error || friendsError}
+        </div>
+      )}
 
       {/* Add Friend Form */}
       <div className="mb-6">
@@ -196,7 +239,7 @@ export function FriendsList() {
       <div className="flex gap-2 mb-4 border-b-2 border-green-700/30 pb-2">
         <button
           onClick={() => setActiveTab('all')}
-          className={`px-4 py-2 font-mono text-sm transition-colors ${
+          className={`px-4 py-2   text-sm transition-colors ${
             activeTab === 'all'
               ? 'text-green-400 border-b-2 border-green-400'
               : 'text-green-700 hover:text-green-500'
@@ -206,7 +249,7 @@ export function FriendsList() {
         </button>
         <button
           onClick={() => setActiveTab('pending')}
-          className={`px-4 py-2 font-mono text-sm transition-colors ${
+          className={`px-4 py-2   text-sm transition-colors ${
             activeTab === 'pending'
               ? 'text-green-400 border-b-2 border-green-400'
               : 'text-green-700 hover:text-green-500'
@@ -216,7 +259,7 @@ export function FriendsList() {
         </button>
         <button
           onClick={() => setActiveTab('blocked')}
-          className={`px-4 py-2 font-mono text-sm transition-colors ${
+          className={`px-4 py-2   text-sm transition-colors ${
             activeTab === 'blocked'
               ? 'text-green-400 border-b-2 border-green-400'
               : 'text-green-700 hover:text-green-500'
@@ -228,7 +271,7 @@ export function FriendsList() {
 
       {/* Error display */}
       {error && (
-        <div className="bg-red-900/30 border-2 border-red-700 text-red-400 p-4 rounded mb-4 font-mono text-sm">
+        <div className="bg-red-900/30 border-2 border-red-700 text-red-400 p-4 rounded mb-4   text-sm">
           {error}
         </div>
       )}
@@ -236,14 +279,14 @@ export function FriendsList() {
       {/* Loading state */}
       {loading && (
         <div className="text-center py-12">
-          <div className="text-green-400 font-mono animate-pulse">[LOADING...]</div>
+          <div className="text-green-400   animate-pulse">[LOADING...]</div>
         </div>
       )}
 
       {/* Empty state */}
       {!loading && filteredFriends.length === 0 && (
         <div className="text-center py-12 bg-black/20 border-2 border-green-900/30 rounded">
-          <p className="text-green-700 font-mono text-sm">
+          <p className="text-green-700   text-sm">
             {activeTab === 'all' && 'No friends yet. Add someone above!'}
             {activeTab === 'pending' && 'No pending requests'}
             {activeTab === 'blocked' && 'No blocked users'}

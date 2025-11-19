@@ -3,13 +3,17 @@
  * - Helper functions for DM/friends operations
  */
 
+import { Buffer } from 'buffer';
 import { PublicKey } from '@solana/web3.js';
+import { deriveSeedBytes } from '@/lib/onchainDB/core/seed';
 
 /**
  * Sort two public keys alphabetically
  */
 export function sortPubkeys(a: string, b: string): [string, string] {
-  return a < b ? [a, b] : [b, a];
+  const keyA = new PublicKey(a);
+  const keyB = new PublicKey(b);
+  return Buffer.compare(keyA.toBuffer(), keyB.toBuffer()) <= 0 ? [a, b] : [b, a];
 }
 
 /**
@@ -17,6 +21,15 @@ export function sortPubkeys(a: string, b: string): [string, string] {
  * - Seeds are derived from sorted addresses for consistency
  */
 export function deriveDmSeed(userA: string, userB: string): Uint8Array {
+  const [sortedA, sortedB] = sortPubkeys(userA, userB);
+  return deriveSeedBytes(`${sortedA}:${sortedB}`);
+}
+
+/**
+ * Legacy DM seed derivation (first 16 bytes of each pubkey)
+ * - Kept for backward compatibility with earlier friend requests
+ */
+export function deriveLegacyDmSeed(userA: string, userB: string): Uint8Array {
   const [sortedA, sortedB] = sortPubkeys(userA, userB);
   const pubkeyA = new PublicKey(sortedA);
   const pubkeyB = new PublicKey(sortedB);

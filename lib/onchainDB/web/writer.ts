@@ -137,7 +137,7 @@ export type WriterCtx<T extends Idl = Idl> = {
 
 function programFromCtx(ctx: WriterCtx): Program {
   const provider = getAnchorProvider(ctx.connection, ctx.wallet)
-  return getProgram(provider)
+  return getProgram(provider, ctx.idl as Idl, ctx.programId)
 }
 
 /**
