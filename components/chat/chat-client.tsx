@@ -16,7 +16,7 @@ import {
   writeDmRowWeb,
   type WriterCtx,
 } from '@/lib/onchainDB/web/writer';
-import { readRowsByDmSeed, readRowsByTable, type Row } from '@/lib/onchainDB/web/reader';
+import { readRowsByDmSeed, readRowsByTable, type Row } from '@/lib/onchainDB/web/cached-reader-integration';
 import { configs, pdaDmInstructionTable, pdaDmTable, pdaInstructionTable, pdaRoot, pdaTable, pdaTxRef } from '@/lib/onchainDB';
 import { useUserInit } from '@/lib/onchainDB/hooks/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
@@ -272,6 +272,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [pendingMessages, setPendingMessages] = useState<MessageRow[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [showLoadingSpinner, setShowLoadingSpinner] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
 
   const [newRoomName, setNewRoomName] = useState('');
@@ -364,6 +365,27 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
       return tsA - tsB;
     });
   }, [messages, pendingMessages]);
+
+  // Auto-scroll to bottom when messages load or change
+  useEffect(() => {
+    if (orderedMessages.length > 0) {
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+      }, 0);
+    }
+  }, [orderedMessages.length]);
+
+  // Debounced loading spinner - only show if loading takes longer than 300ms
+  useEffect(() => {
+    if (messagesLoading) {
+      const timer = setTimeout(() => {
+        setShowLoadingSpinner(true);
+      }, 300);
+      return () => clearTimeout(timer);
+    } else {
+      setShowLoadingSpinner(false);
+    }
+  }, [messagesLoading]);
 
   const orderedDmMessages = useMemo(() => {
     const deduped: MessageRow[] = [];
@@ -654,14 +676,12 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
       setPendingMessages([]);
       return;
     }
-    // Clear old messages immediately when switching rooms for better UX
-    setMessages([]);
-    setPendingMessages([]);
+    // Don't clear messages to prevent flash - let new messages replace old ones
     loadMessages(selectedRoom).then(() => {
-      // Scroll to bottom after messages load
+      // Scroll to bottom instantly after messages load
       setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, 50);
+        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+      }, 0);
     });
   }, [selectedRoom, loadMessages]);
 
@@ -1369,7 +1389,6 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
             <div className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-white/60">
               Rooms
             </div>
-            {roomsLoading && <div className="px-2 py-2 text-sm text-white/60">Loading rooms…</div>}
             {!roomsLoading && rooms.length === 0 && (
               <div className="px-2 py-2 text-sm text-white/60">No chat room exists.</div>
             )}
@@ -1406,7 +1425,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
                 </p>
               </div>
               <div className="flex-1 overflow-y-auto bg-black/20 px-3 py-3 md:px-6 md:py-4">
-                {messagesLoading && (
+                {showLoadingSpinner && orderedMessages.length === 0 && (
                   <div className="flex flex-col items-center justify-center h-full">
                     <div className="relative">
                       <div className="w-12 h-12 border-4 rounded-full animate-spin" style={{ borderColor: 'rgba(65, 255, 0, 0.2)', borderTopColor: 'rgb(65, 255, 0)' }}></div>
@@ -1423,7 +1442,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
                   </div>
                 )}
                 {messagesError && <div className="text-red-400">{messagesError}</div>}
-                {!messagesLoading && orderedMessages.length === 0 && (
+                {!messagesLoading && orderedMessages.length === 0 && !messagesError && (
                   <div className="text-white/50">No messages yet. Be the first to say hello!</div>
                 )}
                 <div className="space-y-4">
@@ -1438,7 +1457,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
                     return (
                       <div key={message.id} id={`message-${message.id}`} className={`flex w-full ${isOwn ? 'justify-end' : 'justify-start'}`}>
                         <div
-                          className={`flex max-w-[90%] md:max-w-[80%] items-end gap-2 md:gap-3 ${
+                          className={`flex max-w-[90%] md:max-w-[80%] min-w-0 items-end gap-2 md:gap-3 ${
                             isOwn ? 'flex-row-reverse text-right' : 'text-left'
                           }`}
                         >
@@ -1501,7 +1520,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
                               )}
                               <span className="text-white/40">· {formatTimestamp(message.timestamp)}</span>
                             </div>
-                            <div className="text-sm leading-relaxed">{message.text || '[empty]'}</div>
+                            <div className="text-sm leading-relaxed break-all">{message.text || '[empty]'}</div>
                             {fileUrl && (
                               <div className="mt-3 space-y-2 text-left">
                                 {!isAttachmentOpen && (
@@ -1761,7 +1780,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
                             <span className="text-white/40">{shorten(message.sender)}</span>
                           )}
                         </div>
-                        <div className="whitespace-pre-wrap text-sm leading-relaxed">{message.text}</div>
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed break-all">{message.text}</div>
                         <div className="mt-1 flex items-center gap-2 text-[11px] text-white/50">
                           <span>{formatTimestamp(message.timestamp)}</span>
                           <span>·</span>
