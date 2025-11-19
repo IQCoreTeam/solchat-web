@@ -17,7 +17,7 @@ import {
   type WriterCtx,
 } from '@/lib/onchainDB/web/writer';
 import { readRowsByDmSeed, readRowsByTable } from '@/lib/onchainDB/web/cached-reader-integration';
-import { configs, pdaDmInstructionTable, pdaDmTable, pdaInstructionTable, pdaRoot, pdaTable } from '@/lib/onchainDB';
+import { pdaDmInstructionTable, pdaDmTable, pdaInstructionTable, pdaRoot, pdaTable } from '@/lib/onchainDB';
 import { useUserInit } from '@/lib/onchainDB/hooks/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
