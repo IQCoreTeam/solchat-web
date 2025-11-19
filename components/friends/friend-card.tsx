@@ -69,7 +69,15 @@ export function FriendCard({
           )}
 
           {isPending && isRequester && (
-            <p className="text-green-600 text-xs mb-2">Request sent</p>
+            <div className="text-green-500 text-xs mb-2">
+              <p>Request sent — you can message while waiting for approval.</p>
+              <button
+                onClick={() => onOpenChat?.(friend)}
+                className="mt-1 px-3 py-1 border border-green-600 text-green-100 rounded text-[11px] uppercase tracking-wide hover:bg-green-600/20 transition"
+              >
+                [OPEN DM]
+              </button>
+            </div>
           )}
 
           {/* Actions */}

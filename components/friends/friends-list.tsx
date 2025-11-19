@@ -5,14 +5,16 @@
 
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import type { CSSProperties, FormEvent } from 'react';
 import { Transaction } from '@solana/web3.js';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { useFriends } from '@/lib/friends/use-friends';
 import { FriendCard } from './friend-card';
 import { AddFriendForm } from './add-friend-form';
-import { configs, requestDmWeb, manageDmWeb, type WriterCtx } from '@/lib/onchainDB';
-import { deriveDmSeed } from '@/lib/friends/utils';
+import { configs, requestDmWeb, manageDmWeb, writeDmRowWeb, type WriterCtx } from '@/lib/onchainDB';
+import { readRowsByDmSeed, type Row } from '@/lib/onchainDB/web/reader';
+import { deriveDmSeed, shortenAddress } from '@/lib/friends/utils';
 import { DM_STATUS } from '@/lib/friends/types';
 import type { Friend } from '@/lib/friends/types';
 import idl from '@/lib/onchainDB/idl.json';
@@ -30,6 +32,53 @@ export function FriendsList() {
 
   const [activeTab, setActiveTab] = useState<Tab>('all');
   const [error, setError] = useState<string | null>(null);
+  const [chatFriend, setChatFriend] = useState<Friend | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<Row[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [chatMessageInput, setChatMessageInput] = useState('');
+  const [chatSending, setChatSending] = useState(false);
+
+  const writerCtx = useMemo<WriterCtx | null>(() => {
+    if (!wallet) return null;
+    return {
+      connection,
+      wallet,
+      idl: idl as Idl,
+    };
+  }, [connection, wallet]);
+
+  const isRequesterForFriend = useCallback(
+    (friend: Friend) => {
+      if (!userAddress) return false;
+      if (friend.requester === 0 && friend.partyA === userAddress) return true;
+      if (friend.requester === 1 && friend.partyB === userAddress) return true;
+      return false;
+    },
+    [userAddress]
+  );
+
+  const canSendChatToFriend = useCallback(
+    (friend: Friend) => {
+      if (!userAddress) return false;
+      if (friend.status === 'approved') return true;
+      if (friend.status === 'pending') {
+        return isRequesterForFriend(friend);
+      }
+      return false;
+    },
+    [isRequesterForFriend, userAddress]
+  );
+
+  const closeChatModal = () => {
+    setChatOpen(false);
+    setChatFriend(null);
+    setChatMessages([]);
+    setChatError(null);
+    setChatMessageInput('');
+    setChatSending(false);
+  };
 
   // Fetch friends
   const { friends, loading, error: friendsError, refetch } = useFriends({
@@ -96,11 +145,9 @@ export function FriendsList() {
 
     const dmSeed = deriveDmSeed(userAddress, friendAddress);
 
-    const writerCtx: WriterCtx = {
-      connection,
-      wallet,
-      idl: idl as Idl,
-    };
+    if (!writerCtx) {
+      throw new Error('Wallet not connected');
+    }
 
     try {
       const { tx } = await requestDmWeb(
@@ -217,13 +264,81 @@ export function FriendsList() {
     }
   };
 
-  // Open chat (placeholder)
-  const handleOpenChat = (friend: Friend) => {
-    console.log('[FriendsList] Opening chat with:', friend.address);
-    // TODO: Navigate to DM chat
+  const loadChatHistory = useCallback(
+    async (friend: Friend, opts?: { silent?: boolean }) => {
+      if (!userAddress && !friend.address) return;
+      if (!opts?.silent) {
+        setChatLoading(true);
+        setChatError(null);
+      }
+      try {
+        const rows = await readRowsByDmSeed({
+          connection,
+          rootId: ROOT_ID,
+          userPublicKey: userAddress || friend.address,
+          programId: configs.programId,
+          idl: idl as any,
+          dmSeed: friend.dmSeed,
+          maxTx: 100,
+        });
+        setChatMessages(rows);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load DM conversation';
+        setChatError(message);
+      } finally {
+        if (!opts?.silent) {
+          setChatLoading(false);
+        }
+      }
+    },
+    [connection, userAddress]
+  );
+
+  const handleOpenChat = async (friend: Friend) => {
+    setChatFriend(friend);
+    setChatMessages([]);
+    setChatError(null);
+    setChatMessageInput('');
+    setChatOpen(true);
+    await loadChatHistory(friend);
+  };
+
+  const handleSendChatMessage = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (!chatFriend || !writerCtx || !userAddress) return;
+    const text = chatMessageInput.trim();
+    if (!text) return;
+    if (!canSendChatToFriend(chatFriend)) {
+      setChatError('Approve the request to continue this conversation.');
+      return;
+    }
+
+    const payload = {
+      text,
+      sender: userAddress,
+      displayName: shortenAddress(userAddress, 6),
+      timestamp: Date.now(),
+      room: `dm-${chatFriend.dmSeedHex.slice(0, 6)}`,
+    };
+
+    setChatSending(true);
+    setChatError(null);
+
+    try {
+        const { tx } = await writeDmRowWeb(writerCtx, ROOT_ID, chatFriend.dmSeed, JSON.stringify(payload));
+        await sendTx(tx, '[FriendsList] DM sent:');
+        setChatMessageInput('');
+        await loadChatHistory(chatFriend, { silent: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to send DM';
+      setChatError(message);
+    } finally {
+      setChatSending(false);
+    }
   };
 
   return (
+    <>
     <div className="flex-1 p-4 md:p-6 max-w-4xl mx-auto w-full">
       <div className="mb-6">
         <h1 className="text-2xl md:text-3xl font-bold text-green-400   mb-2">
@@ -322,5 +437,136 @@ export function FriendsList() {
         </div>
       )}
     </div>
+    {chatOpen && chatFriend && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6">
+        <div className="w-full max-w-2xl rounded-xl border-2 border-green-400 bg-black shadow-2xl shadow-green-500/20">
+          <div className="flex items-start justify-between border-b border-white/10 px-4 py-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-green-300">Direct Message</p>
+              <p className="text-white text-sm">
+                {shortenAddress(chatFriend.address, 6)}
+              </p>
+              <p className="text-white/60 text-xs">
+                Table: {shortenAddress(chatFriend.tableAddress, 6)}
+              </p>
+              <p className="text-white/40 text-[11px] break-all">Seed: {chatFriend.dmSeedHex}</p>
+              <p className="text-white/50 text-[11px]">
+                Status: {chatFriend.status}
+                {chatFriend.status === 'pending' &&
+                  (isRequesterForFriend(chatFriend)
+                    ? ' · Only you can message until they approve'
+                    : ' · Approve to reply')}
+                {chatFriend.status === 'blocked' && ' · Unblock to continue conversation'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={closeChatModal}
+              className="rounded border border-white/30 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-white/10"
+            >
+              [CLOSE]
+            </button>
+          </div>
+          <div className="max-h-[60vh] overflow-y-auto px-4 py-3 space-y-3">
+            {chatLoading && <div className="text-white/70">Loading conversation…</div>}
+            {chatError && <div className="text-red-400 text-sm">{chatError}</div>}
+            {!chatLoading && !chatError && chatMessages.length === 0 && (
+              <div className="text-white/60 text-sm">No DM messages yet.</div>
+            )}
+            {!chatLoading &&
+              !chatError &&
+              chatMessages.map((row, index) => {
+                const meta = row as Record<string, any>;
+                const key = meta.__rowId ?? meta.id ?? meta.signature ?? index;
+                const sender = meta.sender ?? meta.author ?? 'Unknown';
+                const textContent =
+                  typeof meta.text === 'string'
+                    ? meta.text
+                    : typeof meta.message === 'string'
+                    ? meta.message
+                    : JSON.stringify(meta);
+                const tsValue = meta.timestamp ?? meta.createdAt ?? meta.time;
+                let formattedTime = '';
+                if (typeof tsValue === 'number') {
+                  formattedTime = new Date(tsValue).toLocaleString();
+                } else if (typeof tsValue === 'string' && tsValue) {
+                  const asNumber = Number(tsValue);
+                  if (!Number.isNaN(asNumber)) {
+                    formattedTime = new Date(asNumber).toLocaleString();
+                  }
+                }
+                return (
+                  <div key={key} className="rounded border border-white/15 bg-white/5 p-3">
+                    <div className="flex items-center justify-between text-xs text-white/60">
+                      <span>{sender}</span>
+                      {formattedTime && <span>{formattedTime}</span>}
+                    </div>
+                    <div className="mt-2 text-sm text-white whitespace-pre-wrap break-words">
+                      {textContent}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+          <form onSubmit={handleSendChatMessage} className="border-t border-white/10 bg-black/70 px-4 py-3 flex flex-col gap-2">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={chatMessageInput}
+                onChange={(event) => setChatMessageInput(event.target.value)}
+                placeholder="Send a DM…"
+                className="flex-1 rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/50 outline-none focus:ring-2"
+                style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as CSSProperties}
+                disabled={!writerCtx || chatSending || !chatFriend || !canSendChatToFriend(chatFriend)}
+              />
+              <button
+                type="submit"
+                disabled={
+                  !writerCtx ||
+                  chatSending ||
+                  !chatMessageInput.trim() ||
+                  !chatFriend ||
+                  !canSendChatToFriend(chatFriend)
+                }
+                className="rounded px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
+                style={{
+                  backgroundColor:
+                    !writerCtx ||
+                    chatSending ||
+                    !chatMessageInput.trim() ||
+                    !chatFriend ||
+                    !canSendChatToFriend(chatFriend)
+                      ? undefined
+                      : 'rgb(65, 255, 0)',
+                  color:
+                    !writerCtx ||
+                    chatSending ||
+                    !chatMessageInput.trim() ||
+                    !chatFriend ||
+                    !canSendChatToFriend(chatFriend)
+                      ? undefined
+                      : 'rgb(0, 33, 0)',
+                }}
+              >
+                {chatSending ? 'Sending…' : 'Send'}
+              </button>
+            </div>
+            {!writerCtx && (
+              <p className="text-xs text-orange-300">Connect your wallet to send DMs.</p>
+            )}
+            {chatFriend && !canSendChatToFriend(chatFriend) && (
+              <p className="text-xs text-yellow-300">
+                {chatFriend.status === 'pending'
+                  ? isRequesterForFriend(chatFriend)
+                    ? 'Request pending. Waiting for approval from the recipient.'
+                    : 'Approve this request before replying.'
+                  : 'Unblock this DM to continue the conversation.'}
+              </p>
+            )}
+          </form>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
