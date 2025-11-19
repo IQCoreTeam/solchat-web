@@ -5,7 +5,7 @@
 
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, FormEvent } from 'react';
 import { Transaction } from '@solana/web3.js';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
@@ -35,10 +35,12 @@ export function FriendsList() {
   const [chatFriend, setChatFriend] = useState<Friend | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<Row[]>([]);
+  const [chatPendingMessages, setChatPendingMessages] = useState<Row[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [chatMessageInput, setChatMessageInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
+  const chatMessagesEndRef = useRef<HTMLDivElement>(null);
 
   const writerCtx = useMemo<WriterCtx | null>(() => {
     if (!wallet) return null;
@@ -75,6 +77,7 @@ export function FriendsList() {
     setChatOpen(false);
     setChatFriend(null);
     setChatMessages([]);
+    setChatPendingMessages([]);
     setChatError(null);
     setChatMessageInput('');
     setChatSending(false);
@@ -120,7 +123,7 @@ export function FriendsList() {
       signature,
       blockhash,
       lastValidBlockHeight,
-    });
+    }, 'processed');
 
     console.log(successMsg, signature);
   };
@@ -264,6 +267,10 @@ export function FriendsList() {
     }
   };
 
+  const scrollChatToBottom = useCallback(() => {
+    chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
   const loadChatHistory = useCallback(
     async (friend: Friend, opts?: { silent?: boolean }) => {
       if (!userAddress && !friend.address) return;
@@ -297,10 +304,14 @@ export function FriendsList() {
   const handleOpenChat = async (friend: Friend) => {
     setChatFriend(friend);
     setChatMessages([]);
+    setChatPendingMessages([]);
     setChatError(null);
     setChatMessageInput('');
     setChatOpen(true);
     await loadChatHistory(friend);
+    setTimeout(() => {
+      scrollChatToBottom();
+    }, 50);
   };
 
   const handleSendChatMessage = async (event?: FormEvent) => {
@@ -313,29 +324,90 @@ export function FriendsList() {
       return;
     }
 
-    const payload = {
+    // Generate unique message ID
+    const messageId =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID().slice(0, 12)
+        : Math.random().toString(36).slice(2, 10);
+
+    const timestamp = Date.now();
+
+    // Create temp message with pending status
+    const tempMessage: Row = {
+      id: messageId,
       text,
       sender: userAddress,
       displayName: shortenAddress(userAddress, 6),
-      timestamp: Date.now(),
+      timestamp,
+      status: 'pending',
+      room: `dm-${chatFriend.dmSeedHex.slice(0, 6)}`,
+      __rowId: `temp-${messageId}`,
+    } as Row;
+
+    const payload = {
+      id: messageId,
+      text,
+      sender: userAddress,
+      displayName: shortenAddress(userAddress, 6),
+      timestamp,
+      status: 'sent',
       room: `dm-${chatFriend.dmSeedHex.slice(0, 6)}`,
     };
 
+    // Clear input immediately (before sending)
+    setChatMessageInput('');
     setChatSending(true);
     setChatError(null);
+
+    // Add temp message to pending BEFORE sending
+    setChatPendingMessages((prev) => [...prev, tempMessage]);
 
     try {
         const { tx } = await writeDmRowWeb(writerCtx, ROOT_ID, chatFriend.dmSeed, JSON.stringify(payload));
         await sendTx(tx, '[FriendsList] DM sent:');
-        setChatMessageInput('');
         await loadChatHistory(chatFriend, { silent: true });
     } catch (err) {
+      // Remove temp message on error
+      setChatPendingMessages((prev) => prev.filter((msg) => msg.__rowId !== tempMessage.__rowId));
       const message = err instanceof Error ? err.message : 'Failed to send DM';
       setChatError(message);
     } finally {
       setChatSending(false);
     }
   };
+
+  // Auto-scroll when messages or pending messages change
+  useEffect(() => {
+    if (chatOpen) {
+      scrollChatToBottom();
+    }
+  }, [chatMessages, chatPendingMessages, chatOpen, scrollChatToBottom]);
+
+  // Combine and deduplicate messages (pending + confirmed)
+  const orderedChatMessages = useMemo(() => {
+    const combined = [...chatMessages, ...chatPendingMessages];
+    const seen = new Set<string>();
+    const deduplicated = combined.filter((msg) => {
+      const key = msg.id || msg.__rowId;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return deduplicated.sort((a, b) => {
+      const aTime = typeof a.timestamp === 'number' ? a.timestamp : 0;
+      const bTime = typeof b.timestamp === 'number' ? b.timestamp : 0;
+      return aTime - bTime;
+    });
+  }, [chatMessages, chatPendingMessages]);
+
+  // Auto-cleanup: remove pending messages that appear in confirmed messages
+  useEffect(() => {
+    if (chatMessages.length === 0) return;
+    const confirmedIds = new Set(chatMessages.map((msg) => msg.id).filter(Boolean));
+    setChatPendingMessages((prev) =>
+      prev.filter((msg) => !confirmedIds.has(msg.id))
+    );
+  }, [chatMessages]);
 
   return (
     <>
@@ -470,12 +542,12 @@ export function FriendsList() {
           <div className="max-h-[60vh] overflow-y-auto px-4 py-3 space-y-3">
             {chatLoading && <div className="text-white/70">Loading conversation…</div>}
             {chatError && <div className="text-red-400 text-sm">{chatError}</div>}
-            {!chatLoading && !chatError && chatMessages.length === 0 && (
+            {!chatLoading && !chatError && orderedChatMessages.length === 0 && (
               <div className="text-white/60 text-sm">No DM messages yet.</div>
             )}
             {!chatLoading &&
               !chatError &&
-              chatMessages.map((row, index) => {
+              orderedChatMessages.map((row, index) => {
                 const meta = row as Record<string, any>;
                 const key = meta.__rowId ?? meta.id ?? meta.signature ?? index;
                 const sender = meta.sender ?? meta.author ?? 'Unknown';
@@ -495,11 +567,16 @@ export function FriendsList() {
                     formattedTime = new Date(asNumber).toLocaleString();
                   }
                 }
+                const messageStatus = meta.status === 'pending' ? 'Pending' : 'Confirmed';
+                const isPending = meta.status === 'pending';
                 return (
-                  <div key={key} className="rounded border border-white/15 bg-white/5 p-3">
+                  <div key={key} className={`rounded border p-3 ${isPending ? 'border-yellow-500/30 bg-yellow-900/10' : 'border-white/15 bg-white/5'}`}>
                     <div className="flex items-center justify-between text-xs text-white/60">
                       <span>{sender}</span>
-                      {formattedTime && <span>{formattedTime}</span>}
+                      <div className="flex items-center gap-2">
+                        {formattedTime && <span>{formattedTime}</span>}
+                        <span className={isPending ? 'text-yellow-400' : 'text-green-400'}>{messageStatus}</span>
+                      </div>
                     </div>
                     <div className="mt-2 text-sm text-white whitespace-pre-wrap break-words">
                       {textContent}
@@ -507,8 +584,9 @@ export function FriendsList() {
                   </div>
                 );
               })}
+            <div ref={chatMessagesEndRef} />
           </div>
-          <form onSubmit={handleSendChatMessage} className="border-t border-white/10 bg-black/70 px-4 py-3 flex flex-col gap-2">
+          <form onSubmit={handleSendChatMessage} className="border-t border-white/10 bg-black/70 px-4 py-3 flex flex-col gap-2 rounded-b-xl">
             <div className="flex gap-2">
               <input
                 type="text"
@@ -517,13 +595,12 @@ export function FriendsList() {
                 placeholder="Send a DM…"
                 className="flex-1 rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/50 outline-none focus:ring-2"
                 style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as CSSProperties}
-                disabled={!writerCtx || chatSending || !chatFriend || !canSendChatToFriend(chatFriend)}
+                disabled={!writerCtx || !chatFriend || !canSendChatToFriend(chatFriend)}
               />
               <button
                 type="submit"
                 disabled={
                   !writerCtx ||
-                  chatSending ||
                   !chatMessageInput.trim() ||
                   !chatFriend ||
                   !canSendChatToFriend(chatFriend)
@@ -532,7 +609,6 @@ export function FriendsList() {
                 style={{
                   backgroundColor:
                     !writerCtx ||
-                    chatSending ||
                     !chatMessageInput.trim() ||
                     !chatFriend ||
                     !canSendChatToFriend(chatFriend)
@@ -540,7 +616,6 @@ export function FriendsList() {
                       : 'rgb(65, 255, 0)',
                   color:
                     !writerCtx ||
-                    chatSending ||
                     !chatMessageInput.trim() ||
                     !chatFriend ||
                     !canSendChatToFriend(chatFriend)
@@ -548,7 +623,7 @@ export function FriendsList() {
                       : 'rgb(0, 33, 0)',
                 }}
               >
-                {chatSending ? 'Sending…' : 'Send'}
+                Send
               </button>
             </div>
             {!writerCtx && (

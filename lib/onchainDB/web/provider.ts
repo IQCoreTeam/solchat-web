@@ -33,7 +33,7 @@ export function getAnchorProvider(
   const provider = new anchor.AnchorProvider(
     connection,
     w,
-    { preflightCommitment: opts?.commitment ?? 'confirmed' }
+    { preflightCommitment: opts?.commitment ?? 'processed' }
   )
   anchor.setProvider(provider)
   return provider

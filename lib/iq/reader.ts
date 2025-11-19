@@ -18,7 +18,7 @@ export async function fetchDataSignatures(
   limit: number = 10
 ): Promise<ConfirmedSignatureInfo[]> {
   try {
-    const signatures = await connection.getSignaturesForAddress(accountPubkey, { limit });
+    const signatures = await connection.getSignaturesForAddress(accountPubkey, { limit }, 'confirmed');
     return signatures;
   } catch (error) {
     console.error('Failed to fetch signatures:', error);
@@ -347,7 +347,7 @@ export function joinChat(
           console.error('Failed to process new message:', error);
         }
       },
-      'confirmed'
+      'processed'
     );
 
     console.log('Subscribed to chat:', pdaString, 'Subscription ID:', subscriptionId);

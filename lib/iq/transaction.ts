@@ -61,7 +61,7 @@ export async function appTxSend(
     }
 
     // Get recent blockhash
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('processed');
     transaction.recentBlockhash = blockhash;
     transaction.feePayer = wallet.publicKey;
 
@@ -69,13 +69,13 @@ export async function appTxSend(
     if (wallet.sendTransaction) {
       signature = await wallet.sendTransaction(transaction, connection, {
         skipPreflight: false,
-        preflightCommitment: 'confirmed',
+        preflightCommitment: 'processed',
       });
     } else if (wallet.signTransaction) {
       const signedTx = await wallet.signTransaction(transaction);
       signature = await connection.sendRawTransaction(signedTx.serialize(), {
         skipPreflight: false,
-        preflightCommitment: 'confirmed',
+        preflightCommitment: 'processed',
       });
     } else {
       throw new Error('Wallet must support sendTransaction or signTransaction');
@@ -86,7 +86,7 @@ export async function appTxSend(
       signature,
       blockhash,
       lastValidBlockHeight,
-    }, 'confirmed');
+    }, 'processed');
 
     return signature;
   } catch (error) {
@@ -157,7 +157,7 @@ export async function codeToPDA(
     console.log('Preparing transaction data...');
     const [{ merkleRoot }, { blockhash, lastValidBlockHeight }] = await Promise.all([
       generateMerkleRoot(chunkList),
-      connection.getLatestBlockhash('confirmed'),
+      connection.getLatestBlockhash('processed'),
     ]);
 
     console.log(`Sending ${chunkList.length} chunk(s)...`);
@@ -194,14 +194,14 @@ export async function codeToPDA(
             // For first chunk, use sendTransaction if available (wallet handles signing)
             const signature = await wallet.sendTransaction(tx, connection, {
               skipPreflight: false,
-              preflightCommitment: 'confirmed',
+              preflightCommitment: 'processed',
             });
 
             await connection.confirmTransaction({
               signature,
               blockhash,
               lastValidBlockHeight,
-            }, 'confirmed');
+            }, 'processed');
 
             console.log(`Chunk ${i + 1}/${chunkList.length} sent:`, signature);
             previousTxSignature = signature;
@@ -216,14 +216,14 @@ export async function codeToPDA(
           // Send and confirm
           const signature = await connection.sendRawTransaction(signedTx.serialize(), {
             skipPreflight: false,
-            preflightCommitment: 'confirmed',
+            preflightCommitment: 'processed',
           });
 
           await connection.confirmTransaction({
             signature,
             blockhash,
             lastValidBlockHeight,
-          }, 'confirmed');
+          }, 'processed');
 
           console.log(`Chunk ${i + 1}/${chunkList.length} sent:`, signature);
           previousTxSignature = signature;
@@ -322,7 +322,7 @@ export async function requestAirdrop(
       amount * LAMPORTS_PER_SOL
     );
 
-    await connection.confirmTransaction(signature, 'confirmed');
+    await connection.confirmTransaction(signature, 'processed');
     return signature;
   } catch (error) {
     console.error('Airdrop failed:', error);
@@ -348,7 +348,7 @@ export async function sendSol(
       })
     );
 
-    const { blockhash } = await connection.getLatestBlockhash('confirmed');
+    const { blockhash } = await connection.getLatestBlockhash('processed');
     transaction.recentBlockhash = blockhash;
     transaction.feePayer = wallet.publicKey;
 
@@ -356,7 +356,7 @@ export async function sendSol(
     if (wallet.sendTransaction) {
       signature = await wallet.sendTransaction(transaction, connection, {
         skipPreflight: false,
-        preflightCommitment: 'confirmed',
+        preflightCommitment: 'processed',
       });
     } else if (wallet.signTransaction) {
       const signed = await wallet.signTransaction(transaction);
@@ -365,7 +365,7 @@ export async function sendSol(
       throw new Error('Wallet must support sendTransaction or signTransaction');
     }
 
-    await connection.confirmTransaction(signature, 'confirmed');
+    await connection.confirmTransaction(signature, 'processed');
 
     return signature;
   } catch (error) {

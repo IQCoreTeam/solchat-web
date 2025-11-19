@@ -56,14 +56,14 @@ export async function sendBonk(
     );
 
     // Get recent blockhash
-    const { blockhash } = await connection.getLatestBlockhash('confirmed');
+    const { blockhash } = await connection.getLatestBlockhash('processed');
     transaction.recentBlockhash = blockhash;
     transaction.feePayer = wallet.publicKey;
 
     // Sign and send
     const signed = await wallet.signTransaction(transaction);
     const signature = await connection.sendRawTransaction(signed.serialize());
-    await connection.confirmTransaction(signature, 'confirmed');
+    await connection.confirmTransaction(signature, 'processed');
 
     console.log(`Sent ${amount} BONK to ${recipientAddress}:`, signature);
     return signature;
