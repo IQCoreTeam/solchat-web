@@ -7,7 +7,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Transaction } from '@solana/web3.js';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { useFriends } from '@/lib/friends/use-friends';
 import { FriendCard } from './friend-card';
@@ -25,9 +24,8 @@ import { MessageBubble } from '@/components/ui/message-bubble';
 import { MessageInputForm } from '@/components/chat/message-input-form';
 import { normalizeFileUrl } from '@/lib/utils/message-utils';
 import { GlobalStyles, darkGreenTheme } from './theme';
-
-const ROOT_ID = configs.defaultRootId;
-const MESSAGE_COLUMNS = ['id', 'text', 'file', 'sender', 'displayName', 'avatarHue', 'timestamp', 'status', 'room'];
+import { ROOT_ID, MESSAGE_COLUMNS } from '@/lib/onchainDB/constants';
+import { sendAndConfirmTx } from '@/lib/onchainDB/utils/transaction-helpers';
 
 type Tab = 'all' | 'pending' | 'blocked';
 
@@ -133,29 +131,6 @@ export function FriendsList() {
     return friends;
   }, [friends, activeTab]);
 
-  // Send transaction helper
-  const sendTx = async (tx: Transaction, successMsg: string) => {
-    if (!wallet) throw new Error('Wallet not connected');
-
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-    tx.recentBlockhash = blockhash;
-    tx.feePayer = wallet.publicKey!;
-
-    const signed = await wallet.signTransaction(tx);
-    const serialized = signed.serialize();
-    const signature = await connection.sendRawTransaction(serialized);
-
-    console.log('[sendTx] signature', signature);
-
-    await connection.confirmTransaction({
-      signature,
-      blockhash,
-      lastValidBlockHeight,
-    }, 'processed');
-
-    console.log(successMsg, signature);
-  };
-
   // Send friend request
   const handleAddFriend = async (friendAddress: string) => {
     setError(null);
@@ -197,7 +172,7 @@ export function FriendsList() {
         { },
         { idColumn: 'id' }
       );
-      await sendTx(tx, '[FriendsList] Friend request sent:');
+      await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] Friend request sent:');
       await refetch();
       setAddFriendModalOpen(false); // Close modal on success
     } catch (err) {
@@ -245,7 +220,7 @@ export function FriendsList() {
       console.log('[FriendsList] DMTable PDA:', dmTable);
       console.log('[FriendsList] Expected:', friend.tableAddress);
 
-      await sendTx(tx, '[FriendsList] Friend approved:');
+      await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] Friend approved:');
       await refetch();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to approve friend';
@@ -276,7 +251,7 @@ export function FriendsList() {
     try {
       const { tx } = await manageDmWeb(writerCtx, ROOT_ID, friendToBlock.dmSeed, DM_STATUS.BLOCKED);
 
-      await sendTx(tx, '[FriendsList] Friend blocked:');
+      await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] Friend blocked:');
       await refetch();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to block friend';
@@ -302,7 +277,7 @@ export function FriendsList() {
     try {
       const { tx } = await manageDmWeb(writerCtx, ROOT_ID, friend.dmSeed, DM_STATUS.APPROVED);
 
-      await sendTx(tx, '[FriendsList] Friend unblocked:');
+      await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] Friend unblocked:');
       await refetch();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to unblock friend';
@@ -422,7 +397,7 @@ export function FriendsList() {
 
     try {
         const { tx } = await writeDmRowWeb(writerCtx, ROOT_ID, chatFriend.dmSeed, JSON.stringify(payload));
-        await sendTx(tx, '[FriendsList] DM sent:');
+        await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] DM sent:');
         await loadChatHistory(chatFriend, { silent: true });
     } catch (err) {
       // Remove temp message on error

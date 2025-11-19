@@ -30,6 +30,7 @@ import {
   rowToMessage,
   type MessageRow,
 } from '@/lib/onchainDB/utils/message-helpers';
+import { ROOT_ID, MESSAGE_COLUMNS } from '@/lib/onchainDB/constants';
 
 // Import new components
 import { ChatHeader } from './chat-header';
@@ -37,9 +38,6 @@ import { RoomSidebar } from './room-sidebar';
 import { MessageList } from './message-list';
 import { MessageInputForm } from './message-input-form';
 import { DmModal } from './dm-modal';
-
-const ROOT_ID = configs.defaultRootId;
-const MESSAGE_COLUMNS = ['id', 'text', 'file', 'sender', 'displayName', 'avatarHue', 'timestamp', 'status', 'room'];
 
 type RoomMeta = {
   seedHex: string;
