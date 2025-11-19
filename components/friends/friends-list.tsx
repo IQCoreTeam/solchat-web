@@ -19,6 +19,58 @@ import { DM_STATUS } from '@/lib/friends/types';
 import type { Friend } from '@/lib/friends/types';
 import idl from '@/lib/onchainDB/idl.json';
 import {Idl} from "@coral-xyz/anchor";
+import { Window, WindowHeader, WindowContent, Button, TextField, Tabs, Tab, TabBody, Frame, Cutout, Separator, ProgressBar } from 'react95';
+import { ThemeProvider, createGlobalStyle } from 'styled-components';
+
+const GlobalStyles = createGlobalStyle`
+  @keyframes slide {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(400%);
+    }
+  }
+`;
+
+// Custom dark theme - mostly black with green accents
+const darkGreenTheme = {
+  material: '#0a0f0a',
+  materialDark: '#050a05',
+  materialText: '#00ff00',
+  materialTextDisabled: '#006600',
+  materialTextDisabledShadow: '#000000',
+  materialTextInvert: '#000000',
+
+  canvas: '#0a0f0a',
+  canvasText: '#00ff00',
+  canvasTextDisabled: '#006600',
+  canvasTextDisabledShadow: '#000000',
+  canvasTextInvert: '#000000',
+
+  borderDark: '#00ff00',
+  borderDarkest: '#050a05',
+  borderLight: '#00ff00',
+  borderLightest: '#00ff00',
+
+  headerBackground: '#0a0f0a',
+  headerNotActiveBackground: '#050a05',
+  headerNotActiveText: '#006600',
+  headerText: '#00ff00',
+
+  progress: '#00ff00',
+  progressBackground: '#001100',
+  inputText: '#00ff00',
+  inputTextInvert: '#000000',
+  tooltip: '#0a0f0a',
+
+  flatLight: '#0a0f0a',
+  flatDark: '#050a05',
+
+  hoverBackground: '#0d1a0d',
+  checkmark: '#00ff00',
+  checkmarkDisabled: '#003300',
+};
 
 const ROOT_ID = configs.defaultRootId;
 const MESSAGE_COLUMNS = ['id', 'text', 'file', 'sender', 'displayName', 'avatarHue', 'timestamp', 'status', 'room'];
@@ -41,6 +93,9 @@ export function FriendsList() {
   const [chatMessageInput, setChatMessageInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const chatMessagesEndRef = useRef<HTMLDivElement>(null);
+  const [addFriendModalOpen, setAddFriendModalOpen] = useState(false);
+  const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
+  const [friendToBlock, setFriendToBlock] = useState<Friend | null>(null);
 
   const writerCtx = useMemo<WriterCtx | null>(() => {
     if (!wallet) return null;
@@ -143,7 +198,13 @@ export function FriendsList() {
       // Check if already friends
     const existing = friends.find((f) => f.address === friendAddress);
     if (existing) {
-      throw new Error(`Already ${existing.status} with this user`);
+      if (existing.status === 'approved') {
+        throw new Error('You are already friends with this user');
+      } else if (existing.status === 'pending') {
+        throw new Error('Friend request already pending');
+      } else if (existing.status === 'blocked') {
+        throw new Error('This user is blocked. Unblock them first');
+      }
     }
 
     const dmSeed = deriveDmSeed(userAddress, friendAddress);
@@ -165,6 +226,7 @@ export function FriendsList() {
       );
       await sendTx(tx, '[FriendsList] Friend request sent:');
       await refetch();
+      setAddFriendModalOpen(false); // Close modal on success
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to send request';
       setError(message);
@@ -219,9 +281,15 @@ export function FriendsList() {
     }
   };
 
+  // Show block confirmation
+  const showBlockConfirm = (friend: Friend) => {
+    setFriendToBlock(friend);
+    setBlockConfirmOpen(true);
+  };
+
   // Block/decline friend
-  const handleBlockFriend = async (friend: Friend) => {
-    if (!wallet) throw new Error('Wallet not connected');
+  const handleBlockFriend = async () => {
+    if (!wallet || !friendToBlock) return;
 
     const writerCtx: WriterCtx = {
       connection,
@@ -230,9 +298,10 @@ export function FriendsList() {
     };
 
     setError(null);
+    setBlockConfirmOpen(false);
 
     try {
-      const { tx } = await manageDmWeb(writerCtx, ROOT_ID, friend.dmSeed, DM_STATUS.BLOCKED);
+      const { tx } = await manageDmWeb(writerCtx, ROOT_ID, friendToBlock.dmSeed, DM_STATUS.BLOCKED);
 
       await sendTx(tx, '[FriendsList] Friend blocked:');
       await refetch();
@@ -240,6 +309,8 @@ export function FriendsList() {
       const message = err instanceof Error ? err.message : 'Failed to block friend';
       setError(message);
       console.error('[FriendsList] Failed to block friend', err);
+    } finally {
+      setFriendToBlock(null);
     }
   };
 
@@ -410,141 +481,146 @@ export function FriendsList() {
   }, [chatMessages]);
 
   return (
-    <>
-    <div className="flex-1 p-4 md:p-6 max-w-4xl mx-auto w-full">
-      <div className="mb-6">
-        <h1 className="text-2xl md:text-3xl font-bold text-green-400   mb-2">
-          [FRIENDS]
-        </h1>
-        <p className="text-green-600 text-sm  ">
-          Manage your on-chain friendships
-        </p>
+    <ThemeProvider theme={darkGreenTheme}>
+      <GlobalStyles />
+      <div className="flex-1 p-4 md:p-6 max-w-4xl mx-auto w-full">
+        <Window style={{ width: '100%', marginBottom: '20px' }}>
+          <WindowContent>
+            <div style={{ padding: '8px' }}>
+              {/* Error Banner */}
+              {(error || friendsError) && (
+                <Cutout style={{ padding: '8px', marginBottom: '16px', background: '#330000' }}>
+                  <p style={{ color: '#ff0000', fontSize: '12px', fontFamily: 'monospace' }}>
+                    ERROR: {error || friendsError}
+                  </p>
+                </Cutout>
+              )}
+
+              {/* Tabs and Add Friend Button */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <Tabs value={activeTab} onChange={(value) => setActiveTab(value as Tab)}>
+                  <Tab value="all">[FRIENDS]</Tab>
+                  <Tab value="pending">[REQUESTS]</Tab>
+                  <Tab value="blocked">[BLOCKED]</Tab>
+                </Tabs>
+                <Button
+                  onClick={() => setAddFriendModalOpen(true)}
+                  disabled={!userAddress}
+                  primary
+                  style={{ fontFamily: 'monospace', fontSize: '11px', marginLeft: '12px' }}
+                >
+                  [ADD FRIEND]
+                </Button>
+              </div>
+
+              <TabBody style={{ marginTop: '16px', minHeight: '300px' }}>
+                {/* Loading state */}
+                {loading && (
+                  <div style={{ textAlign: 'center', padding: '48px 0' }}>
+                    <p style={{ color: '#00ff00', fontFamily: 'monospace' }}>[LOADING...]</p>
+                  </div>
+                )}
+
+                {/* Empty state */}
+                {!loading && filteredFriends.length === 0 && (
+                  <Cutout style={{ padding: '48px 16px', textAlign: 'center' }}>
+                    <p style={{ color: '#00ff00', fontFamily: 'monospace', fontSize: '12px' }}>
+                      {activeTab === 'all' && '> NO FRIENDS YET. ADD SOMEONE ABOVE!'}
+                      {activeTab === 'pending' && '> NO PENDING REQUESTS'}
+                      {activeTab === 'blocked' && '> NO BLOCKED USERS'}
+                    </p>
+                  </Cutout>
+                )}
+
+                {/* Friends list */}
+                {!loading && filteredFriends.length > 0 && (
+                  <div style={{ display: 'grid', gap: '12px' }}>
+                    {filteredFriends.map((friend) => (
+                      <FriendCard
+                        key={friend.tableAddress}
+                        friend={friend}
+                        currentUser={userAddress || ''}
+                        onApprove={handleApproveFriend}
+                        onBlock={showBlockConfirm}
+                        onUnblock={handleUnblockFriend}
+                        onOpenChat={handleOpenChat}
+                      />
+                    ))}
+                  </div>
+                )}
+              </TabBody>
+            </div>
+          </WindowContent>
+        </Window>
       </div>
-
-      {/* Error Banner */}
-      {(error || friendsError) && (
-        <div className="mb-4 border border-red-700 bg-red-900/30 text-red-300 px-4 py-2   text-sm rounded">
-          {error || friendsError}
-        </div>
-      )}
-
-      {/* Add Friend Form */}
-      <div className="mb-6">
-        <AddFriendForm onSubmit={handleAddFriend} disabled={!userAddress} />
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-2 mb-4 border-b-2 border-green-700/30 pb-2">
-        <button
-          onClick={() => setActiveTab('all')}
-          className={`px-4 py-2   text-sm transition-colors ${
-            activeTab === 'all'
-              ? 'text-green-400 border-b-2 border-green-400'
-              : 'text-green-700 hover:text-green-500'
-          }`}
-        >
-          [FRIENDS]
-        </button>
-        <button
-          onClick={() => setActiveTab('pending')}
-          className={`px-4 py-2   text-sm transition-colors ${
-            activeTab === 'pending'
-              ? 'text-green-400 border-b-2 border-green-400'
-              : 'text-green-700 hover:text-green-500'
-          }`}
-        >
-          [REQUESTS]
-        </button>
-        <button
-          onClick={() => setActiveTab('blocked')}
-          className={`px-4 py-2   text-sm transition-colors ${
-            activeTab === 'blocked'
-              ? 'text-green-400 border-b-2 border-green-400'
-              : 'text-green-700 hover:text-green-500'
-          }`}
-        >
-          [BLOCKED]
-        </button>
-      </div>
-
-      {/* Error display */}
-      {error && (
-        <div className="bg-red-900/30 border-2 border-red-700 text-red-400 p-4 rounded mb-4   text-sm">
-          {error}
-        </div>
-      )}
-
-      {/* Loading state */}
-      {loading && (
-        <div className="text-center py-12">
-          <div className="text-green-400   animate-pulse">[LOADING...]</div>
-        </div>
-      )}
-
-      {/* Empty state */}
-      {!loading && filteredFriends.length === 0 && (
-        <div className="text-center py-12 bg-black/20 border-2 border-green-900/30 rounded">
-          <p className="text-green-700   text-sm">
-            {activeTab === 'all' && 'No friends yet. Add someone above!'}
-            {activeTab === 'pending' && 'No pending requests'}
-            {activeTab === 'blocked' && 'No blocked users'}
-          </p>
-        </div>
-      )}
-
-      {/* Friends list */}
-      {!loading && filteredFriends.length > 0 && (
-        <div className="grid gap-3">
-          {filteredFriends.map((friend) => (
-            <FriendCard
-              key={friend.tableAddress}
-              friend={friend}
-              currentUser={userAddress || ''}
-              onApprove={handleApproveFriend}
-              onBlock={handleBlockFriend}
-              onUnblock={handleUnblockFriend}
-              onOpenChat={handleOpenChat}
-            />
-          ))}
-        </div>
-      )}
-    </div>
     {chatOpen && chatFriend && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6">
-        <div className="w-full max-w-2xl rounded-xl border-2 border-green-400 bg-black shadow-2xl shadow-green-500/20">
-          <div className="flex items-start justify-between border-b border-white/10 px-4 py-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-green-300">Direct Message</p>
-              <p className="text-white text-sm">
-                {shortenAddress(chatFriend.address, 6)}
-              </p>
-              <p className="text-white/60 text-xs">
-                Table: {shortenAddress(chatFriend.tableAddress, 6)}
-              </p>
-              <p className="text-white/40 text-[11px] break-all">Seed: {chatFriend.dmSeedHex}</p>
-              <p className="text-white/50 text-[11px]">
-                Status: {chatFriend.status}
-                {chatFriend.status === 'pending' &&
-                  (isRequesterForFriend(chatFriend)
-                    ? ' · Only you can message until they approve'
-                    : ' · Approve to reply')}
-                {chatFriend.status === 'blocked' && ' · Unblock to continue conversation'}
-              </p>
-            </div>
+        <div className="bg-black border-2 border-green-700 rounded-xl w-full max-w-4xl h-[85vh] flex flex-col">
+          {/* Header */}
+          <div className="border-b border-green-700/50 px-4 py-3 flex items-center justify-between flex-shrink-0">
+            <h3 className="text-green-400 font-bold">
+              DM with {shortenAddress(chatFriend.address)}
+            </h3>
             <button
-              type="button"
               onClick={closeChatModal}
-              className="rounded border border-white/30 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-white/10"
+              className="text-green-400 hover:text-green-300 text-xl leading-none"
             >
-              [CLOSE]
+              ×
             </button>
           </div>
-          <div className="max-h-[60vh] overflow-y-auto px-4 py-3 space-y-3">
-            {chatLoading && <div className="text-white/70">Loading conversation…</div>}
-            {chatError && <div className="text-red-400 text-sm">{chatError}</div>}
-            {!chatLoading && !chatError && orderedChatMessages.length === 0 && (
-              <div className="text-white/60 text-sm">No DM messages yet.</div>
-            )}
+
+          {/* Info banner */}
+          <div className="border-b border-green-700/30 bg-black/60 px-4 py-2 text-xs text-green-600 flex-shrink-0">
+            <div className="mb-1">
+              <span className="text-green-500">Table:</span> {shortenAddress(chatFriend.tableAddress)}
+            </div>
+            <div className="mb-1 break-all">
+              <span className="text-green-500">Seed:</span> {chatFriend.dmSeedHex}
+            </div>
+            <div>
+              <span className="text-green-500">Status:</span>{' '}
+              <span className="uppercase">{chatFriend.status}</span>
+              {chatFriend.status === 'pending' &&
+                (isRequesterForFriend(chatFriend)
+                  ? ' (waiting for approval)'
+                  : ' (approve to reply)')}
+              {chatFriend.status === 'blocked' && ' (unblock to continue)'}
+            </div>
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 min-h-0">
+            {chatLoading ? (
+              <div className="flex flex-col items-center justify-center h-full px-8">
+                <p className="text-green-400 text-sm mb-4">Loading messages...</p>
+                <div style={{ width: '100%', maxWidth: '400px' }}>
+                  <div style={{
+                    height: '24px',
+                    background: '#000000',
+                    border: '2px solid #00ff00',
+                    borderRadius: '4px',
+                    overflow: 'hidden',
+                    position: 'relative',
+                    boxShadow: '0 0 10px rgba(0, 255, 0, 0.3)'
+                  }}>
+                    <div style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      height: '100%',
+                      width: '25%',
+                      background: 'linear-gradient(90deg, rgba(0, 255, 0, 0) 0%, rgba(0, 255, 0, 0.6) 50%, rgba(0, 255, 0, 0) 100%)',
+                      animation: 'slide 2s linear infinite',
+                      willChange: 'transform'
+                    }}></div>
+                  </div>
+                </div>
+              </div>
+            ) : chatError ? (
+              <p className="text-red-400 text-sm">Error: {chatError}</p>
+            ) : orderedChatMessages.length === 0 ? (
+              <p className="text-green-600 text-sm">No messages yet. Start the conversation!</p>
+            ) : null}
             {!chatLoading &&
               !chatError &&
               orderedChatMessages.map((row, index) => {
@@ -567,35 +643,48 @@ export function FriendsList() {
                     formattedTime = new Date(asNumber).toLocaleString();
                   }
                 }
-                const messageStatus = meta.status === 'pending' ? 'Pending' : 'Confirmed';
+                const isSender = sender === userAddress;
+                const messageStatus = meta.status === 'pending' ? 'Pending' : 'Sent';
                 const isPending = meta.status === 'pending';
                 return (
-                  <div key={key} className={`rounded border p-3 ${isPending ? 'border-yellow-500/30 bg-yellow-900/10' : 'border-white/15 bg-white/5'}`}>
-                    <div className="flex items-center justify-between text-xs text-white/60">
-                      <span>{sender}</span>
-                      <div className="flex items-center gap-2">
-                        {formattedTime && <span>{formattedTime}</span>}
-                        <span className={isPending ? 'text-yellow-400' : 'text-green-400'}>{messageStatus}</span>
+                  <div
+                    key={key}
+                    className={`flex ${isSender ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div
+                      className={`max-w-[80%] rounded-lg px-3 py-2 ${
+                        isSender
+                          ? isPending
+                            ? 'bg-green-900/30 border border-yellow-600'
+                            : 'bg-green-900/50 border border-green-700'
+                          : 'bg-green-900/20 border border-green-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1 text-xs text-green-600">
+                        <span>{shortenAddress(sender, 6)}</span>
+                        {formattedTime && <span>• {formattedTime}</span>}
+                        {isPending && <span className="text-yellow-500">• {messageStatus}</span>}
                       </div>
-                    </div>
-                    <div className="mt-2 text-sm text-white whitespace-pre-wrap break-words">
-                      {textContent}
+                      <p className="text-green-300 text-sm whitespace-pre-wrap break-words">
+                        {textContent}
+                      </p>
                     </div>
                   </div>
                 );
               })}
             <div ref={chatMessagesEndRef} />
           </div>
-          <form onSubmit={handleSendChatMessage} className="border-t border-white/10 bg-black/70 px-4 py-3 flex flex-col gap-2 rounded-b-xl">
+
+          {/* Input form */}
+          <form onSubmit={handleSendChatMessage} className="border-t border-green-700/50 bg-black/70 px-4 py-3 flex flex-col gap-2 rounded-b-xl flex-shrink-0">
             <div className="flex gap-2">
               <input
                 type="text"
                 value={chatMessageInput}
-                onChange={(event) => setChatMessageInput(event.target.value)}
-                placeholder="Send a DM…"
-                className="flex-1 rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/50 outline-none focus:ring-2"
-                style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as CSSProperties}
+                onChange={(e) => setChatMessageInput(e.target.value)}
+                placeholder="Type your message..."
                 disabled={!writerCtx || !chatFriend || !canSendChatToFriend(chatFriend)}
+                className="flex-1 bg-black border-2 border-green-700 text-green-400 px-3 py-2 rounded text-sm focus:border-green-500 focus:outline-none placeholder:text-green-900 disabled:opacity-50"
               />
               <button
                 type="submit"
@@ -603,34 +692,21 @@ export function FriendsList() {
                   !writerCtx ||
                   !chatMessageInput.trim() ||
                   !chatFriend ||
-                  !canSendChatToFriend(chatFriend)
+                  !canSendChatToFriend(chatFriend) ||
+                  chatSending
                 }
-                className="rounded px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
-                style={{
-                  backgroundColor:
-                    !writerCtx ||
-                    !chatMessageInput.trim() ||
-                    !chatFriend ||
-                    !canSendChatToFriend(chatFriend)
-                      ? undefined
-                      : 'rgb(65, 255, 0)',
-                  color:
-                    !writerCtx ||
-                    !chatMessageInput.trim() ||
-                    !chatFriend ||
-                    !canSendChatToFriend(chatFriend)
-                      ? undefined
-                      : 'rgb(0, 33, 0)',
-                }}
+                className="bg-green-700 hover:bg-green-600 disabled:bg-green-900 disabled:opacity-50 text-green-100 px-4 py-2 rounded text-sm transition-colors"
               >
-                Send
+                {chatSending ? 'Sending...' : 'Send'}
               </button>
             </div>
             {!writerCtx && (
-              <p className="text-xs text-orange-300">Connect your wallet to send DMs.</p>
+              <p className="text-yellow-500 text-xs">
+                Connect your wallet to send messages
+              </p>
             )}
             {chatFriend && !canSendChatToFriend(chatFriend) && (
-              <p className="text-xs text-yellow-300">
+              <p className="text-yellow-500 text-xs">
                 {chatFriend.status === 'pending'
                   ? isRequesterForFriend(chatFriend)
                     ? 'Request pending. Waiting for approval from the recipient.'
@@ -642,6 +718,49 @@ export function FriendsList() {
         </div>
       </div>
     )}
-    </>
+
+      {/* Add Friend Modal */}
+      {addFriendModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6">
+          <Window style={{ width: '100%', maxWidth: '500px' }}>
+            <WindowHeader style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>[ADD FRIEND]</span>
+              <Button onClick={() => setAddFriendModalOpen(false)} size="sm" style={{ padding: '2px 8px', fontSize: '10px' }}>
+                X
+              </Button>
+            </WindowHeader>
+            <WindowContent>
+              <AddFriendForm onSubmit={handleAddFriend} disabled={!userAddress} />
+            </WindowContent>
+          </Window>
+        </div>
+      )}
+
+      {/* Block Confirmation Modal */}
+      {blockConfirmOpen && friendToBlock && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6">
+          <Window style={{ width: '100%', maxWidth: '400px' }}>
+            <WindowHeader>
+              <span>[CONFIRM BLOCK]</span>
+            </WindowHeader>
+            <WindowContent>
+              <div style={{ padding: '16px' }}>
+                <p style={{ color: '#00ff00', fontFamily: 'monospace', fontSize: '12px', marginBottom: '16px' }}>
+                  Are you sure you want to block {shortenAddress(friendToBlock.address, 6)}?
+                </p>
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                  <Button onClick={() => { setBlockConfirmOpen(false); setFriendToBlock(null); }}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleBlockFriend} primary>
+                    Block
+                  </Button>
+                </div>
+              </div>
+            </WindowContent>
+          </Window>
+        </div>
+      )}
+    </ThemeProvider>
   );
 }
