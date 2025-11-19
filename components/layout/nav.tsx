@@ -90,6 +90,15 @@ export function Nav({ onOpenDm }: NavProps) {
                 [CHAT]
               </StyledButton>
             </Link>
+            <Link href="/friends" style={{ flex: 1 }}>
+              <StyledButton
+                style={{
+                  borderColor: isActive('/friends') ? '#4ade80' : '#16a34a'
+                }}
+              >
+                [FRIENDS]
+              </StyledButton>
+            </Link>
             <Link href="/account" style={{ flex: 1 }}>
               <StyledButton
                 style={{
@@ -131,6 +140,16 @@ export function Nav({ onOpenDm }: NavProps) {
                   }}
                 >
                   [CHAT]
+                </StyledButton>
+              </Link>
+
+              <Link href="/friends">
+                <StyledButton
+                  style={{
+                    borderColor: isActive('/friends') ? '#4ade80' : '#16a34a'
+                  }}
+                >
+                  [FRIENDS]
                 </StyledButton>
               </Link>
 

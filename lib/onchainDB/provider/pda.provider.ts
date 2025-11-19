@@ -150,3 +150,19 @@ export function pdaExtTable(root: PublicKey, tableNameOrSeed: string | BytesLike
     PROGRAM_ID
   )[0];
 }
+
+/**
+ * pdaDmListBox
+ * - DM list box PDA for a specific user
+ */
+export function pdaDmListBox(root: PublicKey, user: PublicKey) {
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from(configs.dmListSeed),
+      PROGRAM_ID.toBuffer(),
+      root.toBuffer(),
+      user.toBuffer(),
+    ],
+    PROGRAM_ID
+  )[0];
+}

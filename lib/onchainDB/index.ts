@@ -5,8 +5,8 @@
 export { configs } from './configs'
 
 // Import locally so we can use them in this module (e.g., inside getPdas)
-import { pdaRoot, pdaTxRef, pdaTargetTxRef, pdaTable, pdaInstructionTable, pdaExternalRecord, pdaExternalRecordFromStrings, pdaExtTable, pdaDmTable, pdaDmInstructionTable } from './provider/pda.provider'
-export { pdaRoot, pdaTxRef, pdaTargetTxRef, pdaTable, pdaInstructionTable, pdaExternalRecord, pdaExternalRecordFromStrings, pdaExtTable, pdaDmTable, pdaDmInstructionTable }
+import { pdaRoot, pdaTxRef, pdaTargetTxRef, pdaTable, pdaInstructionTable, pdaExternalRecord, pdaExternalRecordFromStrings, pdaExtTable, pdaDmTable, pdaDmInstructionTable, pdaDmListBox } from './provider/pda.provider'
+export { pdaRoot, pdaTxRef, pdaTargetTxRef, pdaTable, pdaInstructionTable, pdaExternalRecord, pdaExternalRecordFromStrings, pdaExtTable, pdaDmTable, pdaDmInstructionTable, pdaDmListBox }
 
 // Web reader API (UI-friendly)
 export type { ReaderParams, ReaderResult, Row } from './web/reader'
@@ -24,6 +24,8 @@ export {
   writeRowWeb,
   writeDmRowWeb,
   pushDbInstructionWeb,
+  requestDmWeb,
+  manageDmWeb,
 } from './web/writer'
 
 // Low-level helper exports (optional)
