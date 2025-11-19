@@ -7,6 +7,7 @@
 
 import type { Friend } from '@/lib/friends/types';
 import { shortenAddress, deriveAvatarHue } from '@/lib/friends/utils';
+import { Frame, Button, Avatar } from 'react95';
 
 interface FriendCardProps {
   friend: Friend;
@@ -16,6 +17,15 @@ interface FriendCardProps {
   onUnblock?: (friend: Friend) => void;
   onOpenChat?: (friend: Friend) => void;
 }
+
+const getInitials = (name: string) => {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return name[0].toUpperCase();
+};
 
 export function FriendCard({
   friend,
@@ -33,100 +43,124 @@ export function FriendCard({
 
   // Badge color based on status
   const statusColor = {
-    pending: 'bg-yellow-900/30 text-yellow-400 border-yellow-600',
-    approved: 'bg-green-900/30 text-green-400 border-green-600',
-    blocked: 'bg-red-900/30 text-red-400 border-red-600',
+    pending: '#ffff00',
+    approved: '#00ff00',
+    blocked: '#ff0000',
   }[friend.status];
 
+  const avatarStyle = { backgroundColor: `hsl(${hue}, 65%, 48%)` };
+  const displayName = friend.name || shortenAddress(friend.address);
+
   return (
-    <div className="bg-black/40 border-2 border-green-700/50 hover:border-green-500/70 transition-all p-4 rounded">
-      <div className="flex items-start gap-4">
+    <Frame variant="outside" style={{ padding: '12px', background: '#0a0a0a' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
         {/* Avatar */}
-        <div
-          className="w-12 h-12 rounded-full flex items-center justify-center text-black font-bold text-lg shrink-0"
+        <Avatar
+          size={48}
           style={{
-            background: `linear-gradient(135deg, hsl(${hue}, 70%, 50%), hsl(${hue + 30}, 70%, 40%))`,
+            ...avatarStyle,
+            color: '#000000',
+            textShadow: '0 0 2px rgba(255, 255, 255, 0.5)',
+            fontWeight: 'bold'
           }}
         >
-          {friend.name ? friend.name[0].toUpperCase() : friend.address[0].toUpperCase()}
-        </div>
+          {getInitials(displayName)}
+        </Avatar>
 
         {/* Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-green-400   text-sm">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+            <span style={{ color: '#00ff00', fontSize: '11px', fontFamily: 'monospace' }}>
               {shortenAddress(friend.address)}
             </span>
-            <span
-              className={`text-xs px-2 py-0.5 rounded border ${statusColor}   uppercase`}
-            >
+            <span style={{
+              fontSize: '9px',
+              fontFamily: 'monospace',
+              padding: '2px 6px',
+              border: `1px solid ${statusColor}`,
+              color: statusColor,
+              textTransform: 'uppercase',
+              background: '#000000'
+            }}>
               {friend.status}
             </span>
           </div>
 
           {isPending && !isRequester && (
-            <p className="text-green-600 text-xs mb-2">Incoming request</p>
+            <p style={{ color: '#00ff00', fontSize: '10px', fontFamily: 'monospace', marginBottom: '8px' }}>
+              &gt; INCOMING REQUEST
+            </p>
           )}
 
           {isPending && isRequester && (
-            <div className="text-green-500 text-xs mb-2">
-              <p>Request sent — you can message while waiting for approval.</p>
-              <button
+            <div style={{ marginBottom: '8px' }}>
+              <p style={{ color: '#00ff00', fontSize: '10px', fontFamily: 'monospace', marginBottom: '6px' }}>
+                &gt; REQUEST SENT - YOU CAN MESSAGE WHILE WAITING
+              </p>
+              <Button
                 onClick={() => onOpenChat?.(friend)}
-                className="mt-1 px-3 py-1 border border-green-600 text-green-100 rounded text-[11px] uppercase tracking-wide hover:bg-green-600/20 transition"
+                size="sm"
+                style={{ fontFamily: 'monospace', fontSize: '10px' }}
               >
                 [OPEN DM]
-              </button>
+              </Button>
             </div>
           )}
 
           {/* Actions */}
-          <div className="flex gap-2 mt-3">
+          <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
             {isApproved && (
               <>
-                <button
+                <Button
                   onClick={() => onOpenChat?.(friend)}
-                  className="px-3 py-1 bg-green-700 hover:bg-green-600 text-green-100 rounded text-xs   transition-colors"
+                  primary
+                  size="sm"
+                  style={{ fontFamily: 'monospace', fontSize: '10px' }}
                 >
                   [CHAT]
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={() => onBlock?.(friend)}
-                  className="px-3 py-1 bg-red-900/50 hover:bg-red-900/70 text-red-400 rounded text-xs   transition-colors border border-red-700"
+                  size="sm"
+                  style={{ fontFamily: 'monospace', fontSize: '10px' }}
                 >
                   [BLOCK]
-                </button>
+                </Button>
               </>
             )}
 
             {isPending && !isRequester && (
               <>
-                <button
+                <Button
                   onClick={() => onApprove?.(friend)}
-                  className="px-3 py-1 bg-green-700 hover:bg-green-600 text-green-100 rounded text-xs   transition-colors"
+                  primary
+                  size="sm"
+                  style={{ fontFamily: 'monospace', fontSize: '10px' }}
                 >
                   [APPROVE]
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={() => onBlock?.(friend)}
-                  className="px-3 py-1 bg-red-900/50 hover:bg-red-900/70 text-red-400 rounded text-xs   transition-colors border border-red-700"
+                  size="sm"
+                  style={{ fontFamily: 'monospace', fontSize: '10px' }}
                 >
                   [DECLINE]
-                </button>
+                </Button>
               </>
             )}
 
             {isBlocked && (
-              <button
+              <Button
                 onClick={() => onUnblock?.(friend)}
-                className="px-3 py-1 bg-yellow-900/50 hover:bg-yellow-900/70 text-yellow-400 rounded text-xs   transition-colors border border-yellow-700"
+                size="sm"
+                style={{ fontFamily: 'monospace', fontSize: '10px' }}
               >
                 [UNBLOCK]
-              </button>
+              </Button>
             )}
           </div>
         </div>
       </div>
-    </div>
+    </Frame>
   );
 }

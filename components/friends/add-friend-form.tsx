@@ -7,6 +7,7 @@
 
 import { useState } from 'react';
 import { PublicKey } from '@solana/web3.js';
+import { TextField, Button, Frame } from 'react95';
 
 interface AddFriendFormProps {
   onSubmit: (friendAddress: string) => Promise<void>;
@@ -43,30 +44,47 @@ export function AddFriendForm({ onSubmit, disabled }: AddFriendFormProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-black/40 border-2 border-green-700/50 p-4 rounded">
-      <div className="mb-3">
-        <label htmlFor="friendAddress" className="block text-green-400 text-sm   mb-2">
-          Add Friend
-        </label>
-        <input
-          id="friendAddress"
-          type="text"
-          value={friendAddress}
-          onChange={(e) => setFriendAddress(e.target.value)}
-          placeholder="Enter wallet address..."
-          disabled={disabled || loading}
-          className="w-full bg-black border-2 border-green-700 text-green-400 px-3 py-2 rounded   text-sm focus:border-green-500 focus:outline-none placeholder:text-green-900 disabled:opacity-50"
-        />
-        {error && <p className="text-red-400 text-xs mt-2  ">{error}</p>}
-      </div>
+    <div style={{ padding: '12px' }}>
+      <form onSubmit={handleSubmit}>
+        <div style={{ marginBottom: '12px' }}>
+          <label htmlFor="friendAddress" style={{ display: 'block', color: '#00ff00', fontSize: '11px', fontFamily: 'monospace', marginBottom: '6px' }}>
+            &gt; ADD FRIEND
+          </label>
+          <div style={{ width: '100%' }}>
+            <input
+              id="friendAddress"
+              type="text"
+              value={friendAddress}
+              onChange={(e) => setFriendAddress(e.target.value)}
+              placeholder="ENTER WALLET ADDRESS..."
+              disabled={disabled || loading}
+              style={{
+                width: '100%',
+                fontFamily: 'monospace',
+                fontSize: '11px',
+                padding: '4px 8px',
+                background: '#000000',
+                border: '2px solid #00ff00',
+                color: '#00ff00',
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
+            />
+          </div>
+          {error && <p style={{ color: '#ff0000', fontSize: '10px', fontFamily: 'monospace', marginTop: '6px' }}>&gt; ERROR: {error}</p>}
+        </div>
 
-      <button
-        type="submit"
-        disabled={disabled || loading || !friendAddress.trim()}
-        className="w-full bg-green-700 hover:bg-green-600 disabled:bg-green-900 disabled:opacity-50 text-green-100 px-4 py-2 rounded   text-sm transition-colors"
-      >
-        {loading ? '[SENDING...]' : '[SEND REQUEST]'}
-      </button>
-    </form>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <Button
+            type="submit"
+            disabled={disabled || loading || !friendAddress.trim()}
+            primary
+            style={{ fontFamily: 'monospace', fontSize: '11px', minWidth: '150px' }}
+          >
+            {loading ? '[SENDING...]' : '[SEND REQUEST]'}
+          </Button>
+        </div>
+      </form>
+    </div>
   );
 }
