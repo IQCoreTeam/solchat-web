@@ -25,22 +25,7 @@ export function deriveDmSeed(userA: string, userB: string): Uint8Array {
   return deriveSeedBytes(`${sortedA}:${sortedB}`);
 }
 
-/**
- * Legacy DM seed derivation (first 16 bytes of each pubkey)
- * - Kept for backward compatibility with earlier friend requests
- */
-export function deriveLegacyDmSeed(userA: string, userB: string): Uint8Array {
-  const [sortedA, sortedB] = sortPubkeys(userA, userB);
-  const pubkeyA = new PublicKey(sortedA);
-  const pubkeyB = new PublicKey(sortedB);
 
-  // Use first 16 bytes of each pubkey to create 32-byte seed
-  const seed = new Uint8Array(32);
-  seed.set(pubkeyA.toBytes().slice(0, 16), 0);
-  seed.set(pubkeyB.toBytes().slice(0, 16), 16);
-
-  return seed;
-}
 
 /**
  * Convert bytes to hex string

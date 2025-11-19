@@ -11,7 +11,7 @@ import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
 import bs58 from 'bs58';
 import type { Friend } from './types';
 import { STATUS_LABELS } from './types';
-import { deriveDmSeed, deriveLegacyDmSeed, bytesToHex } from './utils';
+import { deriveDmSeed, bytesToHex } from './utils';
 import { pdaRoot, pdaDmTable } from '@/lib/onchainDB';
 
 /**
@@ -80,6 +80,7 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
       for (const { account, pubkey } of dmTableAccounts) {
         try {
           const decoded = accCoder.decode('DMTable', account.data);
+
           if (!decoded) continue;
 
           const partyA = new PublicKey(decoded.party_a).toBase58();
@@ -94,8 +95,6 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
 
           const primarySeed = deriveDmSeed(partyA, partyB);
           const primaryPda = pdaDmTable(rootPda, primarySeed, programPubkey);
-          const legacySeed = deriveLegacyDmSeed(partyA, partyB);
-          const legacyPda = pdaDmTable(rootPda, legacySeed, programPubkey);
 
           let dmSeed: Uint8Array | null = null;
           let dmSeedHex: string | null = null;
@@ -104,13 +103,11 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
           if (primaryPda.toBase58() === actualAddress) {
             dmSeed = primarySeed;
             dmSeedHex = bytesToHex(primarySeed);
-          } else if (legacyPda.toBase58() === actualAddress) {
-            dmSeed = legacySeed;
-            dmSeedHex = bytesToHex(legacySeed);
-          } else {
+          }
+           else {
+               console.log(actualAddress)
             console.warn('[useFriends] PDA mismatch, skipping account:', {
               expected: primaryPda.toBase58(),
-              legacyExpected: legacyPda.toBase58(),
               actual: actualAddress,
             });
             continue;
