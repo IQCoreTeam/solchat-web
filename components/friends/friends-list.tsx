@@ -16,9 +16,10 @@ import { deriveDmSeed } from '@/lib/friends/utils';
 import { DM_STATUS } from '@/lib/friends/types';
 import type { Friend } from '@/lib/friends/types';
 import idl from '@/lib/onchainDB/idl.json';
+import {Idl} from "@coral-xyz/anchor";
 
 const ROOT_ID = configs.defaultRootId;
-const MESSAGE_COLUMNS = ['id', 'text', 'sender', 'displayName', 'timestamp'];
+const MESSAGE_COLUMNS = ['id', 'text', 'file', 'sender', 'displayName', 'avatarHue', 'timestamp', 'status', 'room'];
 
 type Tab = 'all' | 'pending' | 'blocked';
 
@@ -61,7 +62,10 @@ export function FriendsList() {
     tx.feePayer = wallet.publicKey!;
 
     const signed = await wallet.signTransaction(tx);
-    const signature = await connection.sendRawTransaction(signed.serialize());
+    const serialized = signed.serialize();
+    const signature = await connection.sendRawTransaction(serialized);
+
+    console.log('[sendTx] signature', signature);
 
     await connection.confirmTransaction({
       signature,
@@ -82,8 +86,9 @@ export function FriendsList() {
     if (friendAddress === userAddress) {
       throw new Error('Cannot add yourself as a friend');
     }
+    console.log('[FriendsList] Sending friend request to:', friendAddress);
 
-    // Check if already friends
+      // Check if already friends
     const existing = friends.find((f) => f.address === friendAddress);
     if (existing) {
       throw new Error(`Already ${existing.status} with this user`);
@@ -94,7 +99,7 @@ export function FriendsList() {
     const writerCtx: WriterCtx = {
       connection,
       wallet,
-      idl: idl as any,
+      idl: idl as Idl,
     };
 
     try {
@@ -105,15 +110,21 @@ export function FriendsList() {
         'dm',
         MESSAGE_COLUMNS,
         friendAddress,
-        JSON.stringify({ type: 'friend_request' }),
+        { },
         { idColumn: 'id' }
       );
-
       await sendTx(tx, '[FriendsList] Friend request sent:');
       await refetch();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to send request';
       setError(message);
+
+      const maybeLogs = (err as any)?.logs ?? (err as any)?.simulationResponse?.logs;
+      if (maybeLogs) {
+        console.error('[FriendsList] requestDmWeb logs', maybeLogs);
+      }
+      console.error('[FriendsList] requestDmWeb error', err);
+
       throw err;
     }
   };

@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {initializeRootWeb, pdaRoot} from '../index';
 import { pdaTxRef } from '../provider/pda.provider';
-import idl from '../idl.json';
+import idl from '@/lib/onchainDB/idl.json';
+
 import type { Idl } from '@coral-xyz/anchor';
 import type { BytesLike } from '../core/seed';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';

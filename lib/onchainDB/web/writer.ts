@@ -594,12 +594,14 @@ export async function requestDmWeb<T extends Idl>(
   tableName: string,
   columnNames: string[],
   friend: PublicKey | string,
-  dmBoxPayload: string,
+  dmBoxPayload: string | Record<string, unknown>,
   options?: { idColumn?: string | number; extKeys?: string[] }
 ) {
   const program = programFromCtx(ctx)
+
   const signer = program.provider.publicKey!
   const programId = programPkFromCtx(ctx)
+
   const rootIdBuf = Buffer.from(rootIdToBytes(rootId))
   const root = pdaRootDyn(programId, rootId)
   const dmTable = pdaDmTableDyn(programId, root, dmSeed)
@@ -607,6 +609,7 @@ export async function requestDmWeb<T extends Idl>(
 
   const friendPubkey = typeof friend === 'string' ? new PublicKey(friend) : friend
   const requesterDmBox = pdaDmListBoxDyn(programId, root, signer)
+
   const receiverDmBox = pdaDmListBoxDyn(programId, root, friendPubkey)
 
   const methods = (program as any).methods as Record<string, any>
@@ -632,21 +635,33 @@ export async function requestDmWeb<T extends Idl>(
   const extKeys = options?.extKeys ?? []
   const extKeysBufs = extKeys.map((s) => Buffer.from(String(s), 'utf8'))
 
-  const payloadBuf = Buffer.from(dmBoxPayload, 'utf8')
+  const payloadValue =
+    typeof dmBoxPayload === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(dmBoxPayload)
+          } catch {
+            return { message: dmBoxPayload }
+          }
+        })()
+      : dmBoxPayload ?? {}
 
-  const tx = await requestDm(
-    rootIdBuf,
-    seedBuf,
-    nameBuf,
-    colBufs,
-    idColBuf,
-    extKeysBufs,
-    friendPubkey,
-    payloadBuf
+  const payloadBuf = Buffer.from(
+    JSON.stringify({ dmTable: dmTable.toBase58(), ...payloadValue }),
+    'utf8'
   )
-    .accounts({
+  const tx = await requestDm(
+      rootIdBuf,
+      seedBuf,
+      friendPubkey,
+      nameBuf,
+      colBufs,
+      idColBuf,
+      extKeysBufs,
+      payloadBuf
+  ).accounts({
       requester: signer,
-      root,
+      root:root,
       dm_table: dmTable,
       instruction_table: instTable,
       requester_dm_box: requesterDmBox,
@@ -654,6 +669,18 @@ export async function requestDmWeb<T extends Idl>(
       system_program: SystemProgram.programId,
     })
     .transaction()
+
+
+  const firstIx = tx.instructions[0]
+  if (firstIx) {
+    console.log(
+      '[requestDmWeb] ix accounts',
+      firstIx.keys.map((key: (typeof firstIx.keys)[number]) => key.pubkey.toBase58())
+    )
+  }
+  console.log('[requestDmWeb] programId', programId.toBase58())
+  console.log('[requestDmWeb] rootPda', root.toBase58())
+
 
   return { tx, dmTable: dmTable.toBase58(), instructionTable: instTable.toBase58() }
 }

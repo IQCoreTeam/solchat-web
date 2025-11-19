@@ -1773,12 +1773,16 @@
       ],
       "args": [
         {
-          "name": "_root_id",
+          "name": "root_id",
           "type": "bytes"
         },
         {
-          "name": "_dm_seed",
+          "name": "dm_seed",
           "type": "bytes"
+        },
+        {
+          "name": "friend",
+          "type": "pubkey"
         },
         {
           "name": "table_name",
@@ -1799,10 +1803,6 @@
           "type": {
             "vec": "bytes"
           }
-        },
-        {
-          "name": "friend",
-          "type": "pubkey"
         },
         {
           "name": "dm_box_payload",
