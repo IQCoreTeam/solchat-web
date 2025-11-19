@@ -8,292 +8,6 @@
   },
   "instructions": [
     {
-      "name": "create_dm_table",
-      "discriminator": [
-        84,
-        94,
-        73,
-        127,
-        214,
-        112,
-        122,
-        23
-      ],
-      "accounts": [
-        {
-          "name": "signer",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "root",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  111,
-                  108,
-                  99,
-                  104,
-                  97,
-                  116,
-                  45,
-                  114,
-                  111,
-                  111,
-                  116
-                ]
-              },
-              {
-                "kind": "const",
-                "value": [
-                  145,
-                  40,
-                  148,
-                  175,
-                  214,
-                  108,
-                  169,
-                  176,
-                  190,
-                  135,
-                  226,
-                  234,
-                  69,
-                  212,
-                  57,
-                  206,
-                  119,
-                  156,
-                  230,
-                  172,
-                  36,
-                  176,
-                  239,
-                  46,
-                  249,
-                  97,
-                  68,
-                  199,
-                  130,
-                  232,
-                  91,
-                  147
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "root_id"
-              }
-            ]
-          }
-        },
-        {
-          "name": "dm_table",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  105,
-                  113,
-                  100,
-                  98,
-                  45,
-                  100,
-                  109,
-                  45,
-                  116,
-                  97,
-                  98,
-                  108,
-                  101
-                ]
-              },
-              {
-                "kind": "const",
-                "value": [
-                  145,
-                  40,
-                  148,
-                  175,
-                  214,
-                  108,
-                  169,
-                  176,
-                  190,
-                  135,
-                  226,
-                  234,
-                  69,
-                  212,
-                  57,
-                  206,
-                  119,
-                  156,
-                  230,
-                  172,
-                  36,
-                  176,
-                  239,
-                  46,
-                  249,
-                  97,
-                  68,
-                  199,
-                  130,
-                  232,
-                  91,
-                  147
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "root"
-              },
-              {
-                "kind": "arg",
-                "path": "dm_seed"
-              }
-            ]
-          }
-        },
-        {
-          "name": "instruction_table",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  105,
-                  113,
-                  100,
-                  98,
-                  45,
-                  100,
-                  109,
-                  45,
-                  116,
-                  97,
-                  98,
-                  108,
-                  101
-                ]
-              },
-              {
-                "kind": "const",
-                "value": [
-                  145,
-                  40,
-                  148,
-                  175,
-                  214,
-                  108,
-                  169,
-                  176,
-                  190,
-                  135,
-                  226,
-                  234,
-                  69,
-                  212,
-                  57,
-                  206,
-                  119,
-                  156,
-                  230,
-                  172,
-                  36,
-                  176,
-                  239,
-                  46,
-                  249,
-                  97,
-                  68,
-                  199,
-                  130,
-                  232,
-                  91,
-                  147
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "root"
-              },
-              {
-                "kind": "arg",
-                "path": "dm_seed"
-              },
-              {
-                "kind": "const",
-                "value": [
-                  105,
-                  110,
-                  115,
-                  116,
-                  114,
-                  117,
-                  99,
-                  116,
-                  105,
-                  111,
-                  110
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "_root_id",
-          "type": "bytes"
-        },
-        {
-          "name": "_dm_seed",
-          "type": "bytes"
-        },
-        {
-          "name": "table_name",
-          "type": "bytes"
-        },
-        {
-          "name": "column_names",
-          "type": {
-            "vec": "bytes"
-          }
-        },
-        {
-          "name": "id_col",
-          "type": "bytes"
-        },
-        {
-          "name": "ext_keys",
-          "type": {
-            "vec": "bytes"
-          }
-        },
-        {
-          "name": "party_a",
-          "type": "pubkey"
-        },
-        {
-          "name": "party_b",
-          "type": "pubkey"
-        }
-      ]
-    },
-    {
       "name": "create_ext_table",
       "discriminator": [
         55,
@@ -1489,6 +1203,614 @@
       ]
     },
     {
+      "name": "manage_dm",
+      "discriminator": [
+        188,
+        187,
+        249,
+        193,
+        212,
+        103,
+        144,
+        69
+      ],
+      "accounts": [
+        {
+          "name": "root",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  108,
+                  99,
+                  104,
+                  97,
+                  116,
+                  45,
+                  114,
+                  111,
+                  111,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  145,
+                  40,
+                  148,
+                  175,
+                  214,
+                  108,
+                  169,
+                  176,
+                  190,
+                  135,
+                  226,
+                  234,
+                  69,
+                  212,
+                  57,
+                  206,
+                  119,
+                  156,
+                  230,
+                  172,
+                  36,
+                  176,
+                  239,
+                  46,
+                  249,
+                  97,
+                  68,
+                  199,
+                  130,
+                  232,
+                  91,
+                  147
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "root_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "dm_table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  108,
+                  99,
+                  104,
+                  97,
+                  116,
+                  45,
+                  100,
+                  109,
+                  45,
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  145,
+                  40,
+                  148,
+                  175,
+                  214,
+                  108,
+                  169,
+                  176,
+                  190,
+                  135,
+                  226,
+                  234,
+                  69,
+                  212,
+                  57,
+                  206,
+                  119,
+                  156,
+                  230,
+                  172,
+                  36,
+                  176,
+                  239,
+                  46,
+                  249,
+                  97,
+                  68,
+                  199,
+                  130,
+                  232,
+                  91,
+                  147
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "root"
+              },
+              {
+                "kind": "arg",
+                "path": "dm_seed"
+              }
+            ]
+          }
+        },
+        {
+          "name": "signer",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "_root_id",
+          "type": "bytes"
+        },
+        {
+          "name": "_dm_seed",
+          "type": "bytes"
+        },
+        {
+          "name": "new_status",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "request_dm",
+      "discriminator": [
+        212,
+        128,
+        119,
+        98,
+        192,
+        172,
+        139,
+        175
+      ],
+      "accounts": [
+        {
+          "name": "requester",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "root",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  108,
+                  99,
+                  104,
+                  97,
+                  116,
+                  45,
+                  114,
+                  111,
+                  111,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  145,
+                  40,
+                  148,
+                  175,
+                  214,
+                  108,
+                  169,
+                  176,
+                  190,
+                  135,
+                  226,
+                  234,
+                  69,
+                  212,
+                  57,
+                  206,
+                  119,
+                  156,
+                  230,
+                  172,
+                  36,
+                  176,
+                  239,
+                  46,
+                  249,
+                  97,
+                  68,
+                  199,
+                  130,
+                  232,
+                  91,
+                  147
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "root_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "dm_table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  108,
+                  99,
+                  104,
+                  97,
+                  116,
+                  45,
+                  100,
+                  109,
+                  45,
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  145,
+                  40,
+                  148,
+                  175,
+                  214,
+                  108,
+                  169,
+                  176,
+                  190,
+                  135,
+                  226,
+                  234,
+                  69,
+                  212,
+                  57,
+                  206,
+                  119,
+                  156,
+                  230,
+                  172,
+                  36,
+                  176,
+                  239,
+                  46,
+                  249,
+                  97,
+                  68,
+                  199,
+                  130,
+                  232,
+                  91,
+                  147
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "root"
+              },
+              {
+                "kind": "arg",
+                "path": "dm_seed"
+              }
+            ]
+          }
+        },
+        {
+          "name": "instruction_table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  108,
+                  99,
+                  104,
+                  97,
+                  116,
+                  45,
+                  100,
+                  109,
+                  45,
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  145,
+                  40,
+                  148,
+                  175,
+                  214,
+                  108,
+                  169,
+                  176,
+                  190,
+                  135,
+                  226,
+                  234,
+                  69,
+                  212,
+                  57,
+                  206,
+                  119,
+                  156,
+                  230,
+                  172,
+                  36,
+                  176,
+                  239,
+                  46,
+                  249,
+                  97,
+                  68,
+                  199,
+                  130,
+                  232,
+                  91,
+                  147
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "root"
+              },
+              {
+                "kind": "arg",
+                "path": "dm_seed"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  115,
+                  116,
+                  114,
+                  117,
+                  99,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "requester_dm_box",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  108,
+                  99,
+                  104,
+                  97,
+                  116,
+                  45,
+                  100,
+                  109,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  145,
+                  40,
+                  148,
+                  175,
+                  214,
+                  108,
+                  169,
+                  176,
+                  190,
+                  135,
+                  226,
+                  234,
+                  69,
+                  212,
+                  57,
+                  206,
+                  119,
+                  156,
+                  230,
+                  172,
+                  36,
+                  176,
+                  239,
+                  46,
+                  249,
+                  97,
+                  68,
+                  199,
+                  130,
+                  232,
+                  91,
+                  147
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "root"
+              },
+              {
+                "kind": "account",
+                "path": "requester"
+              }
+            ]
+          }
+        },
+        {
+          "name": "receiver_dm_box",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  108,
+                  99,
+                  104,
+                  97,
+                  116,
+                  45,
+                  100,
+                  109,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  145,
+                  40,
+                  148,
+                  175,
+                  214,
+                  108,
+                  169,
+                  176,
+                  190,
+                  135,
+                  226,
+                  234,
+                  69,
+                  212,
+                  57,
+                  206,
+                  119,
+                  156,
+                  230,
+                  172,
+                  36,
+                  176,
+                  239,
+                  46,
+                  249,
+                  97,
+                  68,
+                  199,
+                  130,
+                  232,
+                  91,
+                  147
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "root"
+              },
+              {
+                "kind": "arg",
+                "path": "friend"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "_root_id",
+          "type": "bytes"
+        },
+        {
+          "name": "_dm_seed",
+          "type": "bytes"
+        },
+        {
+          "name": "table_name",
+          "type": "bytes"
+        },
+        {
+          "name": "column_names",
+          "type": {
+            "vec": "bytes"
+          }
+        },
+        {
+          "name": "id_col",
+          "type": "bytes"
+        },
+        {
+          "name": "ext_keys",
+          "type": {
+            "vec": "bytes"
+          }
+        },
+        {
+          "name": "friend",
+          "type": "pubkey"
+        },
+        {
+          "name": "dm_box_payload",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
       "name": "update_root_table_list",
       "discriminator": [
         134,
@@ -2089,10 +2411,13 @@
               {
                 "kind": "const",
                 "value": [
-                  105,
-                  113,
-                  100,
-                  98,
+                  115,
+                  111,
+                  108,
+                  99,
+                  104,
+                  97,
+                  116,
                   45,
                   100,
                   109,
@@ -2239,6 +2564,19 @@
   ],
   "accounts": [
     {
+      "name": "DMListBox",
+      "discriminator": [
+        91,
+        204,
+        32,
+        239,
+        210,
+        85,
+        220,
+        123
+      ]
+    },
+    {
       "name": "DMTable",
       "discriminator": [
         201,
@@ -2369,9 +2707,35 @@
       "code": 6012,
       "name": "InvalidRootId",
       "msg": "Root id must be <= 32 bytes"
+    },
+    {
+      "code": 6013,
+      "name": "InvalidDmStatus",
+      "msg": "Invalid DM status"
+    },
+    {
+      "code": 6014,
+      "name": "InvalidDmTransition",
+      "msg": "Invalid DM status transition"
     }
   ],
   "types": [
+    {
+      "name": "DMListBox",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "data",
+            "type": "bytes"
+          }
+        ]
+      }
+    },
     {
       "name": "DMTable",
       "type": {
@@ -2408,6 +2772,18 @@
           {
             "name": "party_b",
             "type": "pubkey"
+          },
+          {
+            "name": "status",
+            "type": "u8"
+          },
+          {
+            "name": "requester",
+            "type": "u8"
+          },
+          {
+            "name": "blocker",
+            "type": "u8"
           }
         ]
       }

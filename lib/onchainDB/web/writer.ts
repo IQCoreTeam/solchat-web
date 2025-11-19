@@ -116,6 +116,18 @@ function pdaExtInstructionTableDyn(programId: PublicKey, rootPk: PublicKey, tabl
   )[0]
 }
 
+function pdaDmListBoxDyn(programId: PublicKey, rootPk: PublicKey, userPk: PublicKey) {
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from(configs.dmListSeed),
+      programId.toBuffer(),
+      rootPk.toBuffer(),
+      userPk.toBuffer(),
+    ],
+    programId
+  )[0]
+}
+
 export type WriterCtx<T extends Idl = Idl> = {
   connection: Connection
   wallet: WalletAdapterLike
@@ -569,4 +581,115 @@ export async function pushDbInstructionWeb<T extends Idl>(
     .transaction()
 
   return { tx }
+}
+
+/**
+ * requestDmWeb
+ * - Send a friend request by creating a DM table between two users
+ */
+export async function requestDmWeb<T extends Idl>(
+  ctx: WriterCtx<T>,
+  rootId: BytesLike,
+  dmSeed: BytesLike,
+  tableName: string,
+  columnNames: string[],
+  friend: PublicKey | string,
+  dmBoxPayload: string,
+  options?: { idColumn?: string | number; extKeys?: string[] }
+) {
+  const program = programFromCtx(ctx)
+  const signer = program.provider.publicKey!
+  const programId = programPkFromCtx(ctx)
+  const rootIdBuf = Buffer.from(rootIdToBytes(rootId))
+  const root = pdaRootDyn(programId, rootId)
+  const dmTable = pdaDmTableDyn(programId, root, dmSeed)
+  const instTable = pdaDmInstructionTableDyn(programId, root, dmSeed)
+
+  const friendPubkey = typeof friend === 'string' ? new PublicKey(friend) : friend
+  const requesterDmBox = pdaDmListBoxDyn(programId, root, signer)
+  const receiverDmBox = pdaDmListBoxDyn(programId, root, friendPubkey)
+
+  const methods = (program as any).methods as Record<string, any>
+  const requestDm = methods?.request_dm ?? methods?.requestDm
+  if (!requestDm) {
+    throw new Error('Instruction "request_dm" not found in IDL')
+  }
+
+  const seedBuf = Buffer.from(toBytes(dmSeed))
+  const nameBuf = Buffer.from(tableName, 'utf8')
+  const colBufs = columnNames.map((s) => Buffer.from(s, 'utf8'))
+
+  const idOpt = options?.idColumn
+  const idName =
+    typeof idOpt === 'string'
+      ? idOpt
+      : typeof idOpt === 'number' && columnNames[idOpt]
+      ? columnNames[idOpt]
+      : columnNames[0]
+  if (!idName) throw new Error('idColumn is required to request DM')
+  const idColBuf = Buffer.from(idName, 'utf8')
+
+  const extKeys = options?.extKeys ?? []
+  const extKeysBufs = extKeys.map((s) => Buffer.from(String(s), 'utf8'))
+
+  const payloadBuf = Buffer.from(dmBoxPayload, 'utf8')
+
+  const tx = await requestDm(
+    rootIdBuf,
+    seedBuf,
+    nameBuf,
+    colBufs,
+    idColBuf,
+    extKeysBufs,
+    friendPubkey,
+    payloadBuf
+  )
+    .accounts({
+      requester: signer,
+      root,
+      dm_table: dmTable,
+      instruction_table: instTable,
+      requester_dm_box: requesterDmBox,
+      receiver_dm_box: receiverDmBox,
+      system_program: SystemProgram.programId,
+    })
+    .transaction()
+
+  return { tx, dmTable: dmTable.toBase58(), instructionTable: instTable.toBase58() }
+}
+
+/**
+ * manageDmWeb
+ * - Update DM status (approve, block, etc.)
+ */
+export async function manageDmWeb<T extends Idl>(
+  ctx: WriterCtx<T>,
+  rootId: BytesLike,
+  dmSeed: BytesLike,
+  newStatus: number
+) {
+  const program = programFromCtx(ctx)
+  const signer = program.provider.publicKey!
+  const programId = programPkFromCtx(ctx)
+  const rootIdBuf = Buffer.from(rootIdToBytes(rootId))
+  const root = pdaRootDyn(programId, rootId)
+  const dmTable = pdaDmTableDyn(programId, root, dmSeed)
+
+  const methods = (program as any).methods as Record<string, any>
+  const manageDm = methods?.manage_dm ?? methods?.manageDm
+  if (!manageDm) {
+    throw new Error('Instruction "manage_dm" not found in IDL')
+  }
+
+  const seedBuf = Buffer.from(toBytes(dmSeed))
+
+  const tx = await manageDm(rootIdBuf, seedBuf, newStatus)
+    .accounts({
+      root,
+      dm_table: dmTable,
+      signer,
+    })
+    .transaction()
+
+  return { tx, dmTable: dmTable.toBase58() }
 }
