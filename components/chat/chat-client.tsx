@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { AccountInfo } from '@solana/web3.js';
-import { PublicKey, Transaction } from '@solana/web3.js';
+import { PublicKey } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
 import idl from '@/lib/onchainDB/idl.json';
@@ -16,13 +16,20 @@ import {
   writeDmRowWeb,
   type WriterCtx,
 } from '@/lib/onchainDB/web/writer';
-import { readRowsByDmSeed, readRowsByTable, type Row } from '@/lib/onchainDB/web/cached-reader-integration';
-import { configs, pdaDmInstructionTable, pdaDmTable, pdaInstructionTable, pdaRoot, pdaTable, pdaTxRef } from '@/lib/onchainDB';
+import { readRowsByDmSeed, readRowsByTable } from '@/lib/onchainDB/web/cached-reader-integration';
+import { configs, pdaDmInstructionTable, pdaDmTable, pdaInstructionTable, pdaRoot, pdaTable } from '@/lib/onchainDB';
 import { useUserInit } from '@/lib/onchainDB/hooks/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
-import { sortPubkeys, deriveDmSeed } from '@/lib/friends/utils';
-import { shorten, deriveAvatarHue, normalizeFileUrl } from '@/lib/utils/message-utils';
+import { normalizeFileUrl } from '@/lib/utils/message-utils';
+import {
+  bytesToHex,
+  normalizeBytes,
+  decodeBytes,
+  deriveDmSeedPair,
+  rowToMessage,
+  type MessageRow,
+} from '@/lib/onchainDB/utils/message-helpers';
 
 // Import new components
 import { ChatHeader } from './chat-header';
@@ -32,8 +39,6 @@ import { MessageInputForm } from './message-input-form';
 import { DmModal } from './dm-modal';
 
 const ROOT_ID = configs.defaultRootId;
-const DECODER = new TextDecoder();
-const PRINTABLE_ASCII = /^[\x20-\x7E]+$/;
 const MESSAGE_COLUMNS = ['id', 'text', 'file', 'sender', 'displayName', 'avatarHue', 'timestamp', 'status', 'room'];
 
 type RoomMeta = {
@@ -45,19 +50,6 @@ type RoomMeta = {
   columns: string[];
 };
 
-type MessageRow = {
-  id: string;
-  text: string;
-  file?: string;
-  signature?: string;
-  sender?: string;
-  displayName?: string;
-  avatarHue?: number;
-  timestamp?: number;
-  status?: 'pending' | 'sent' | 'confirmed' | 'failed';
-  room?: string;
-};
-
 type DmMeta = {
   peerAddress: string;
   seedBytes: Uint8Array;
@@ -67,83 +59,6 @@ type DmMeta = {
   partyA: string;
   partyB: string;
 };
-
-// Helper functions
-function bytesToHex(bytes: Uint8Array) {
-  return Buffer.from(bytes).toString('hex');
-}
-
-function normalizeBytes(value: any): Uint8Array {
-  if (!value) return new Uint8Array();
-  if (value instanceof Uint8Array) return value;
-  if (Array.isArray(value)) return Uint8Array.from(value);
-  if (typeof value === 'object' && Array.isArray(value.data)) {
-    return Uint8Array.from(value.data);
-  }
-  return new Uint8Array();
-}
-
-function decodeBytes(value: any): string {
-  try {
-    const bytes = normalizeBytes(value);
-    if (!bytes.length) return '';
-    const decoded = DECODER.decode(bytes).replace(/\0+$/, '');
-    if (decoded && PRINTABLE_ASCII.test(decoded)) {
-      return decoded;
-    }
-    return bytesToHex(bytes);
-  } catch {
-    return '';
-  }
-}
-
-function deriveDmSeedPair(a: string, b: string) {
-  const [userA, userB] = sortPubkeys(a, b);
-  const seedBytes = deriveDmSeed(userA, userB);
-  return { userA, userB, seedBytes, seedHex: bytesToHex(seedBytes) };
-}
-
-function parseTxRefAccount(data: Buffer | Uint8Array | null): Row | null {
-  if (!data) return null;
-  const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
-  if (buffer.length < 12) return null;
-  const len = buffer.readUInt32LE(8);
-  if (len <= 0 || 12 + len > buffer.length) return null;
-  const payload = buffer.slice(12, 12 + len);
-  try {
-    return JSON.parse(payload.toString('utf8')) as Row;
-  } catch {
-    return null;
-  }
-}
-
-function rowToMessage(row: Row): MessageRow {
-  const record = row ?? {};
-  const idCandidate =
-    (record as any).id ??
-    (record as any).__rowId ??
-    (record as any).text ??
-    crypto.randomUUID?.() ??
-    Math.random().toString(36).slice(2, 10);
-
-  return {
-    id: String(idCandidate),
-    text: record.text != null ? String(record.text) : '',
-    file: record.file ? String(record.file) : '',
-    signature: (record as any).__txSignature,
-    sender: record.sender ? String(record.sender) : (record as any).senderAddress ? String((record as any).senderAddress) : undefined,
-    displayName: record.displayName ? String(record.displayName) : undefined,
-    avatarHue:
-      record.avatarHue != null
-        ? Number(record.avatarHue)
-        : record.sender
-          ? deriveAvatarHue(String(record.sender))
-          : undefined,
-    timestamp: record.timestamp != null ? Number(record.timestamp) : undefined,
-    status: record.status ? (String(record.status) as MessageRow['status']) : 'confirmed',
-    room: record.room ? String(record.room) : undefined,
-  };
-}
 
 type ChatClientProps = {
   dmModalOpen?: boolean;
@@ -167,7 +82,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
   // Root state
   const [rootStatus, setRootStatus] = useState<'checking' | 'missing' | 'creating' | 'ready' | 'error'>('checking');
   const [rootAccount, setRootAccount] = useState<AccountInfo<Buffer> | null>(null);
-  const [rootError, setRootError] = useState<string | null>(null);
+  const [, setRootError] = useState<string | null>(null);
 
   // Rooms state
   const [rooms, setRooms] = useState<RoomMeta[]>([]);
@@ -190,7 +105,6 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
   // Message input state
   const [messageInput, setMessageInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
-  const [copiedAddress, setCopiedAddress] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [showAttachmentInput, setShowAttachmentInput] = useState(false);
   const [attachmentUrl, setAttachmentUrl] = useState('');
@@ -213,14 +127,11 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
   const [dmSending, setDmSending] = useState(false);
 
   // Refs
-  const logSubscriptionsRef = useRef<number[]>([]);
-  const dmLogSubscriptionsRef = useRef<number[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const dmMessagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesRef = useRef<MessageRow[]>([]);
   const dmMessagesRef = useRef<MessageRow[]>([]);
-  const selectedRoomRef = useRef<string | null>(null);
 
   // Writer context
   const writerWallet = useMemo<WalletAdapterLike | null>(() => {

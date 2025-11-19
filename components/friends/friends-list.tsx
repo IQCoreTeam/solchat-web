@@ -6,7 +6,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, FormEvent } from 'react';
+import type { FormEvent } from 'react';
 import { Transaction } from '@solana/web3.js';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { useFriends } from '@/lib/friends/use-friends';
@@ -18,62 +18,13 @@ import { deriveDmSeed, shortenAddress } from '@/lib/friends/utils';
 import { DM_STATUS } from '@/lib/friends/types';
 import type { Friend } from '@/lib/friends/types';
 import idl from '@/lib/onchainDB/idl.json';
-import {Idl} from "@coral-xyz/anchor";
-import { Window, WindowHeader, WindowContent, Button, TextField, Tabs, Tab, TabBody, Frame, Cutout, Separator, ProgressBar } from 'react95';
-import { ThemeProvider, createGlobalStyle } from 'styled-components';
+import { Idl } from '@coral-xyz/anchor';
+import { Window, WindowHeader, WindowContent, Button, Tabs, Tab, TabBody, Cutout } from 'react95';
+import { ThemeProvider } from 'styled-components';
 import { MessageBubble } from '@/components/ui/message-bubble';
 import { MessageInputForm } from '@/components/chat/message-input-form';
 import { normalizeFileUrl } from '@/lib/utils/message-utils';
-
-const GlobalStyles = createGlobalStyle`
-  @keyframes slide {
-    0% {
-      transform: translateX(-100%);
-    }
-    100% {
-      transform: translateX(400%);
-    }
-  }
-`;
-
-// Custom dark theme - mostly black with green accents
-const darkGreenTheme = {
-  material: '#0a0f0a',
-  materialDark: '#050a05',
-  materialText: '#00ff00',
-  materialTextDisabled: '#006600',
-  materialTextDisabledShadow: '#000000',
-  materialTextInvert: '#000000',
-
-  canvas: '#0a0f0a',
-  canvasText: '#00ff00',
-  canvasTextDisabled: '#006600',
-  canvasTextDisabledShadow: '#000000',
-  canvasTextInvert: '#000000',
-
-  borderDark: '#00ff00',
-  borderDarkest: '#050a05',
-  borderLight: '#00ff00',
-  borderLightest: '#00ff00',
-
-  headerBackground: '#0a0f0a',
-  headerNotActiveBackground: '#050a05',
-  headerNotActiveText: '#006600',
-  headerText: '#00ff00',
-
-  progress: '#00ff00',
-  progressBackground: '#001100',
-  inputText: '#00ff00',
-  inputTextInvert: '#000000',
-  tooltip: '#0a0f0a',
-
-  flatLight: '#0a0f0a',
-  flatDark: '#050a05',
-
-  hoverBackground: '#0d1a0d',
-  checkmark: '#00ff00',
-  checkmarkDisabled: '#003300',
-};
+import { GlobalStyles, darkGreenTheme } from './theme';
 
 const ROOT_ID = configs.defaultRootId;
 const MESSAGE_COLUMNS = ['id', 'text', 'file', 'sender', 'displayName', 'avatarHue', 'timestamp', 'status', 'room'];
