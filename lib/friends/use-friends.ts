@@ -12,6 +12,7 @@ import bs58 from 'bs58';
 import type { Friend } from './types';
 import { STATUS_LABELS } from './types';
 import { deriveDmSeed, bytesToHex } from './utils';
+import { pdaRoot, pdaDmTable } from '@/lib/onchainDB';
 
 /**
  * DMTable discriminator from IDL
@@ -73,6 +74,9 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
       console.log('[useFriends] Found', dmTableAccounts.length, 'DMTable accounts');
 
       const friendsList: Friend[] = [];
+      // Use the same ROOT_ID that's used in the app
+      const ROOT_ID = process.env.NEXT_PUBLIC_ROOT_ID || 'solchat-root';
+      const rootPda = pdaRoot(ROOT_ID);
 
       for (const { account, pubkey } of dmTableAccounts) {
         try {
@@ -88,7 +92,20 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
           }
 
           const friendAddress = partyA === userAddress ? partyB : partyA;
+
+          // Derive the seed and verify it matches the PDA
           const dmSeed = deriveDmSeed(partyA, partyB);
+          const expectedPda = pdaDmTable(rootPda, dmSeed);
+
+          // Verify the PDA matches - if not, skip this account
+          if (expectedPda.toBase58() !== pubkey.toBase58()) {
+            console.warn('[useFriends] PDA mismatch, skipping account:', {
+              expected: expectedPda.toBase58(),
+              actual: pubkey.toBase58(),
+            });
+            continue;
+          }
+
           const dmSeedHex = bytesToHex(dmSeed);
 
           // Map status number to label

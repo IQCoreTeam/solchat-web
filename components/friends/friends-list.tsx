@@ -115,13 +115,24 @@ export function FriendsList() {
   const handleApproveFriend = async (friend: Friend) => {
     if (!wallet) throw new Error('Wallet not connected');
 
+    console.log('[FriendsList] Approving friend:', {
+      friendAddress: friend.address,
+      dmSeedHex: friend.dmSeedHex,
+      tableAddress: friend.tableAddress,
+      partyA: friend.partyA,
+      partyB: friend.partyB,
+    });
+
     const writerCtx: WriterCtx = {
       connection,
       wallet,
       idl: idl as any,
     };
 
-    const { tx } = await manageDmWeb(writerCtx, ROOT_ID, friend.dmSeed, DM_STATUS.APPROVED);
+    const { tx, dmTable } = await manageDmWeb(writerCtx, ROOT_ID, friend.dmSeed, DM_STATUS.APPROVED);
+
+    console.log('[FriendsList] DMTable PDA:', dmTable);
+    console.log('[FriendsList] Expected:', friend.tableAddress);
 
     await sendTx(tx, '[FriendsList] Friend approved:');
     await refetch();
