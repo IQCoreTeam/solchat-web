@@ -28,7 +28,7 @@ interface MessageListProps {
     showLoadingSpinner: boolean;
     error: string | null;
     viewerAddress: string;
-    messagesEndRef: RefObject<HTMLDivElement>;
+    messagesEndRef: RefObject<HTMLDivElement | null>;
     onCopyAddress: (address: string, messageId: string) => void;
     onDownloadAttachment: (url: string) => void;
     copiedMessageId: string | null;

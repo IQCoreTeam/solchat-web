@@ -44,7 +44,6 @@ export function FriendsList() {
   const [showChatLoadingSpinner, setShowChatLoadingSpinner] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [chatMessageInput, setChatMessageInput] = useState('');
-  const [chatSending, setChatSending] = useState(false);
   const chatMessagesEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
   const [addFriendModalOpen, setAddFriendModalOpen] = useState(false);
@@ -93,7 +92,6 @@ export function FriendsList() {
     setChatPendingMessages([]);
     setChatError(null);
     setChatMessageInput('');
-    setChatSending(false);
     setAttachmentUrl('');
     setAttachmentError(null);
     setShowAttachmentInput(false);
@@ -389,7 +387,6 @@ export function FriendsList() {
     setAttachmentUrl('');
     setAttachmentError(null);
     setShowAttachmentInput(false);
-    setChatSending(true);
     setChatError(null);
 
     // Add temp message to pending BEFORE sending
@@ -398,14 +395,33 @@ export function FriendsList() {
     try {
         const { tx } = await writeDmRowWeb(writerCtx, ROOT_ID, chatFriend.dmSeed, JSON.stringify(payload));
         await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] DM sent:');
-        await loadChatHistory(chatFriend, { silent: true });
+        // Retry loading until message appears (max 3 attempts with 3s delay each)
+        let messageFound = false;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          const rows = await readRowsByDmSeed({
+            connection,
+            rootId: ROOT_ID,
+            userPublicKey: userAddress || chatFriend.address,
+            programId: configs.programId,
+            idl: idl as any,
+            dmSeed: chatFriend.dmSeed,
+            maxTx: 100,
+          });
+          setChatMessages(rows);
+          // Check if message was loaded
+          if (rows.some((m: any) => m.id === messageId)) {
+            console.log('[FriendsList] Message found after', attempt + 1, 'attempts');
+            messageFound = true;
+            break;
+          }
+          console.log('[FriendsList] Message not found, attempt', attempt + 1, 'of 3');
+        }
     } catch (err) {
       // Remove temp message on error
       setChatPendingMessages((prev) => prev.filter((msg) => msg.__rowId !== tempMessage.__rowId));
       const message = err instanceof Error ? err.message : 'Failed to send DM';
       setChatError(message);
-    } finally {
-      setChatSending(false);
     }
   };
 
@@ -430,14 +446,30 @@ export function FriendsList() {
 
   // Combine and deduplicate messages (pending + confirmed)
   const orderedChatMessages = useMemo(() => {
-    const combined = [...chatMessages, ...chatPendingMessages];
-    const seen = new Set<string>();
-    const deduplicated = combined.filter((msg) => {
-      const key = msg.id || msg.__rowId;
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
+    // Deduplicate: prefer confirmed messages (with signatures) over pending ones
+    const messageMap = new Map<string, Row>();
+
+    console.log('[FriendsList] Deduplicating:', {
+      pendingCount: chatPendingMessages.length,
+      confirmedCount: chatMessages.length,
+      pendingIds: chatPendingMessages.map(m => ({ id: m.id, rowId: m.__rowId, sig: !!m.__txSignature })),
+      confirmedIds: chatMessages.slice(0, 3).map(m => ({ id: m.id, rowId: m.__rowId, sig: !!m.__txSignature })),
     });
+
+    // Add pending messages first
+    chatPendingMessages.forEach(msg => {
+      const key = msg.id || msg.__rowId;
+      if (key) messageMap.set(String(key), msg);
+    });
+
+    // Confirmed messages override pending ones with same ID
+    chatMessages.forEach(msg => {
+      const key = msg.id || msg.__rowId;
+      if (key) messageMap.set(String(key), msg);
+    });
+
+    const deduplicated = Array.from(messageMap.values());
+    console.log('[FriendsList] Deduplicated result:', deduplicated.length, 'messages');
     return deduplicated.sort((a, b) => {
       const aTime = typeof a.timestamp === 'number' ? a.timestamp : 0;
       const bTime = typeof b.timestamp === 'number' ? b.timestamp : 0;
@@ -449,9 +481,15 @@ export function FriendsList() {
   useEffect(() => {
     if (chatMessages.length === 0) return;
     const confirmedIds = new Set(chatMessages.map((msg) => msg.id).filter(Boolean));
-    setChatPendingMessages((prev) =>
-      prev.filter((msg) => !confirmedIds.has(msg.id))
-    );
+    console.log('[FriendsList] Auto-cleanup - confirmed IDs:', Array.from(confirmedIds).slice(0, 5));
+    setChatPendingMessages((prev) => {
+      const before = prev.length;
+      const pendingIds = prev.map(m => m.id);
+      console.log('[FriendsList] Auto-cleanup - pending IDs:', pendingIds);
+      const after = prev.filter((msg) => !confirmedIds.has(msg.id));
+      console.log('[FriendsList] Auto-cleanup - removed:', before - after.length, 'pending messages');
+      return after;
+    });
   }, [chatMessages]);
 
   return (
@@ -640,7 +678,7 @@ export function FriendsList() {
               setAttachmentError={setAttachmentError}
               onSubmit={handleSendChatMessage}
               canWrite={!!writerCtx && !!chatFriend && canSendChatToFriend(chatFriend)}
-              canSubmit={!!writerCtx && !!chatMessageInput.trim() && !!chatFriend && canSendChatToFriend(chatFriend) && !chatSending}
+              canSubmit={!!writerCtx && !!chatMessageInput.trim() && !!chatFriend && canSendChatToFriend(chatFriend)}
               writerCtx={writerCtx}
               isUserInitialized={true}
               userInitError={null}
