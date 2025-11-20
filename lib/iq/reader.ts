@@ -155,7 +155,51 @@ async function parseSendCode(
     return null;
   }
 }
+export async function reconstructMessageFromChainForTailTx(
+    connection: Connection,
+    tailTx: string
+): Promise<string | null> {
+    try {
 
+
+        // If tailTx is "Genesis", there's no actual message content
+        if (tailTx === 'Genesis' || !tailTx) {
+            return `: [empty message]`;
+        }
+
+        // Follow the transaction chain to collect chunks
+        const chunks: string[] = [];
+        let currentTx = tailTx;
+        let iterations = 0;
+        const maxIterations = 10; // Reduced from 20 to prevent long waits
+
+        while (currentTx && currentTx !== 'Genesis' && iterations < maxIterations) {
+            iterations++;
+
+            const sendCode = await parseSendCode(connection, currentTx);
+            if (!sendCode) {
+                console.log(`[reconstruct] Failed to parse SendCode at iteration ${iterations}`);
+                break;
+            }
+
+            console.log(`[reconstruct] Chunk ${iterations}: "${sendCode.chunk.substring(0, 20)}..."`);
+            chunks.unshift(sendCode.chunk);
+            currentTx = sendCode.previousTx;
+        }
+
+        if (chunks.length > 0) {
+            const message = chunks.join('');
+            console.log(`[reconstruct] Success: ${chunks.length} chunks, ${message.length} chars`);
+            return `${message}`;
+        }
+
+        console.log(`[reconstruct] No chunks found`);
+        return `[unable to reconstruct message]`;
+    } catch (error) {
+        console.error('[reconstruct] Error:', error);
+        return null;
+    }
+}
 /**
  * Reconstruct full message by following transaction chain
  */

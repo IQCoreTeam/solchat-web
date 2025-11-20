@@ -179,7 +179,38 @@ export async function codeIn(connection:Connection,wallet:WalletExecutor,data: s
     console.log("Chunk size: ", chunks.length + 1);
     return await makeTransactions(connection,chunks,wallet, handle, type, merkleRoot);
 }
+export async function codeInWithonlyTailTx(connection:Connection,wallet:WalletExecutor,data: string, type: string, handle: string) {
+    const chunks = chunkData(data);
+    let beforeHash: string = "Genesis";
+    const userKey = wallet.publicKey.toBase58();
 
+    let num = 0;
+    for (const text of chunks) {
+        try {
+
+            num++;
+            const tx = await createCodeInTransactionOnServer(connection,userKey,text, beforeHash);
+
+            beforeHash = await appTxSend(connection, tx, wallet);
+
+            console.log(num.toString() + '/' + chunks.length.toString())
+        } catch (error) {
+            console.error(`Transaction ${num} failed, beforeHash:${beforeHash} `, error);
+            let result;
+            while (!result) {
+                const tx = await createCodeInTransactionOnServer(connection,userKey,text, beforeHash);
+                try {
+                    beforeHash = await appTxSend(connection, tx, wallet);
+                    result = true;
+                } catch (e) {
+                    result = false;
+                }
+
+            }
+        }
+    }
+    return beforeHash;
+}
 /**
  * Send data to PDA (chat message)
  * Optimized with parallel prep and faster transaction flow
