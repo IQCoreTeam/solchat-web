@@ -8,6 +8,8 @@
 import { useState } from 'react';
 import { getInitials, shorten, formatTimestamp, formatFullTimestamp, deriveAvatarHue } from '@/lib/utils/message-utils';
 import { AttachmentPreview } from '@/components/ui/attachment-preview';
+import { useUserProfile } from '@/components/users/use-user-profile';
+import { ProfileModal } from '@/components/users/profile-modal';
 
 export interface MessageBubbleProps {
     // Message data
@@ -56,9 +58,15 @@ export function MessageBubble({
     className = '',
 }: MessageBubbleProps) {
     const [isAttachmentOpen, setIsAttachmentOpen] = useState(false);
+    const [showProfileModal, setShowProfileModal] = useState(false);
+    const [imageError, setImageError] = useState(false);
+
+    // Fetch user profile for all senders (including own messages)
+    const { profile } = useUserProfile(sender);
 
     // Derive values
-    const bubbleName = isOwn ? 'You' : displayName || (sender ? shorten(sender) : 'Unknown');
+    const profileName = profile?.name || displayName;
+    const bubbleName = profileName || (sender ? shorten(sender) : 'Unknown');
     const avatarHue = propAvatarHue ?? deriveAvatarHue(sender || bubbleName);
     // Messages with signatures are always confirmed, regardless of status field
     // This handles old messages in blockchain that have status: 'pending'
@@ -99,12 +107,27 @@ export function MessageBubble({
                     }`}
             >
                 {/* Avatar */}
-                <div
-                    className="flex h-8 w-8 md:h-9 md:w-9 flex-shrink-0 items-center justify-center rounded-full text-xs md:text-sm font-semibold text-white shadow-lg"
-                    style={avatarStyle}
+                <button
+                    onClick={() => sender && setShowProfileModal(true)}
+                    className={`flex h-8 w-8 md:h-9 md:w-9 flex-shrink-0 items-center justify-center rounded-full text-xs md:text-sm font-semibold text-white shadow-lg ${
+                        sender ? 'cursor-pointer hover:ring-2 hover:ring-green-400 transition' : 'cursor-default'
+                    }`}
+                    disabled={!sender}
+                    title={sender ? 'View profile' : ''}
                 >
-                    {getInitials(bubbleName)}
-                </div>
+                    {profile?.profilePicture && !imageError ? (
+                        <img
+                            src={profile.profilePicture}
+                            alt={bubbleName}
+                            className="w-full h-full rounded-full object-cover"
+                            onError={() => setImageError(true)}
+                        />
+                    ) : (
+                        <div className="w-full h-full rounded-full flex items-center justify-center" style={avatarStyle}>
+                            {getInitials(bubbleName)}
+                        </div>
+                    )}
+                </button>
 
                 {/* Message content */}
                 <div
@@ -240,6 +263,14 @@ export function MessageBubble({
                     )}
                 </div>
             </div>
+
+            {/* Profile Modal */}
+            {showProfileModal && sender && (
+                <ProfileModal
+                    walletAddress={sender}
+                    onClose={() => setShowProfileModal(false)}
+                />
+            )}
         </div>
     );
 }
