@@ -720,3 +720,113 @@ export async function manageDmWeb<T extends Idl>(
 
   return { tx, dmTable: dmTable.toBase58() }
 }
+
+/**
+ * pdaUserDyn
+ * - User account PDA helper for writer functions
+ */
+function pdaUserDyn(programId: PublicKey, rootId: BytesLike, user: PublicKey) {
+  const rootBytes = Buffer.from(rootIdToBytes(rootId))
+  const root = pdaRootDyn(programId, rootId)
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from(configs.userSeed),
+      programId.toBuffer(),
+      root.toBuffer(),
+      user.toBuffer(),
+    ],
+    programId
+  )[0]
+}
+
+/**
+ * updateUserMetadataWeb
+ * - Update user profile metadata (name, bio, profile picture)
+ * - Uses init_if_needed so user account is auto-created
+ */
+export async function updateUserMetadataWeb<T extends Idl>(
+  ctx: WriterCtx<T>,
+  rootId: BytesLike,
+  metadata: string
+) {
+  const program = programFromCtx(ctx)
+  const signer = program.provider.publicKey!
+  const programId = programPkFromCtx(ctx)
+  const rootIdBuf = Buffer.from(rootIdToBytes(rootId))
+  const root = pdaRootDyn(programId, rootId)
+  const user = pdaUserDyn(programId, rootId, signer)
+
+  const methods = (program as any).methods as Record<string, any>
+  const updateUserMetadata = methods?.update_user_metadata ?? methods?.updateUserMetadata
+  if (!updateUserMetadata) {
+    throw new Error('Instruction "update_user_metadata" not found in IDL')
+  }
+
+  const metadataBytes = Buffer.from(metadata, 'utf8')
+
+  const tx = await updateUserMetadata(rootIdBuf, metadataBytes)
+    .accounts({
+      user,
+      root,
+      signer,
+      system_program: SystemProgram.programId,
+    })
+    .transaction()
+
+  return { tx, user: user.toBase58() }
+}
+
+/**
+ * createAdminTableWeb
+ * - Create an admin table (like userlist for storing all user pubkeys)
+ * - Similar to createExtTableWeb but uses create_admin_table instruction
+ */
+export async function createAdminTableWeb<T extends Idl>(
+  ctx: WriterCtx<T>,
+  rootId: BytesLike,
+  tableName: string,
+  columns: string[],
+  idColumn: string = 'id',
+  gateMintOpt?: string
+) {
+  const program = programFromCtx(ctx)
+  const signer = program.provider.publicKey!
+  const programId = programPkFromCtx(ctx)
+  const rootIdBuf = Buffer.from(rootIdToBytes(rootId))
+  const root = pdaRootDyn(programId, rootId)
+  const tableSeed = deriveSeedBytes(tableName)
+  const table = pdaExtTableDyn(programId, root, tableName)
+  const instrTable = pdaInstructionTableDyn(programId, root, tableName)
+
+  const methods = (program as any).methods as Record<string, any>
+  const createAdminTable = methods?.create_admin_table ?? methods?.createAdminTable
+  if (!createAdminTable) {
+    throw new Error('Instruction "create_admin_table" not found in IDL')
+  }
+
+  const tableNameBytes = Buffer.from(tableName, 'utf8')
+  const columnBytes = columns.map((col) => Buffer.from(col, 'utf8'))
+  const idColBytes = Buffer.from(idColumn, 'utf8')
+  const extKeys: Buffer[] = []
+  const mint = gateMintOpt ? new PublicKey(gateMintOpt) : null
+
+  const tx = await createAdminTable(
+    rootIdBuf,
+    tableSeed,
+    tableNameBytes,
+    columnBytes,
+    idColBytes,
+    extKeys,
+    mint
+  )
+    .accounts({
+      root,
+      table,
+      instruction_table: instrTable,
+      signer,
+      system_program: SystemProgram.programId,
+    })
+    .transaction()
+
+  return { tx, table: table.toBase58(), instructionTable: instrTable.toBase58() }
+}

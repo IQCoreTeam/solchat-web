@@ -203,3 +203,21 @@ export function pdaDmListBox(root: PublicKey, user: PublicKey, programId?: Publi
     programPk
   )[0]
 }
+
+/**
+ * pdaUser
+ * - User account PDA for storing profile metadata
+ * - Seeds: ["solchat-user", programId, root, user]
+ */
+export function pdaUser(root: PublicKey, user: PublicKey, programId?: PublicKey | string) {
+  const programPk = resolveProgramId(programId)
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from(configs.userSeed),
+      programPk.toBuffer(),
+      root.toBuffer(),
+      user.toBuffer(),
+    ],
+    programPk
+  )[0]
+}

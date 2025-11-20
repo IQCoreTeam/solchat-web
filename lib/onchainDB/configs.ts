@@ -19,6 +19,7 @@ export const configs = {
   tableSeed: 'iqdb-table',
   dmTableSeed: 'solchat-dm-table',
   dmListSeed: 'solchat-dmlist',
+  userSeed: 'solchat-user',
   txRefSeed: 'iqdb-txref',
   instructionSeed: 'instruction',
   targetSeed: 'target',

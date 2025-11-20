@@ -1,7 +1,8 @@
 /**
- * User Profile Manager Component
- * Allows users to set their profile (name, bio, profile pic)
- * and browse all user profiles on the network
+ * User Profile Manager Component - Zo's Vision
+ * Uses the new User account system with onchain metadata
+ * - My Profile: Set name, bio, profile pic using updateUserMetadata
+ * - All Users: Fetch all user pubkeys from admin table, then fetch each User account's metadata
  */
 
 'use client';
@@ -11,8 +12,12 @@ import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
 import { ProfileEditor } from './profile-editor';
 import { UserList } from './user-list';
-import { codeIn } from '@/lib/iq/transaction';
-import { reconstructMessageFromChain } from '@/lib/iq/reader';
+import { updateUserMetadataWeb, pdaUser, pdaRoot, createAdminTableWeb, writeRowWeb, readRowsByTable } from '@/lib/onchainDB';
+import { getAnchorProvider, getProgram } from '@/lib/onchainDB/web/provider';
+import idl from '@/lib/onchainDB/idl.json';
+import { ROOT_ID } from '@/lib/onchainDB/constants';
+import { PublicKey } from '@solana/web3.js';
+import type { WriterCtx } from '@/lib/onchainDB/web/writer';
 
 export interface UserProfile {
   pubkey: string;
@@ -20,7 +25,6 @@ export interface UserProfile {
   bio: string;
   profilePicture: string;
   timestamp?: number;
-  txid?: string; // Transaction ID from codeIn
 }
 
 export function UserProfileManager() {
@@ -35,49 +39,66 @@ export function UserProfileManager() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'my-profile' | 'all-users'>('my-profile');
 
-  // Load user's profile
+  // Load user's profile from their User account
   const loadMyProfile = useCallback(async () => {
     if (!userAddress || !connection) return;
 
     setLoading(true);
     setError(null);
     try {
-      // Check localStorage for profile txid
-      const storageKey = `profile_txid_${userAddress}`;
-      const txid = localStorage.getItem(storageKey);
+      const userPk = new PublicKey(userAddress);
+      const rootPk = pdaRoot(ROOT_ID);
+      const userAccount = pdaUser(rootPk, userPk);
 
-      if (txid) {
-        console.log('[UserProfile] Found profile txid:', txid);
-        // Use Zo's reconstructMessageFromChain to read the profile
-        const reconstructed = await reconstructMessageFromChain(connection, txid);
+      console.log('[UserProfile] Fetching User account:', userAccount.toBase58());
 
-        if (reconstructed) {
+      // Fetch the User account
+      const accountInfo = await connection.getAccountInfo(userAccount);
+
+      if (accountInfo && accountInfo.data) {
+        // Parse the User account data
+        // User struct: { owner: Pubkey (32), data: Vec<u8> (4 + len), metadata: Vec<u8> (4 + len) }
+        const data = Buffer.from(accountInfo.data);
+
+        // Skip discriminator (8 bytes)
+        let offset = 8;
+
+        // Skip owner (32 bytes)
+        offset += 32;
+
+        // Skip data Vec (4 bytes length + data)
+        const dataLen = data.readUInt32LE(offset);
+        offset += 4 + dataLen;
+
+        // Read metadata Vec
+        const metadataLen = data.readUInt32LE(offset);
+        offset += 4;
+        const metadataBytes = data.slice(offset, offset + metadataLen);
+        const metadata = metadataBytes.toString('utf8');
+
+        console.log('[UserProfile] Raw metadata:', metadata);
+
+        if (metadata) {
           try {
-            // Remove handle prefix if present (format: "handle: {json}")
-            const jsonStr = reconstructed.includes(': ')
-              ? reconstructed.split(': ')[1]
-              : reconstructed;
-
-            const parsed = JSON.parse(jsonStr);
+            const parsed = JSON.parse(metadata);
             setMyProfile({
               pubkey: userAddress,
               name: parsed.name || '',
               bio: parsed.bio || '',
               profilePicture: parsed.profilePicture || '',
               timestamp: Date.now(),
-              txid,
             });
-            console.log('[UserProfile] Loaded profile from txid');
+            console.log('[UserProfile] Loaded profile from User account');
           } catch (parseErr) {
-            console.error('[UserProfile] Failed to parse profile JSON:', parseErr);
+            console.error('[UserProfile] Failed to parse metadata JSON:', parseErr);
             setMyProfile(null);
           }
         } else {
-          console.log('[UserProfile] Failed to reconstruct profile from txid');
+          console.log('[UserProfile] No metadata found');
           setMyProfile(null);
         }
       } else {
-        console.log('[UserProfile] No profile txid found');
+        console.log('[UserProfile] User account not found (not initialized yet)');
         setMyProfile(null);
       }
     } catch (err) {
@@ -88,28 +109,97 @@ export function UserProfileManager() {
     }
   }, [userAddress, connection]);
 
-  // Load all user profiles from global list
-  // Note: Zo's design doesn't have a global user list - users are created on-demand during DM requests
-  // For now, we'll just load from friends/DM list or show a message
+  // Load all user profiles from userlist admin table
   const loadAllProfiles = useCallback(async () => {
     if (!connection) return;
 
     setLoading(true);
     setError(null);
     try {
-      // TODO: Scan DM list or friends to get user profiles
-      // For now, just show empty list
-      setAllProfiles([]);
-      console.log('[UserProfile] Global user list not available in current design');
+      console.log('[UserProfile] Fetching userlist admin table...');
+
+      // Fetch all rows from userlist table
+      const rows = await readRowsByTable({
+        connection,
+        rootId: ROOT_ID,
+        userPublicKey: userAddress || '',
+        tableName: 'userlist',
+        idl: idl as any,
+      });
+
+      console.log('[UserProfile] Found', rows.length, 'users in userlist');
+
+      const rootPk = pdaRoot(ROOT_ID);
+      const profiles: UserProfile[] = [];
+
+      // For each row, extract the pubkey and fetch their User account
+      for (const row of rows) {
+        try {
+          // Parse the row data to get pubkey
+          const rowData = JSON.parse(row.data);
+          const pubkeyString = rowData.pubkeyString || rowData.pubkey;
+
+          if (!pubkeyString) continue;
+
+          console.log('[UserProfile] Fetching User account for:', pubkeyString.slice(0, 8) + '...');
+
+          const userPk = new PublicKey(pubkeyString);
+          const userAccount = pdaUser(rootPk, userPk);
+
+          // Fetch the User account
+          const accountInfo = await connection.getAccountInfo(userAccount);
+
+          if (accountInfo && accountInfo.data) {
+            // Parse the User account data (same as loadMyProfile)
+            const data = Buffer.from(accountInfo.data);
+            let offset = 8; // Skip discriminator
+            offset += 32; // Skip owner
+
+            const dataLen = data.readUInt32LE(offset);
+            offset += 4 + dataLen;
+
+            const metadataLen = data.readUInt32LE(offset);
+            offset += 4;
+            const metadataBytes = data.slice(offset, offset + metadataLen);
+            const metadata = metadataBytes.toString('utf8');
+
+            if (metadata) {
+              try {
+                const parsed = JSON.parse(metadata);
+                profiles.push({
+                  pubkey: pubkeyString,
+                  name: parsed.name || '',
+                  bio: parsed.bio || '',
+                  profilePicture: parsed.profilePicture || '',
+                  timestamp: Date.now(),
+                });
+              } catch (parseErr) {
+                console.error('[UserProfile] Failed to parse metadata for', pubkeyString);
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[UserProfile] Error fetching user:', err);
+        }
+      }
+
+      console.log('[UserProfile] Loaded', profiles.length, 'user profiles');
+      setAllProfiles(profiles);
     } catch (err) {
       console.error('[UserProfile] Error loading profiles:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load profiles');
+      // If table doesn't exist yet, just show empty list
+      if (err instanceof Error && err.message.includes('Account does not exist')) {
+        console.log('[UserProfile] Userlist table not created yet');
+        setAllProfiles([]);
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to load profiles');
+      }
     } finally {
       setLoading(false);
     }
-  }, [connection]);
+  }, [connection, userAddress]);
 
-  // Save user profile using Zo's codeIn function
+  // Save user profile using updateUserMetadata
   const saveProfile = useCallback(async (profile: Omit<UserProfile, 'pubkey'>) => {
     if (!userAddress || !connection || !wallet) {
       throw new Error('Wallet not connected');
@@ -117,35 +207,138 @@ export function UserProfileManager() {
 
     setError(null);
     try {
-      // Prepare profile JSON
-      const profileJson = JSON.stringify({
+      // Prepare metadata JSON (only name, bio, profilePicture)
+      const metadata = JSON.stringify({
         name: profile.name,
         bio: profile.bio,
         profilePicture: profile.profilePicture,
       });
 
-      console.log('[UserProfile] Saving profile with codeIn...');
+      console.log('[UserProfile] Saving profile with updateUserMetadata...');
 
-      // Use Zo's codeIn to save the profile JSON and get txid
-      const txid = await codeIn(
+      // Create writer context
+      const writerCtx: WriterCtx<any> = {
+        wallet: wallet as any,
         connection,
-        wallet as any,
-        profileJson,
-        'user_profile', // type
-        userAddress.substring(0, 8) // handle (short version of address)
+        idl: idl as any,
+      };
+
+      // Call updateUserMetadataWeb
+      const { tx } = await updateUserMetadataWeb(writerCtx, ROOT_ID, metadata);
+
+      // Send transaction
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = wallet.publicKey!;
+
+      const signed = await wallet.signTransaction!(tx);
+      const signature = await connection.sendRawTransaction(signed.serialize());
+      await connection.confirmTransaction(
+        { signature, blockhash, lastValidBlockHeight },
+        'processed'
       );
 
-      console.log('[UserProfile] Profile saved! txid:', txid);
+      console.log('[UserProfile] Profile saved! Signature:', signature);
 
-      // Store txid in localStorage
-      const storageKey = `profile_txid_${userAddress}`;
-      localStorage.setItem(storageKey, txid);
+      // Zo's vision: Check if user is in userlist, add if not
+      try {
+        console.log('[UserProfile] Checking if user is in userlist...');
+
+        // Check if user is already in userlist
+        let userInList = false;
+        try {
+          const rows = await readRowsByTable({
+            connection,
+            rootId: ROOT_ID,
+            userPublicKey: userAddress,
+            tableName: 'userlist',
+            idl: idl as any,
+          });
+
+          userInList = rows.some((row) => {
+            try {
+              const rowData = JSON.parse(row.data);
+              return rowData.pubkeyString === userAddress || rowData.pubkey === userAddress;
+            } catch {
+              return false;
+            }
+          });
+
+          console.log('[UserProfile] User in userlist:', userInList);
+        } catch (tableErr) {
+          // Table doesn't exist yet, need to create it
+          console.log('[UserProfile] Userlist table does not exist, creating...');
+        }
+
+        if (!userInList) {
+          console.log('[UserProfile] Adding user to userlist table...');
+
+          // Ensure userlist table exists
+          try {
+            await readRowsByTable({
+              connection,
+              rootId: ROOT_ID,
+              userPublicKey: userAddress,
+              tableName: 'userlist',
+              idl: idl as any,
+            });
+          } catch (tableErr) {
+            // Create userlist table if it doesn't exist
+            console.log('[UserProfile] Creating userlist admin table...');
+            const { tx: createTableTx } = await createAdminTableWeb(
+              writerCtx,
+              ROOT_ID,
+              'userlist',
+              ['pubkeyString'],
+              'id'
+            );
+
+            const { blockhash: newBlockhash, lastValidBlockHeight: newHeight } = await connection.getLatestBlockhash();
+            createTableTx.recentBlockhash = newBlockhash;
+            createTableTx.feePayer = wallet.publicKey!;
+
+            const signedTableTx = await wallet.signTransaction!(createTableTx);
+            const tableSig = await connection.sendRawTransaction(signedTableTx.serialize());
+            await connection.confirmTransaction(
+              { signature: tableSig, blockhash: newBlockhash, lastValidBlockHeight: newHeight },
+              'processed'
+            );
+
+            console.log('[UserProfile] Userlist table created:', tableSig);
+          }
+
+          // Add user pubkey to userlist
+          const userlistRow = JSON.stringify({
+            id: userAddress.slice(0, 16),
+            pubkeyString: userAddress,
+            timestamp: Date.now(),
+          });
+
+          const { tx: rowTx } = await writeRowWeb(writerCtx, ROOT_ID, 'userlist', userlistRow);
+
+          const { blockhash: newBlockhash, lastValidBlockHeight: newHeight } = await connection.getLatestBlockhash();
+          rowTx.recentBlockhash = newBlockhash;
+          rowTx.feePayer = wallet.publicKey!;
+
+          const signedRowTx = await wallet.signTransaction!(rowTx);
+          const rowSig = await connection.sendRawTransaction(signedRowTx.serialize());
+          await connection.confirmTransaction(
+            { signature: rowSig, blockhash: newBlockhash, lastValidBlockHeight: newHeight },
+            'processed'
+          );
+
+          console.log('[UserProfile] User added to userlist! Signature:', rowSig);
+          setTimeout(() => loadAllProfiles(), 1000);
+        }
+      } catch (listErr) {
+        console.error('[UserProfile] Error managing userlist:', listErr);
+        // Don't fail the whole operation if userlist update fails
+      }
 
       const fullProfile: UserProfile = {
         pubkey: userAddress,
         ...profile,
         timestamp: Date.now(),
-        txid,
       };
 
       setMyProfile(fullProfile);
@@ -155,7 +348,7 @@ export function UserProfileManager() {
       console.error('[UserProfile] Error saving profile:', err);
       throw err;
     }
-  }, [userAddress, connection, wallet]);
+  }, [userAddress, connection, wallet, loadAllProfiles]);
 
   useEffect(() => {
     if (userAddress) {
@@ -202,7 +395,7 @@ export function UserProfileManager() {
       <div className="mb-8">
         <h1 className="text-4xl font-bold text-green-400 mb-2">User Profiles</h1>
         <p className="text-white/60">
-          Testing Zo's theory: Onchain user profiles with metadata
+          Zo's Vision: Onchain user profiles with metadata stored in User accounts
         </p>
       </div>
 
@@ -257,26 +450,33 @@ export function UserProfileManager() {
 
       {/* Info Box */}
       <div className="mt-12 p-6 bg-green-900/10 border border-green-700/30 rounded-lg">
-        <h3 className="text-green-400 font-bold mb-2">About This Feature - Zo's IQ Inscription System</h3>
+        <h3 className="text-green-400 font-bold mb-2">About This Feature - Zo's New User Account System</h3>
         <p className="text-white/70 text-sm mb-2">
-          User profiles are stored onchain using Zo's codeIn function. Your profile JSON is chunked and inscribed as transactions:
+          User profiles are now stored in dedicated User accounts with automatic initialization:
         </p>
         <code className="block bg-black/40 p-3 rounded text-xs text-green-300 overflow-x-auto mb-2">
-          {`codeIn(data) → returns 90-byte transaction ID`}
+          {`updateUserMetadata(metadata) → Creates/updates User account`}
         </code>
         <p className="text-white/70 text-sm mb-2">
-          Profile structure:
+          User account structure (seeds: ["solchat-user", programId, root, user]):
         </p>
-        <code className="block bg-black/40 p-3 rounded text-xs text-green-300 overflow-x-auto">
+        <code className="block bg-black/40 p-3 rounded text-xs text-green-300 overflow-x-auto mb-3">
           {`{
-  name: "Your Name",
-  bio: "Your bio",
-  profilePicture: "link or tx id"
+  owner: Pubkey,
+  data: Vec<u8>,
+  metadata: Vec<u8> // JSON: {name, bio, profilePicture}
 }`}
         </code>
-        <p className="text-white/70 text-sm mt-3">
-          To read profiles, we use <code className="text-green-400">reconstructMessageFromChain(txid)</code> which follows the transaction chain and reconstructs the original JSON.
+        <p className="text-white/70 text-sm mb-3">
+          The metadata field stores your profile JSON. With <code className="text-green-400">init_if_needed</code>, your User account is created automatically when you save your profile!
         </p>
+        <div className="border-t border-green-700/30 pt-3 mt-3">
+          <h4 className="text-green-400 font-bold text-sm mb-2">Zo's Anti-Spam System</h4>
+          <p className="text-white/70 text-sm">
+            Users are only added to the "All Users" list when they set their nickname for the <span className="text-green-400">first time</span>.
+            The system checks if metadata exists before adding you to the userlist admin table. This prevents spam and duplicate entries!
+          </p>
+        </div>
       </div>
     </div>
   );
