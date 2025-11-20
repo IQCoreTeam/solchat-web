@@ -70,6 +70,7 @@ export const buildTransactionFromServerPayload = (payload: ServerTransactionPayl
 /**
  * Get user database PDA from backend
  */
+
 export async function getDBPDA(userKey: string): Promise<string> {
   const response = await fetch(`${IQ_CONFIG.backendHost}/getDBPDA/${userKey}`);
   if (!response.ok) {
