@@ -16,8 +16,8 @@ import {
   writeDmRowWeb,
   type WriterCtx,
 } from '@/lib/onchainDB/web/writer';
-import { readRowsByDmSeed, readRowsByTable } from '@/lib/onchainDB/web/cached-reader-integration';
-import { pdaDmInstructionTable, pdaDmTable, pdaInstructionTable, pdaRoot, pdaTable } from '@/lib/onchainDB';
+import { readRowsByDmSeed, readRowsByTable, invalidateRoomCache, invalidateDmCache } from '@/lib/onchainDB/web/cached-reader-integration';
+import { pdaDmInstructionTable, pdaDmTable, pdaInstructionTable, pdaRoot, pdaTable, pdaTxRef } from '@/lib/onchainDB';
 import { useUserInit } from '@/lib/onchainDB/hooks/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
@@ -62,6 +62,21 @@ type ChatClientProps = {
   dmModalOpen?: boolean;
   onCloseDm?: () => void;
 };
+
+// Helper function to parse txRef account data
+function parseTxRefAccount(data: Buffer | Uint8Array | null): any | null {
+  if (!data) return null;
+  const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
+  if (buffer.length < 12) return null;
+  const len = buffer.readUInt32LE(8);
+  if (len <= 0 || 12 + len > buffer.length) return null;
+  const payload = buffer.slice(12, 12 + len);
+  try {
+    return JSON.parse(payload.toString('utf8'));
+  } catch {
+    return null;
+  }
+}
 
 export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) {
   const { connection } = useAppConnection();
@@ -128,6 +143,9 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesRef = useRef<MessageRow[]>([]);
   const dmMessagesRef = useRef<MessageRow[]>([]);
+  const logSubscriptionsRef = useRef<number[]>([]);
+  const dmLogSubscriptionsRef = useRef<number[]>([]);
+  const selectedRoomRef = useRef<string | null>(null);
 
   // Writer context
   const writerWallet = useMemo<WalletAdapterLike | null>(() => {
@@ -158,22 +176,13 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
     // Deduplicate: prefer confirmed messages (with signatures) over pending ones
     const messageMap = new Map<string, MessageRow>();
 
-    console.log('[ChatClient] Deduplicating:', {
-      pendingCount: pendingMessages.length,
-      confirmedCount: messages.length,
-      pendingIds: pendingMessages.map(m => ({ id: m.id.slice(0, 8), sig: !!m.signature, status: m.status })),
-      confirmedIds: messages.map(m => ({ id: m.id.slice(0, 8), sig: !!m.signature, status: m.status })),
-    });
-
     // Add pending messages first
     pendingMessages.forEach(msg => messageMap.set(msg.id, msg));
 
     // Confirmed messages override pending ones with same ID
     messages.forEach(msg => messageMap.set(msg.id, msg));
 
-    const result = Array.from(messageMap.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-    console.log('[ChatClient] Deduplicated result:', result.length, 'messages');
-    return result;
+    return Array.from(messageMap.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
   }, [messages, pendingMessages]);
 
   const allDmMessages = useMemo(() => {
@@ -315,17 +324,14 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
   // Extract stable wallet address
   const walletAddress = wallet.publicKey?.toBase58() || '';
 
-  // Load messages for selected room
-  const loadMessages = useCallback(async () => {
-    if (!selectedSeed) return;
-    const room = rooms.find((r) => r.seedHex === selectedSeed);
-    if (!room) return;
-
-    setMessagesLoading(true);
-    setMessagesError(null);
-    setShowLoadingSpinner(true);
-
-    setTimeout(() => setShowLoadingSpinner(false), 800);
+  // Load messages for selected room (stable version for subscriptions)
+  const loadMessagesForRoom = useCallback(async (room: RoomMeta, options?: { skipLoadingState?: boolean }) => {
+    if (!options?.skipLoadingState) {
+      setMessagesLoading(true);
+      setMessagesError(null);
+      setShowLoadingSpinner(true);
+      setTimeout(() => setShowLoadingSpinner(false), 800);
+    }
 
     try {
       const rows = await readRowsByTable({
@@ -336,31 +342,35 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
         idl: idl as any,
       });
       const mapped = rows.map((row: any) => rowToMessage(row)).filter((message: any) => message.text || message.file);
+      console.log('[loadMessages] Loaded', mapped.length, 'messages, IDs:', mapped.map(m => m.id.slice(0, 8)));
       messagesRef.current = mapped;
       setMessages(mapped);
-      // Auto-cleanup: remove pending messages that now exist on-chain
-      const confirmedIds = new Set(mapped.map(m => m.id));
-      console.log('[ChatClient] Auto-cleanup - confirmed IDs:', Array.from(confirmedIds).slice(0, 5).map(id => id.slice(0, 8)));
-      setPendingMessages((prev) => {
-        const before = prev.length;
-        const pendingIds = prev.map(m => m.id.slice(0, 8));
-        console.log('[ChatClient] Auto-cleanup - pending IDs:', pendingIds);
-        const after = prev.filter((m) => !confirmedIds.has(m.id));
-        console.log('[ChatClient] Auto-cleanup - pending before:', before, 'after:', after.length, 'removed:', before - after.length);
-        return after;
-      });
     } catch (err) {
       console.error('[ChatClient] Load messages error:', err);
-      setMessagesError(err instanceof Error ? err.message : 'Failed to load messages');
+      if (!options?.skipLoadingState) {
+        setMessagesError(err instanceof Error ? err.message : 'Failed to load messages');
+      }
     } finally {
-      setMessagesLoading(false);
+      if (!options?.skipLoadingState) {
+        setMessagesLoading(false);
+      }
     }
-  }, [selectedSeed, rooms, connection, walletAddress]);
+  }, [connection, walletAddress]);
+
+  // Wrapper for current room
+  const loadMessages = useCallback(async (options?: { skipLoadingState?: boolean }) => {
+    if (!selectedSeed) return;
+    const room = rooms.find((r) => r.seedHex === selectedSeed);
+    if (!room) return;
+    await loadMessagesForRoom(room, options);
+  }, [selectedSeed, rooms, loadMessagesForRoom]);
 
   // Load DM messages
-  const loadDmMessages = useCallback(async () => {
+  const loadDmMessages = useCallback(async (options?: { skipLoadingState?: boolean }) => {
     if (!activeDm) return;
-    setDmLoading(true);
+    if (!options?.skipLoadingState) {
+      setDmLoading(true);
+    }
     try {
       const rows = await readRowsByDmSeed({
         connection,
@@ -372,14 +382,15 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
       const mapped = rows.map((row: any) => rowToMessage(row)).filter((message: any) => message.text || message.file);
       dmMessagesRef.current = mapped;
       setDmMessages(mapped);
-      // Auto-cleanup: remove pending messages that now exist on-chain
-      const confirmedIds = new Set(mapped.map(m => m.id));
-      setDmPendingMessages((prev) => prev.filter((m) => !confirmedIds.has(m.id)));
     } catch (err) {
       console.error('[ChatClient] Load DM messages error:', err);
-      setDmError(err instanceof Error ? err.message : 'Failed to load DM messages');
+      if (!options?.skipLoadingState) {
+        setDmError(err instanceof Error ? err.message : 'Failed to load DM messages');
+      }
     } finally {
-      setDmLoading(false);
+      if (!options?.skipLoadingState) {
+        setDmLoading(false);
+      }
     }
   }, [activeDm, connection, walletAddress]);
   useEffect(() => {
@@ -390,7 +401,200 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
     loadDmMessages();
   }, [loadDmMessages]);
 
-  // Real-time subscriptions would go here (simplified for brevity)
+  // Sync refs with state
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    dmMessagesRef.current = dmMessages;
+  }, [dmMessages]);
+
+  useEffect(() => {
+    selectedRoomRef.current = selectedRoom?.name || null;
+  }, [selectedRoom]);
+
+  // Auto-cleanup: remove pending messages when they appear in confirmed
+  useEffect(() => {
+    if (!pendingMessages.length) return;
+    console.log('[auto-cleanup] Checking pending messages:', pendingMessages.map(m => m.id.slice(0, 8)));
+    console.log('[auto-cleanup] Against confirmed messages:', messages.map(m => m.id.slice(0, 8)));
+    setPendingMessages((prev) => {
+      const filtered = prev.filter((pending) => !messages.some((message) => message.id === pending.id));
+      if (filtered.length !== prev.length) {
+        console.log('[auto-cleanup] Removed', prev.length - filtered.length, 'pending messages');
+      }
+      return filtered;
+    });
+  }, [messages, pendingMessages.length]);
+
+  useEffect(() => {
+    if (!dmPendingMessages.length) return;
+    setDmPendingMessages((prev) =>
+      prev.filter((pending) => !dmMessages.some((message) => message.id === pending.id))
+    );
+  }, [dmMessages, dmPendingMessages.length]);
+
+  // WebSocket subscriptions for table and instruction addresses
+  useEffect(() => {
+    logSubscriptionsRef.current.forEach((subId) => {
+      connection.removeOnLogsListener(subId).catch(() => undefined);
+    });
+    logSubscriptionsRef.current = [];
+
+    if (!selectedRoom) return;
+
+    let cancelled = false;
+    const subscriptions: number[] = [];
+    const room = selectedRoom; // Capture for closure
+
+    const subscribe = async () => {
+      const tablePk = new PublicKey(room.tableAddress);
+      const instructionPk = new PublicKey(room.instructionAddress);
+
+      const register = async (pubkey: PublicKey, commitment: 'processed' | 'confirmed', handler: () => void) => {
+        try {
+          const id = await connection.onLogs(pubkey, handler, commitment);
+          if (cancelled) {
+            connection.removeOnLogsListener(id).catch(() => undefined);
+            return;
+          }
+          subscriptions.push(id);
+        } catch (error) {
+          console.warn('Failed to subscribe to logs', error);
+        }
+      };
+
+      await register(tablePk, 'confirmed', () => {
+        loadMessagesForRoom(room, { skipLoadingState: true });
+      });
+      await register(instructionPk, 'confirmed', () => {
+        loadMessagesForRoom(room, { skipLoadingState: true });
+      });
+
+      logSubscriptionsRef.current = subscriptions;
+    };
+
+    subscribe();
+
+    return () => {
+      cancelled = true;
+      subscriptions.forEach((subId) => {
+        connection.removeOnLogsListener(subId).catch(() => undefined);
+      });
+      logSubscriptionsRef.current = [];
+    };
+  }, [connection, loadMessagesForRoom, selectedRoom]);
+
+  // WebSocket subscription for txRef (processing state detection)
+  useEffect(() => {
+    if (!selectedRoom) return;
+
+    let cancelled = false;
+    const txRefPk = pdaTxRef(ROOT_ID);
+    const subscriptions: number[] = [];
+    const room = selectedRoom; // Capture for closure
+
+    const subscribe = async () => {
+      try {
+        const processedId = await connection.onLogs(
+          txRefPk,
+          async () => {
+            try {
+              const info = await connection.getAccountInfo(txRefPk, { commitment: 'processed' });
+              if (!info) return;
+              const parsed = parseTxRefAccount(info.data);
+              if (!parsed) return;
+              const message = rowToMessage(parsed);
+              message.status = 'pending';
+              console.log('[txRef] Detected message:', message.id.slice(0, 8), 'text:', message.text.slice(0, 20));
+              setPendingMessages((prev) => {
+                if (prev.some((m) => m.id === message.id)) return prev;
+                if (messagesRef.current.some((m) => m.id === message.id)) return prev;
+                console.log('[txRef] Adding to pending:', message.id.slice(0, 8));
+                return [...prev, message];
+              });
+            } catch (error) {
+              console.error('[txRef] Error:', error);
+            }
+          },
+          'processed'
+        );
+        subscriptions.push(processedId);
+
+        const confirmedId = await connection.onLogs(
+          txRefPk,
+          () => {
+            console.log('[txRef confirmed] Triggering loadMessages for room:', room.name);
+            loadMessagesForRoom(room, { skipLoadingState: true });
+          },
+          'confirmed'
+        );
+        subscriptions.push(confirmedId);
+      } catch (error) {
+        console.warn('Failed to subscribe to tx_ref logs', error);
+      }
+    };
+
+    subscribe();
+
+    return () => {
+      cancelled = true;
+      subscriptions.forEach((subId) => {
+        connection.removeOnLogsListener(subId).catch(() => undefined);
+      });
+    };
+  }, [connection, loadMessagesForRoom, selectedRoom]);
+
+  // WebSocket subscriptions for DMs
+  useEffect(() => {
+    dmLogSubscriptionsRef.current.forEach((subId) => {
+      connection.removeOnLogsListener(subId).catch(() => undefined);
+    });
+    dmLogSubscriptionsRef.current = [];
+
+    if (!activeDm) return;
+
+    let cancelled = false;
+    const subscriptions: number[] = [];
+    const txRefPk = pdaTxRef(ROOT_ID);
+
+    const subscribe = async () => {
+      const tablePk = new PublicKey(activeDm.tableAddress);
+
+      const register = async (pubkey: PublicKey, commitment: 'processed' | 'confirmed', handler: () => void) => {
+        try {
+          const id = await connection.onLogs(pubkey, handler, commitment);
+          if (cancelled) {
+            connection.removeOnLogsListener(id).catch(() => undefined);
+            return;
+          }
+          subscriptions.push(id);
+        } catch (error) {
+          console.warn('Failed to subscribe to DM logs', error);
+        }
+      };
+
+      await register(tablePk, 'confirmed', () => {
+        loadDmMessages({ skipLoadingState: true });
+      });
+      await register(txRefPk, 'confirmed', () => {
+        loadDmMessages({ skipLoadingState: true });
+      });
+
+      dmLogSubscriptionsRef.current = subscriptions;
+    };
+
+    subscribe();
+
+    return () => {
+      cancelled = true;
+      subscriptions.forEach((subId) => {
+        connection.removeOnLogsListener(subId).catch(() => undefined);
+      });
+      dmLogSubscriptionsRef.current = [];
+    };
+  }, [activeDm, connection, loadDmMessages]);
 
   // Scroll to bottom
   useEffect(() => {
@@ -467,17 +671,6 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
       payload.file = fileUrl;
     }
 
-    const tempMessage: MessageRow = {
-      id: messageId,
-      text: messageInput.trim(),
-      file: fileUrl || undefined,
-      sender: userAddr,
-      timestamp,
-      status: 'pending',
-      room: selectedRoom.name,
-    };
-
-    setPendingMessages((prev) => [...prev, tempMessage]);
     setMessageInput('');
     setAttachmentUrl('');
     setAttachmentError(null);
@@ -491,23 +684,14 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
       const signed = await writerCtx.wallet.signTransaction(tx);
       const sig = await connection.sendRawTransaction(signed.serialize());
       await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'processed');
-      // Retry loading until message appears (max 3 attempts with 3s delay each)
-      for (let attempt = 0; attempt < 3; attempt++) {
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        await loadMessages();
-        // Check if message was loaded
-        if (messagesRef.current.some(m => m.id === messageId)) {
-          console.log('[ChatClient] Message found after', attempt + 1, 'attempts');
-          break;
-        }
-        console.log('[ChatClient] Message not found, attempt', attempt + 1, 'of 3');
-      }
+      // Invalidate cache so WebSocket listeners get fresh data
+      await invalidateRoomCache(selectedRoom.seedHex);
+      console.log('[handleSendMessage] Cache invalidated for room:', selectedRoom.seedHex.slice(0, 8));
     } catch (err) {
       console.error('[ChatClient] Send message error:', err);
-      setPendingMessages((prev) => prev.filter((m) => m.id !== messageId));
       setMessagesError(err instanceof Error ? err.message : 'Failed to send message');
     }
-  }, [writerCtx, selectedRoom, messageInput, attachmentUrl, connection, loadMessages]);
+  }, [writerCtx, selectedRoom, messageInput, attachmentUrl, connection]);
 
   // Handle start DM
   const handleStartDm = useCallback(async (e?: FormEvent) => {
@@ -584,15 +768,6 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
       status: 'sent',
     };
 
-    const tempMessage: MessageRow = {
-      id: messageId,
-      text: dmMessageInput.trim(),
-      sender: userAddr,
-      timestamp,
-      status: 'pending',
-    };
-
-    setDmPendingMessages((prev) => [...prev, tempMessage]);
     setDmMessageInput('');
 
     try {
@@ -603,23 +778,14 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
       const signed = await writerCtx.wallet.signTransaction(tx);
       const sig = await connection.sendRawTransaction(signed.serialize());
       await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'processed');
-      // Retry loading until message appears (max 3 attempts with 3s delay each)
-      for (let attempt = 0; attempt < 3; attempt++) {
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        await loadDmMessages();
-        // Check if message was loaded
-        if (dmMessagesRef.current.some(m => m.id === messageId)) {
-          console.log('[ChatClient] DM message found after', attempt + 1, 'attempts');
-          break;
-        }
-        console.log('[ChatClient] DM message not found, attempt', attempt + 1, 'of 3');
-      }
+      // Invalidate cache so WebSocket listeners get fresh data
+      await invalidateDmCache(activeDm.seedBytes);
+      console.log('[handleSendDmMessage] Cache invalidated for DM:', activeDm.seedHex.slice(0, 8));
     } catch (err) {
       console.error('[ChatClient] Send DM error:', err);
-      setDmPendingMessages((prev) => prev.filter((m) => m.id !== messageId));
       setDmError(err instanceof Error ? err.message : 'Failed to send DM');
     }
-  }, [writerCtx, activeDm, dmMessageInput, connection, loadDmMessages]);
+  }, [writerCtx, activeDm, dmMessageInput, connection]);
 
   // Handle disconnect
   const handleDisconnectPrivy = useCallback(async () => {
