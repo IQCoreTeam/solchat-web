@@ -14,6 +14,9 @@ export const GlobalStyles = createGlobalStyle`
       transform: translateX(400%);
     }
   }
+  body {
+  font-family: "bitArrayA2", serif;
+  }
 `;
 
 // Custom dark theme - mostly black with green accents
