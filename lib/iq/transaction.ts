@@ -7,16 +7,17 @@ import {
 } from '@solana/web3.js';
 import type { SendTransactionOptions } from '@solana/wallet-adapter-base';
 import {
-  createCodeInTransactionOnServer,
-  createDbPingTransactionToPDAOnServer,
-  createInitTransactionOnServer,
-  createServerInitTransactionOnServer,
-  buildTransactionFromServerPayload,
-  getServerPDA,
+    createCodeInTransactionOnServer,
+    createDbPingTransactionToPDAOnServer,
+    createInitTransactionOnServer,
+    createServerInitTransactionOnServer,
+    buildTransactionFromServerPayload,
+    getServerPDA, createDbCodeTransactionOnserver, makeMerkleRootFromServer,
 } from './client';
 import type { ServerTransactionPayload } from './client';
 import { chunkData } from './utils';
 import { generateMerkleRoot } from './client';
+
 
 export type WalletExecutor = {
   publicKey: PublicKey;
@@ -134,6 +135,50 @@ export async function initializeServer(
     throw error;
   }
 }
+async function makeTransactions(  connection: Connection,chunkList: Array<string>,wallet: WalletExecutor, handle: string, type: string, offset: string) {
+    let beforeHash: string = "Genesis";
+    const userKey = wallet.publicKey.toBase58();
+    const method = 0;
+    const decode_break = 0;
+
+    let num = 0;
+    for (const text of chunkList) {
+        try {
+
+            num++;
+            const tx = await createCodeInTransactionOnServer(connection,userKey,text, beforeHash);
+
+             beforeHash = await appTxSend(connection, tx, wallet);
+
+            console.log(num.toString() + '/' + chunkList.length.toString())
+        } catch (error) {
+            console.error(`Transaction ${num} failed, beforeHash:${beforeHash} `, error);
+            let result;
+            while (!result) {
+                const tx = await createCodeInTransactionOnServer(connection,userKey,text, beforeHash);
+                try {
+                    beforeHash = await appTxSend(connection, tx, wallet);
+                    result = true;
+                } catch (e) {
+                    result = false;
+                }
+
+            }
+        }
+    }
+    const tx = await createDbCodeTransactionOnserver(connection,userKey,handle, beforeHash, type, offset); //
+    return await appTxSend(connection, tx, wallet);
+
+}
+
+export async function codeIn(connection:Connection,wallet:WalletExecutor,data: string, type: string, handle: string) {
+    const chunks = chunkData(data);
+    const merkleRoot = await makeMerkleRootFromServer(chunks);
+    console.log("chunkList: ", chunks);
+
+    console.log("Chunk size: ", chunks.length + 1);
+    return await makeTransactions(connection,chunks,wallet, handle, type, merkleRoot);
+}
 
 /**
  * Send data to PDA (chat message)
@@ -173,18 +218,13 @@ export async function codeToPDA(
       while (!sent && retryCount < MAX_RETRIES) {
         try {
           // Build transaction with actual previous signature
-          const { transaction: txPayload } = await createCodeInTransactionOnServer(
-            userKey,
+          const tx = await createCodeInTransactionOnServer(
+            connection,
+              userKey,
             chunkList[i],
             previousTxSignature,
-            i,
-            chunkList.length,
-            merkleRoot,
-            transactionType,
-            handle
           );
 
-          const tx = buildTransactionFromServerPayload(txPayload);
           tx.recentBlockhash = blockhash;
           tx.feePayer = wallet.publicKey;
 
