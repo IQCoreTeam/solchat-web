@@ -12,7 +12,7 @@ import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
 import { ProfileEditor } from './profile-editor';
 import { UserList } from './user-list';
-import { updateUserMetadataWeb, pdaUser, pdaRoot, createAdminTableWeb, writeRowWeb, readRowsByTable } from '@/lib/onchainDB';
+import { updateUserMetadataWeb, pdaUser, pdaRoot, pdaTable, createExtTableWeb, writeRowWeb, readRowsByTable } from '@/lib/onchainDB';
 import { getAnchorProvider, getProgram } from '@/lib/onchainDB/web/provider';
 import idl from '@/lib/onchainDB/idl.json';
 import { ROOT_ID } from '@/lib/onchainDB/constants';
@@ -109,25 +109,25 @@ export function UserProfileManager() {
     }
   }, [userAddress, connection]);
 
-  // Load all user profiles from userlist admin table
+  // Load all user profiles from global_user_list admin table
   const loadAllProfiles = useCallback(async () => {
     if (!connection) return;
 
     setLoading(true);
     setError(null);
     try {
-      console.log('[UserProfile] Fetching userlist admin table...');
+      console.log('[UserProfile] Fetching global_user_list admin table...');
 
-      // Fetch all rows from userlist table
+      // Fetch all rows from global_user_list table
       const rows = await readRowsByTable({
         connection,
         rootId: ROOT_ID,
         userPublicKey: userAddress || '',
-        tableName: 'userlist',
+        tableName: 'global_user_list',
         idl: idl as any,
       });
 
-      console.log('[UserProfile] Found', rows.length, 'users in userlist');
+      console.log('[UserProfile] Found', rows.length, 'users in global_user_list');
 
       const rootPk = pdaRoot(ROOT_ID);
       const profiles: UserProfile[] = [];
@@ -135,11 +135,13 @@ export function UserProfileManager() {
       // For each row, extract the pubkey and fetch their User account
       for (const row of rows) {
         try {
-          // Parse the row data to get pubkey
-          const rowData = JSON.parse(row.data);
-          const pubkeyString = rowData.pubkeyString || rowData.pubkey;
+          // Row is already parsed by readRowsByTable
+          const pubkeyString = (row as any).pubkeyString || (row as any).pubkey;
 
-          if (!pubkeyString) continue;
+          if (!pubkeyString) {
+            console.warn('[UserProfile] No pubkeyString found in row:', row);
+            continue;
+          }
 
           console.log('[UserProfile] Fetching User account for:', pubkeyString.slice(0, 8) + '...');
 
@@ -240,18 +242,18 @@ export function UserProfileManager() {
 
       console.log('[UserProfile] Profile saved! Signature:', signature);
 
-      // Zo's vision: Check if user is in userlist, add if not
+      // Zo's vision: Check if user is in global_user_list, add if not
       try {
-        console.log('[UserProfile] Checking if user is in userlist...');
+        console.log('[UserProfile] Checking if user is in global_user_list...');
 
-        // Check if user is already in userlist
+        // Check if user is already in global_user_list
         let userInList = false;
         try {
           const rows = await readRowsByTable({
             connection,
             rootId: ROOT_ID,
             userPublicKey: userAddress,
-            tableName: 'userlist',
+            tableName: 'global_user_list',
             idl: idl as any,
           });
 
@@ -264,33 +266,29 @@ export function UserProfileManager() {
             }
           });
 
-          console.log('[UserProfile] User in userlist:', userInList);
+          console.log('[UserProfile] User in global_user_list:', userInList);
         } catch (tableErr) {
           // Table doesn't exist yet, need to create it
           console.log('[UserProfile] Userlist table does not exist, creating...');
         }
 
         if (!userInList) {
-          console.log('[UserProfile] Adding user to userlist table...');
+          console.log('[UserProfile] Adding user to global_user_list table...');
 
-          // Ensure userlist table exists
-          try {
-            await readRowsByTable({
-              connection,
-              rootId: ROOT_ID,
-              userPublicKey: userAddress,
-              tableName: 'userlist',
-              idl: idl as any,
-            });
-          } catch (tableErr) {
-            // Create userlist table if it doesn't exist
-            console.log('[UserProfile] Creating userlist admin table...');
-            const { tx: createTableTx } = await createAdminTableWeb(
+          // Check if global_user_list table exists by checking the account directly
+          const rootPk = pdaRoot(ROOT_ID);
+          const tablePk = pdaTable(rootPk, 'global_user_list');
+          const tableAccount = await connection.getAccountInfo(tablePk);
+
+          if (!tableAccount) {
+            // Create global_user_list table if it doesn't exist
+            console.log('[UserProfile] Creating global_user_list admin table...');
+            const { tx: createTableTx } = await createExtTableWeb(
               writerCtx,
               ROOT_ID,
-              'userlist',
+              'global_user_list',
               ['pubkeyString'],
-              'id'
+              { idColumn: 'pubkeyString' }
             );
 
             const { blockhash: newBlockhash, lastValidBlockHeight: newHeight } = await connection.getLatestBlockhash();
@@ -301,20 +299,23 @@ export function UserProfileManager() {
             const tableSig = await connection.sendRawTransaction(signedTableTx.serialize());
             await connection.confirmTransaction(
               { signature: tableSig, blockhash: newBlockhash, lastValidBlockHeight: newHeight },
-              'processed'
+              'confirmed'
             );
 
-            console.log('[UserProfile] Userlist table created:', tableSig);
+            console.log('[UserProfile] global_user_list table created:', tableSig);
+            // Wait a bit for the table to be fully initialized
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          } else {
+            console.log('[UserProfile] global_user_list table already exists');
           }
 
-          // Add user pubkey to userlist
-          const userlistRow = JSON.stringify({
-            id: userAddress.slice(0, 16),
+          // Add user pubkey to global_user_list
+          const globalUserListRow = JSON.stringify({
             pubkeyString: userAddress,
             timestamp: Date.now(),
           });
 
-          const { tx: rowTx } = await writeRowWeb(writerCtx, ROOT_ID, 'userlist', userlistRow);
+          const { tx: rowTx } = await writeRowWeb(writerCtx, ROOT_ID, 'global_user_list', globalUserListRow);
 
           const { blockhash: newBlockhash, lastValidBlockHeight: newHeight } = await connection.getLatestBlockhash();
           rowTx.recentBlockhash = newBlockhash;
@@ -327,12 +328,12 @@ export function UserProfileManager() {
             'processed'
           );
 
-          console.log('[UserProfile] User added to userlist! Signature:', rowSig);
+          console.log('[UserProfile] User added to global_user_list! Signature:', rowSig);
           setTimeout(() => loadAllProfiles(), 1000);
         }
       } catch (listErr) {
-        console.error('[UserProfile] Error managing userlist:', listErr);
-        // Don't fail the whole operation if userlist update fails
+        console.error('[UserProfile] Error managing global_user_list:', listErr);
+        // Don't fail the whole operation if global_user_list update fails
       }
 
       const fullProfile: UserProfile = {
@@ -474,7 +475,7 @@ export function UserProfileManager() {
           <h4 className="text-green-400 font-bold text-sm mb-2">Zo's Anti-Spam System</h4>
           <p className="text-white/70 text-sm">
             Users are only added to the "All Users" list when they set their nickname for the <span className="text-green-400">first time</span>.
-            The system checks if metadata exists before adding you to the userlist admin table. This prevents spam and duplicate entries!
+            The system checks if metadata exists before adding you to the global_user_list admin table. This prevents spam and duplicate entries!
           </p>
         </div>
       </div>

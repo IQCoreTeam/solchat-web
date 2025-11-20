@@ -808,7 +808,8 @@ export async function createAdminTableWeb<T extends Idl>(
   const columnBytes = columns.map((col) => Buffer.from(col, 'utf8'))
   const idColBytes = Buffer.from(idColumn, 'utf8')
   const extKeys: Buffer[] = []
-  const mint = gateMintOpt ? new PublicKey(gateMintOpt) : null
+
+  const gateMint = gateMintOpt ? new PublicKey(gateMintOpt) : null
 
   const tx = await createAdminTable(
     rootIdBuf,
@@ -817,7 +818,7 @@ export async function createAdminTableWeb<T extends Idl>(
     columnBytes,
     idColBytes,
     extKeys,
-    mint
+    gateMint
   )
     .accounts({
       root,
