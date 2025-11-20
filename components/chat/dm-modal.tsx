@@ -48,9 +48,8 @@ interface DmModalProps {
     dmLoading: boolean;
     dmMessageInput: string;
     setDmMessageInput: (value: string) => void;
-    dmSending: boolean;
     onSendDmMessage: (e?: FormEvent) => void;
-    dmMessagesEndRef: RefObject<HTMLDivElement>;
+    dmMessagesEndRef: RefObject<HTMLDivElement | null>;
 
     // Auth
     canWrite: boolean;
@@ -71,7 +70,6 @@ export function DmModal({
     dmLoading,
     dmMessageInput,
     setDmMessageInput,
-    dmSending,
     onSendDmMessage,
     dmMessagesEndRef,
     canWrite,
@@ -150,7 +148,8 @@ export function DmModal({
                         const isOwn = message.sender && viewerAddress && message.sender === viewerAddress;
                         const bubbleName = isOwn ? 'You' : message.displayName || (message.sender ? shorten(message.sender) : 'Unknown');
                         const avatarHue = message.avatarHue ?? deriveAvatarHue(message.sender || bubbleName);
-                        const isPending = message.status === 'pending';
+                        // Messages with signatures are confirmed, regardless of status field
+                        const isPending = !message.signature && message.status === 'pending';
                         return (
                             <div key={message.id} className={`flex w-full ${isOwn ? 'justify-end' : 'justify-start'}`}>
                                 <div
@@ -204,14 +203,14 @@ export function DmModal({
                             />
                             <button
                                 type="submit"
-                                disabled={!canWrite || !dmMessageInput.trim() || dmStatus !== 'ready' || dmSending}
+                                disabled={!canWrite || !dmMessageInput.trim() || dmStatus !== 'ready'}
                                 className="rounded px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60"
                                 style={{
-                                    backgroundColor: canWrite && dmMessageInput.trim() && dmStatus === 'ready' && !dmSending ? 'rgb(65, 255, 0)' : undefined,
-                                    color: canWrite && dmMessageInput.trim() && dmStatus === 'ready' && !dmSending ? 'rgb(0, 33, 0)' : undefined,
+                                    backgroundColor: canWrite && dmMessageInput.trim() && dmStatus === 'ready' ? 'rgb(65, 255, 0)' : undefined,
+                                    color: canWrite && dmMessageInput.trim() && dmStatus === 'ready' ? 'rgb(0, 33, 0)' : undefined,
                                 }}
                             >
-                                {dmSending ? 'Sending…' : 'Send DM'}
+                                Send DM
                             </button>
                         </div>
                         {!canWrite && (

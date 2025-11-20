@@ -60,7 +60,9 @@ export function MessageBubble({
     // Derive values
     const bubbleName = isOwn ? 'You' : displayName || (sender ? shorten(sender) : 'Unknown');
     const avatarHue = propAvatarHue ?? deriveAvatarHue(sender || bubbleName);
-    const isPending = status === 'pending';
+    // Messages with signatures are always confirmed, regardless of status field
+    // This handles old messages in blockchain that have status: 'pending'
+    const isPending = !signature && status === 'pending';
     const avatarStyle = { backgroundColor: `hsl(${avatarHue}, 65%, 48%)` };
     const formattedTime = showFullTimestamp ? formatFullTimestamp(timestamp) : formatTimestamp(timestamp);
 

@@ -23,7 +23,7 @@ interface MessageInputFormProps {
     writerCtx: any;
     isUserInitialized: boolean;
     userInitError: Error | null;
-    inputRef: RefObject<HTMLInputElement>;
+    inputRef: RefObject<HTMLInputElement | null>;
 }
 
 export function MessageInputForm({

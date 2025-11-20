@@ -102,7 +102,6 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
 
   // Message input state
   const [messageInput, setMessageInput] = useState('');
-  const [sendingMessage, setSendingMessage] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [showAttachmentInput, setShowAttachmentInput] = useState(false);
   const [attachmentUrl, setAttachmentUrl] = useState('');
@@ -122,7 +121,6 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
   const [dmPendingMessages, setDmPendingMessages] = useState<MessageRow[]>([]);
   const [dmLoading, setDmLoading] = useState(false);
   const [dmMessageInput, setDmMessageInput] = useState('');
-  const [dmSending, setDmSending] = useState(false);
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -157,11 +155,38 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
   }, [rooms, selectedSeed]);
 
   const allMessages = useMemo(() => {
-    return [...messages, ...pendingMessages];
+    // Deduplicate: prefer confirmed messages (with signatures) over pending ones
+    const messageMap = new Map<string, MessageRow>();
+
+    console.log('[ChatClient] Deduplicating:', {
+      pendingCount: pendingMessages.length,
+      confirmedCount: messages.length,
+      pendingIds: pendingMessages.map(m => ({ id: m.id.slice(0, 8), sig: !!m.signature, status: m.status })),
+      confirmedIds: messages.map(m => ({ id: m.id.slice(0, 8), sig: !!m.signature, status: m.status })),
+    });
+
+    // Add pending messages first
+    pendingMessages.forEach(msg => messageMap.set(msg.id, msg));
+
+    // Confirmed messages override pending ones with same ID
+    messages.forEach(msg => messageMap.set(msg.id, msg));
+
+    const result = Array.from(messageMap.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    console.log('[ChatClient] Deduplicated result:', result.length, 'messages');
+    return result;
   }, [messages, pendingMessages]);
 
   const allDmMessages = useMemo(() => {
-    return [...dmMessages, ...dmPendingMessages];
+    // Deduplicate: prefer confirmed messages (with signatures) over pending ones
+    const messageMap = new Map<string, MessageRow>();
+
+    // Add pending messages first
+    dmPendingMessages.forEach(msg => messageMap.set(msg.id, msg));
+
+    // Confirmed messages override pending ones with same ID
+    dmMessages.forEach(msg => messageMap.set(msg.id, msg));
+
+    return Array.from(messageMap.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
   }, [dmMessages, dmPendingMessages]);
 
   const canWrite = Boolean(writerCtx && isUserInitialized);
@@ -313,7 +338,17 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
       const mapped = rows.map((row: any) => rowToMessage(row)).filter((message: any) => message.text || message.file);
       messagesRef.current = mapped;
       setMessages(mapped);
-      setPendingMessages([]);
+      // Auto-cleanup: remove pending messages that now exist on-chain
+      const confirmedIds = new Set(mapped.map(m => m.id));
+      console.log('[ChatClient] Auto-cleanup - confirmed IDs:', Array.from(confirmedIds).slice(0, 5).map(id => id.slice(0, 8)));
+      setPendingMessages((prev) => {
+        const before = prev.length;
+        const pendingIds = prev.map(m => m.id.slice(0, 8));
+        console.log('[ChatClient] Auto-cleanup - pending IDs:', pendingIds);
+        const after = prev.filter((m) => !confirmedIds.has(m.id));
+        console.log('[ChatClient] Auto-cleanup - pending before:', before, 'after:', after.length, 'removed:', before - after.length);
+        return after;
+      });
     } catch (err) {
       console.error('[ChatClient] Load messages error:', err);
       setMessagesError(err instanceof Error ? err.message : 'Failed to load messages');
@@ -337,7 +372,9 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
       const mapped = rows.map((row: any) => rowToMessage(row)).filter((message: any) => message.text || message.file);
       dmMessagesRef.current = mapped;
       setDmMessages(mapped);
-      setDmPendingMessages([]);
+      // Auto-cleanup: remove pending messages that now exist on-chain
+      const confirmedIds = new Set(mapped.map(m => m.id));
+      setDmPendingMessages((prev) => prev.filter((m) => !confirmedIds.has(m.id)));
     } catch (err) {
       console.error('[ChatClient] Load DM messages error:', err);
       setDmError(err instanceof Error ? err.message : 'Failed to load DM messages');
@@ -373,9 +410,6 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
     setRoomsError(null);
 
     try {
-      const roomSeed = new Uint8Array(32);
-      crypto.getRandomValues(roomSeed);
-
       const gateMintPubkey = newRoomGateMint?.trim()
         ? new PublicKey(newRoomGateMint.trim())
         : undefined;
@@ -383,11 +417,9 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
       const { tx } = await createTableWeb(
         writerCtx,
         ROOT_ID,
-        roomSeed,
         newRoomName.trim(),
-        MESSAGE_COLUMNS,
-        gateMintPubkey,
-        { idColumn: 'id' }
+        [...MESSAGE_COLUMNS],
+        { idColumn: 'id', gateMint: gateMintPubkey }
       );
 
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
@@ -411,7 +443,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
   // Handle send message
   const handleSendMessage = useCallback(async (e?: FormEvent) => {
     e?.preventDefault();
-    if (!writerCtx || !selectedRoom || !messageInput.trim()) return;
+    if (!writerCtx || !selectedRoom || !messageInput.trim() || !writerCtx.wallet.publicKey) return;
 
     const messageId = crypto.randomUUID?.() || Math.random().toString(36).slice(2, 10);
     const timestamp = Date.now();
@@ -427,7 +459,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
       text: messageInput.trim(),
       sender: userAddr,
       timestamp,
-      status: 'pending',
+      status: 'sent',
       room: selectedRoom.name,
     };
 
@@ -450,30 +482,37 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
     setAttachmentUrl('');
     setAttachmentError(null);
     setShowAttachmentInput(false);
-    setSendingMessage(true);
 
     try {
-      const { tx } = await writeRowWeb(writerCtx, ROOT_ID, selectedRoom.seedBytes, JSON.stringify(payload));
+      const { tx } = await writeRowWeb(writerCtx, ROOT_ID, selectedRoom.seedHex, JSON.stringify(payload));
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
       tx.recentBlockhash = blockhash;
       tx.feePayer = writerCtx.wallet.publicKey;
       const signed = await writerCtx.wallet.signTransaction(tx);
       const sig = await connection.sendRawTransaction(signed.serialize());
       await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'processed');
-      await loadMessages();
+      // Retry loading until message appears (max 3 attempts with 3s delay each)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        await loadMessages();
+        // Check if message was loaded
+        if (messagesRef.current.some(m => m.id === messageId)) {
+          console.log('[ChatClient] Message found after', attempt + 1, 'attempts');
+          break;
+        }
+        console.log('[ChatClient] Message not found, attempt', attempt + 1, 'of 3');
+      }
     } catch (err) {
       console.error('[ChatClient] Send message error:', err);
       setPendingMessages((prev) => prev.filter((m) => m.id !== messageId));
       setMessagesError(err instanceof Error ? err.message : 'Failed to send message');
-    } finally {
-      setSendingMessage(false);
     }
   }, [writerCtx, selectedRoom, messageInput, attachmentUrl, connection, loadMessages]);
 
   // Handle start DM
   const handleStartDm = useCallback(async (e?: FormEvent) => {
     e?.preventDefault();
-    if (!writerCtx) return;
+    if (!writerCtx || !writerCtx.wallet.publicKey) return;
 
     const peerAddr = dmPeerInput.trim();
     if (!peerAddr) return;
@@ -499,10 +538,8 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
           ROOT_ID,
           seedBytes,
           'dm',
-          MESSAGE_COLUMNS,
-          peerAddr,
-          {},
-          { idColumn: 'id' }
+          [...MESSAGE_COLUMNS],
+          { idColumn: 'id', partyA: userA, partyB: userB }
         );
         const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
         tx.recentBlockhash = blockhash;
@@ -533,7 +570,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
   // Handle send DM
   const handleSendDmMessage = useCallback(async (e?: FormEvent) => {
     e?.preventDefault();
-    if (!writerCtx || !activeDm || !dmMessageInput.trim()) return;
+    if (!writerCtx || !activeDm || !dmMessageInput.trim() || !writerCtx.wallet.publicKey) return;
 
     const messageId = crypto.randomUUID?.() || Math.random().toString(36).slice(2, 10);
     const timestamp = Date.now();
@@ -544,7 +581,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
       text: dmMessageInput.trim(),
       sender: userAddr,
       timestamp,
-      status: 'pending',
+      status: 'sent',
     };
 
     const tempMessage: MessageRow = {
@@ -557,23 +594,30 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
 
     setDmPendingMessages((prev) => [...prev, tempMessage]);
     setDmMessageInput('');
-    setDmSending(true);
 
     try {
-      const { tx } = await writeDmRowWeb(writerCtx, ROOT_ID, activeDm.seedBytes, JSON.stringify(payload));
+      const { tx } = await writeDmRowWeb(writerCtx, ROOT_ID, activeDm.seedHex, JSON.stringify(payload));
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
       tx.recentBlockhash = blockhash;
       tx.feePayer = writerCtx.wallet.publicKey;
       const signed = await writerCtx.wallet.signTransaction(tx);
       const sig = await connection.sendRawTransaction(signed.serialize());
       await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'processed');
-      await loadDmMessages();
+      // Retry loading until message appears (max 3 attempts with 3s delay each)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        await loadDmMessages();
+        // Check if message was loaded
+        if (dmMessagesRef.current.some(m => m.id === messageId)) {
+          console.log('[ChatClient] DM message found after', attempt + 1, 'attempts');
+          break;
+        }
+        console.log('[ChatClient] DM message not found, attempt', attempt + 1, 'of 3');
+      }
     } catch (err) {
       console.error('[ChatClient] Send DM error:', err);
       setDmPendingMessages((prev) => prev.filter((m) => m.id !== messageId));
       setDmError(err instanceof Error ? err.message : 'Failed to send DM');
-    } finally {
-      setDmSending(false);
     }
   }, [writerCtx, activeDm, dmMessageInput, connection, loadDmMessages]);
 
@@ -601,7 +645,7 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
     window.open(url, '_blank');
   }, []);
 
-  const canSubmitMessage = canWrite && messageInput.trim() && !sendingMessage && selectedRoom;
+  const canSubmitMessage = canWrite && !!messageInput.trim() && !!selectedRoom;
 
   return (
     <div className="flex h-full flex-col bg-black text-white">
@@ -715,7 +759,6 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
         dmLoading={dmLoading}
         dmMessageInput={dmMessageInput}
         setDmMessageInput={setDmMessageInput}
-        dmSending={dmSending}
         onSendDmMessage={handleSendDmMessage}
         dmMessagesEndRef={dmMessagesEndRef}
         canWrite={canWrite}
