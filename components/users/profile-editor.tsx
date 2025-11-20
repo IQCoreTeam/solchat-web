@@ -31,23 +31,8 @@ export function ProfileEditor({ profile, onSave, loading }: ProfileEditorProps) 
     }
   }, [profile]);
 
-  // Calculate JSON size
-  const getJsonSize = () => {
-    const json = JSON.stringify({ name, bio, profilePicture });
-    return new Blob([json]).size;
-  };
-
-  const jsonSize = getJsonSize();
-  const maxSize = 90;
-  const isOverSize = jsonSize > maxSize;
-
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-
-    if (isOverSize) {
-      setError(`Profile data is ${jsonSize} bytes, must be ${maxSize} bytes or less`);
-      return;
-    }
 
     if (!name.trim()) {
       setError('Name is required');
@@ -135,37 +120,6 @@ export function ProfileEditor({ profile, onSave, loading }: ProfileEditorProps) 
             </div>
           </div>
 
-          {/* Size indicator */}
-          <div className={`p-3 rounded border ${
-            isOverSize
-              ? 'bg-red-900/30 border-red-500'
-              : 'bg-green-900/20 border-green-700/30'
-          }`}>
-            <div className="flex justify-between items-center text-sm">
-              <span className={isOverSize ? 'text-red-400' : 'text-green-400'}>
-                JSON Size: {jsonSize} / {maxSize} bytes
-              </span>
-              {isOverSize && (
-                <span className="text-red-400 font-bold">
-                  TOO LARGE
-                </span>
-              )}
-              {!isOverSize && jsonSize > maxSize * 0.8 && (
-                <span className="text-yellow-400">
-                  Almost full
-                </span>
-              )}
-            </div>
-            <div className="mt-2 w-full bg-black/40 rounded-full h-2">
-              <div
-                className={`h-full rounded-full transition-all ${
-                  isOverSize ? 'bg-red-500' : 'bg-green-500'
-                }`}
-                style={{ width: `${Math.min((jsonSize / maxSize) * 100, 100)}%` }}
-              />
-            </div>
-          </div>
-
           {/* Error message */}
           {error && (
             <div className="p-3 bg-red-900/30 border border-red-500 rounded text-red-400 text-sm">
@@ -183,7 +137,7 @@ export function ProfileEditor({ profile, onSave, loading }: ProfileEditorProps) 
           {/* Submit button */}
           <button
             type="submit"
-            disabled={loading || saving || isOverSize || !name.trim()}
+            disabled={loading || saving || !name.trim()}
             className="w-full py-3 bg-green-500 text-black font-bold rounded hover:bg-green-400 transition disabled:bg-white/20 disabled:text-white/60 disabled:cursor-not-allowed"
           >
             {saving ? 'SAVING...' : 'SAVE PROFILE'}
