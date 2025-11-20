@@ -56,7 +56,7 @@ export function MessageList({
             )}
             <div className="space-y-4">
                 {messages.map((message) => {
-                    const isOwn = message.sender && viewerAddress && message.sender === viewerAddress;
+                    const isOwn = Boolean(message.sender && viewerAddress && message.sender === viewerAddress);
                     return (
                         <MessageBubble
                             key={message.id}

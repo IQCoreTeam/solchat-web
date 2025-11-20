@@ -85,7 +85,7 @@ export function MessageInputForm({
                 <div className="flex flex-wrap items-center justify-between text-xs text-white/60">
                     <button
                         type="button"
-                        onClick={() => setShowAttachmentInput((prev) => !prev)}
+                        onClick={() => setShowAttachmentInput(!showAttachmentInput)}
                         className="uppercase tracking-wide text-green-400 underline decoration-dotted underline-offset-2 hover:text-green-300"
                         disabled={!canWrite}
                     >
