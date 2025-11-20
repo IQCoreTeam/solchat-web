@@ -38,7 +38,7 @@ export function ConfirmationDialog({
                 </WindowHeader>
                 <WindowContent>
                     <div style={{ padding: '16px' }}>
-                        <p style={{ color: '#00ff00', fontFamily: 'monospace', fontSize: '12px', marginBottom: '16px' }}>
+                        <p style={{ color: '#00ff00',  fontSize: '12px', marginBottom: '16px' }}>
                             {message}
                         </p>
                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>

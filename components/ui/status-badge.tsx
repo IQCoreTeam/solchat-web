@@ -26,7 +26,7 @@ export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
 
     return (
         <span
-            className={`text-[9px] md:text-[10px] font-mono px-1.5 md:px-2 py-0.5 md:py-1 border uppercase ${className}`}
+            className={`text-[9px] md:text-[10px] px-1.5 md:px-2 py-0.5 md:py-1 border uppercase ${className}`}
             style={{
                 borderColor: config.color,
                 color: config.color,

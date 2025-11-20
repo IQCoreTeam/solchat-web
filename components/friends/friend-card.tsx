@@ -70,12 +70,13 @@ export function FriendCard({
         {/* Info */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-            <span style={{ color: '#00ff00', fontSize: '11px', fontFamily: 'monospace' }}>
-              {shortenAddress(friend.address)}
+            <span style={{ color: '#00ff00', fontSize: '11px' }}>
+              {shortenAddress(friend.address,10)}
             </span>
+              {!isApproved && (
             <span style={{
               fontSize: '9px',
-              fontFamily: 'monospace',
+
               padding: '2px 6px',
               border: `1px solid ${statusColor}`,
               color: statusColor,
@@ -84,23 +85,24 @@ export function FriendCard({
             }}>
               {friend.status}
             </span>
+              )}
           </div>
 
           {isPending && !isRequester && (
-            <p style={{ color: '#00ff00', fontSize: '10px', fontFamily: 'monospace', marginBottom: '8px' }}>
+            <p style={{ color: '#00ff00', fontSize: '10px',  marginBottom: '8px' }}>
               &gt; INCOMING REQUEST
             </p>
           )}
 
           {isPending && isRequester && (
             <div style={{ marginBottom: '8px' }}>
-              <p style={{ color: '#00ff00', fontSize: '10px', fontFamily: 'monospace', marginBottom: '6px' }}>
+              <p style={{ color: '#00ff00', fontSize: '10px',  marginBottom: '6px' }}>
                 &gt; REQUEST SENT - YOU CAN MESSAGE WHILE WAITING
               </p>
               <Button
                 onClick={() => onOpenChat?.(friend)}
                 size="sm"
-                style={{ fontFamily: 'monospace', fontSize: '10px' }}
+                style={{ fontSize: '10px' }}
               >
                 [OPEN DM]
               </Button>
@@ -113,16 +115,15 @@ export function FriendCard({
               <>
                 <Button
                   onClick={() => onOpenChat?.(friend)}
-                  primary
                   size="sm"
-                  style={{ fontFamily: 'monospace', fontSize: '10px' }}
+                  style={{  fontSize: '10px' }}
                 >
                   [CHAT]
                 </Button>
                 <Button
                   onClick={() => onBlock?.(friend)}
                   size="sm"
-                  style={{ fontFamily: 'monospace', fontSize: '10px' }}
+                  style={{fontSize: '10px' }}
                 >
                   [BLOCK]
                 </Button>
@@ -135,14 +136,14 @@ export function FriendCard({
                   onClick={() => onApprove?.(friend)}
                   primary
                   size="sm"
-                  style={{ fontFamily: 'monospace', fontSize: '10px' }}
+                  style={{  fontSize: '10px' }}
                 >
                   [APPROVE]
                 </Button>
                 <Button
                   onClick={() => onBlock?.(friend)}
                   size="sm"
-                  style={{ fontFamily: 'monospace', fontSize: '10px' }}
+                  style={{  fontSize: '10px' }}
                 >
                   [DECLINE]
                 </Button>
@@ -153,7 +154,7 @@ export function FriendCard({
               <Button
                 onClick={() => onUnblock?.(friend)}
                 size="sm"
-                style={{ fontFamily: 'monospace', fontSize: '10px' }}
+                style={{  fontSize: '10px' }}
               >
                 [UNBLOCK]
               </Button>

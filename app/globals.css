@@ -23,6 +23,7 @@
     --iq-green-dark: #00FF22;
     --iq-green-darker: #006400;
     --brand-bg-dark: rgb(0, 33, 0);
+    font-family: "bitArrayA2", serif;
 }
 
 @theme inline {
@@ -45,7 +46,6 @@
 body {
     background: var(--background);
     color: var(--foreground);
-    font-family: var(--font-bitarray), 'MS Sans Serif', monospace, sans-serif;
 }
 
 /* Custom scrollbar styling */

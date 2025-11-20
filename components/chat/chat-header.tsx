@@ -71,7 +71,7 @@ export function ChatHeader({
                         {selectedRoom && (
                             <>
                                 <span className="text-white/30 hidden md:inline">·</span>
-                                <p className="text-xs text-white/50 leading-tight hidden md:block font-mono">
+                                <p className="text-xs text-white/50 leading-tight hidden md:block ">
                                     {shorten(selectedRoom.tableAddress)} <span className="text-white/30">/</span> {shorten(selectedRoom.instructionAddress)}
                                 </p>
                             </>

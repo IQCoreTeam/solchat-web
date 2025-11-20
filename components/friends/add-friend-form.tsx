@@ -47,7 +47,7 @@ export function AddFriendForm({ onSubmit, disabled }: AddFriendFormProps) {
     <div style={{ padding: '12px' }}>
       <form onSubmit={handleSubmit}>
         <div style={{ marginBottom: '12px' }}>
-          <label htmlFor="friendAddress" style={{ display: 'block', color: '#00ff00', fontSize: '11px', fontFamily: 'monospace', marginBottom: '6px' }}>
+          <label htmlFor="friendAddress" style={{ display: 'block', color: '#00ff00', fontSize: '11px',  marginBottom: '6px' }}>
             &gt; ADD FRIEND
           </label>
           <div style={{ width: '100%' }}>
@@ -60,7 +60,7 @@ export function AddFriendForm({ onSubmit, disabled }: AddFriendFormProps) {
               disabled={disabled || loading}
               style={{
                 width: '100%',
-                fontFamily: 'monospace',
+
                 fontSize: '11px',
                 padding: '4px 8px',
                 background: '#000000',
@@ -71,7 +71,7 @@ export function AddFriendForm({ onSubmit, disabled }: AddFriendFormProps) {
               }}
             />
           </div>
-          {error && <p style={{ color: '#ff0000', fontSize: '10px', fontFamily: 'monospace', marginTop: '6px' }}>&gt; ERROR: {error}</p>}
+          {error && <p style={{ color: '#ff0000', fontSize: '10px',marginTop: '6px' }}>&gt; ERROR: {error}</p>}
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'center' }}>
@@ -79,7 +79,7 @@ export function AddFriendForm({ onSubmit, disabled }: AddFriendFormProps) {
             type="submit"
             disabled={disabled || loading || !friendAddress.trim()}
             primary
-            style={{ fontFamily: 'monospace', fontSize: '11px', minWidth: '150px' }}
+            style={{  fontSize: '11px', minWidth: '150px' }}
           >
             {loading ? '[SENDING...]' : '[SEND REQUEST]'}
           </Button>

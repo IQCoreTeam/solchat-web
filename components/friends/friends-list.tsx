@@ -202,7 +202,7 @@ export function FriendsList() {
     const writerCtx: WriterCtx = {
       connection,
       wallet,
-      idl: idl as any,
+      idl: idl as Idl,
     };
 
     setError(null);
@@ -267,7 +267,7 @@ export function FriendsList() {
     const writerCtx: WriterCtx = {
       connection,
       wallet,
-      idl: idl as any,
+      idl: idl as Idl,
     };
 
     setError(null);
@@ -502,7 +502,7 @@ export function FriendsList() {
               {/* Error Banner */}
               {(error || friendsError) && (
                 <Cutout style={{ padding: '8px', marginBottom: '16px', background: '#330000' }}>
-                  <p style={{ color: '#ff0000', fontSize: '12px', fontFamily: 'monospace' }}>
+                  <p style={{ color: '#ff0000', fontSize: '12px', }}>
                     ERROR: {error || friendsError}
                   </p>
                 </Cutout>
@@ -519,7 +519,7 @@ export function FriendsList() {
                   onClick={() => setAddFriendModalOpen(true)}
                   disabled={!userAddress}
                   primary
-                  style={{ fontFamily: 'monospace', fontSize: '11px', marginLeft: '12px' }}
+                  style={{  fontSize: '11px', marginLeft: '12px' }}
                 >
                   [ADD FRIEND]
                 </Button>
@@ -529,14 +529,14 @@ export function FriendsList() {
                 {/* Loading state */}
                 {loading && (
                   <div style={{ textAlign: 'center', padding: '48px 0' }}>
-                    <p style={{ color: '#00ff00', fontFamily: 'monospace' }}>[LOADING...]</p>
+                    <p style={{ color: '#00ff00',  }}>[LOADING...]</p>
                   </div>
                 )}
 
                 {/* Empty state */}
                 {!loading && filteredFriends.length === 0 && (
                   <Cutout style={{ padding: '48px 16px', textAlign: 'center' }}>
-                    <p style={{ color: '#00ff00', fontFamily: 'monospace', fontSize: '12px' }}>
+                    <p style={{ color: '#00ff00',  fontSize: '12px' }}>
                       {activeTab === 'all' && '> NO FRIENDS YET. ADD SOMEONE ABOVE!'}
                       {activeTab === 'pending' && '> NO PENDING REQUESTS'}
                       {activeTab === 'blocked' && '> NO BLOCKED USERS'}
@@ -573,7 +573,7 @@ export function FriendsList() {
             <h3 className="text-green-400 font-bold">
               DM with {shortenAddress(chatFriend.address)}
             </h3>
-            <Button onClick={closeChatModal} size="sm" style={{ fontFamily: 'monospace', fontSize: '11px' }}>
+            <Button onClick={closeChatModal} size="sm" style={{ fontSize: '11px' }}>
               X
             </Button>
           </div>
@@ -715,7 +715,7 @@ export function FriendsList() {
             </WindowHeader>
             <WindowContent>
               <div style={{ padding: '16px' }}>
-                <p style={{ color: '#00ff00', fontFamily: 'monospace', fontSize: '12px', marginBottom: '16px' }}>
+                <p style={{ color: '#00ff00',  fontSize: '12px', marginBottom: '16px' }}>
                   Are you sure you want to block {shortenAddress(friendToBlock.address, 6)}?
                 </p>
                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
