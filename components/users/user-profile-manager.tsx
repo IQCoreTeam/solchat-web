@@ -18,6 +18,8 @@ import idl from '@/lib/onchainDB/idl.json';
 import { ROOT_ID } from '@/lib/onchainDB/constants';
 import { PublicKey } from '@solana/web3.js';
 import type { WriterCtx } from '@/lib/onchainDB/web/writer';
+import { codeInWithonlyTailTx } from '@/lib/iq/transaction';
+import { reconstructMessageFromChainForTailTx } from '@/lib/iq/reader';
 
 export interface UserProfile {
   pubkey: string;
@@ -80,17 +82,40 @@ export function UserProfileManager() {
 
         if (metadata) {
           try {
-            const parsed = JSON.parse(metadata);
+            // Zo's system: Check if metadata is a transaction ID
+            // Transaction IDs are typically 88-90 chars, alphanumeric (base58)
+            let profileData;
+
+            if (metadata.length <= 100 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(metadata)) {
+              // Looks like a transaction ID, reconstruct the original JSON
+              console.log('[UserProfile] Metadata is txID, reconstructing from chain...');
+              const reconstructed = await reconstructMessageFromChainForTailTx(
+                connection,
+                metadata
+              );
+
+              if (reconstructed) {
+                console.log('[UserProfile] Reconstructed metadata:', reconstructed);
+                profileData = JSON.parse(reconstructed);
+              } else {
+                throw new Error('Failed to reconstruct metadata from transaction');
+              }
+            } else {
+              // Direct JSON metadata (backwards compatibility)
+              console.log('[UserProfile] Metadata is direct JSON');
+              profileData = JSON.parse(metadata);
+            }
+
             setMyProfile({
               pubkey: userAddress,
-              name: parsed.name || '',
-              bio: parsed.bio || '',
-              profilePicture: parsed.profilePicture || '',
+              name: profileData.name || '',
+              bio: profileData.bio || '',
+              profilePicture: profileData.profilePicture || '',
               timestamp: Date.now(),
             });
             console.log('[UserProfile] Loaded profile from User account');
           } catch (parseErr) {
-            console.error('[UserProfile] Failed to parse metadata JSON:', parseErr);
+            console.error('[UserProfile] Failed to parse metadata:', parseErr);
             setMyProfile(null);
           }
         } else {
@@ -167,16 +192,36 @@ export function UserProfileManager() {
 
             if (metadata) {
               try {
-                const parsed = JSON.parse(metadata);
+                // Zo's system: Check if metadata is a transaction ID
+                let profileData;
+
+                if (metadata.length <= 100 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(metadata)) {
+                  // Looks like a transaction ID, reconstruct the original JSON
+                  const reconstructed = await reconstructMessageFromChainForTailTx(
+                    connection,
+                    metadata
+                  );
+
+                  if (reconstructed) {
+                    profileData = JSON.parse(reconstructed);
+                  } else {
+                    console.error('[UserProfile] Failed to reconstruct metadata for', pubkeyString);
+                    continue;
+                  }
+                } else {
+                  // Direct JSON metadata (backwards compatibility)
+                  profileData = JSON.parse(metadata);
+                }
+
                 profiles.push({
                   pubkey: pubkeyString,
-                  name: parsed.name || '',
-                  bio: parsed.bio || '',
-                  profilePicture: parsed.profilePicture || '',
+                  name: profileData.name || '',
+                  bio: profileData.bio || '',
+                  profilePicture: profileData.profilePicture || '',
                   timestamp: Date.now(),
                 });
               } catch (parseErr) {
-                console.error('[UserProfile] Failed to parse metadata for', pubkeyString);
+                console.error('[UserProfile] Failed to parse metadata for', pubkeyString, parseErr);
               }
             }
           }
@@ -209,14 +254,30 @@ export function UserProfileManager() {
 
     setError(null);
     try {
-      // Prepare metadata JSON (only name, bio, profilePicture)
-      const metadata = JSON.stringify({
+      // Prepare full metadata JSON (can be up to 1MB!)
+      const fullMetadata = JSON.stringify({
         name: profile.name,
         bio: profile.bio,
         profilePicture: profile.profilePicture,
       });
 
-      console.log('[UserProfile] Saving profile with updateUserMetadata...');
+      console.log('[UserProfile] Storing metadata with codeInWithonlyTailTx...');
+
+      // Zo's system: Store full metadata as transaction, get txID (90 bytes)
+      const txId = await codeInWithonlyTailTx(
+        connection,
+        wallet as any,
+        fullMetadata,
+        'profile-metadata',
+        userAddress
+      );
+
+      if (!txId) {
+        throw new Error('Failed to store metadata transaction');
+      }
+
+      console.log('[UserProfile] Metadata stored in txID:', txId);
+      console.log('[UserProfile] Saving txID with updateUserMetadata...');
 
       // Create writer context
       const writerCtx: WriterCtx<any> = {
@@ -225,8 +286,8 @@ export function UserProfileManager() {
         idl: idl as any,
       };
 
-      // Call updateUserMetadataWeb
-      const { tx } = await updateUserMetadataWeb(writerCtx, ROOT_ID, metadata);
+      // Save the txID (90 bytes) in User account
+      const { tx } = await updateUserMetadataWeb(writerCtx, ROOT_ID, txId);
 
       // Send transaction
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
