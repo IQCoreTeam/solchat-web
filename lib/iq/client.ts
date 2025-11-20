@@ -1,5 +1,5 @@
 import { IQ_CONFIG } from './config';
-import { PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js';
+import {Connection, PublicKey, Transaction, TransactionInstruction} from '@solana/web3.js';
 
 export type ServerInstructionKey = {
   pubkey: string;
@@ -119,6 +119,26 @@ export async function createServerInitTransactionOnServer(
   return await response.json();
 }
 
+export async function _translate_transaction(connection:Connection,data: any) {
+    const transaction = new Transaction();
+    const latestBlockhash = await connection.getLatestBlockhash();
+    transaction.recentBlockhash = latestBlockhash.blockhash;
+    transaction.feePayer = new PublicKey(data.feePayer);
+
+    data.instructions.forEach((instr: any) => {
+        const instruction = new TransactionInstruction({
+            keys: instr.keys.map((key: any) => ({
+                pubkey: new PublicKey(key.pubkey),
+                isSigner: key.isSigner,
+                isWritable: key.isWritable,
+            })),
+            programId: new PublicKey(instr.programId),
+            data: instr.data,
+        });
+        transaction.add(instruction);
+    });
+    return transaction;
+}
 /**
  * Initialize user account on backend
  */
@@ -133,16 +153,46 @@ export async function createInitTransactionOnServer(userKey: string): Promise<Se
 /**
  * Create transaction for sending data
  */
+
+
+export async function createDbCodeTransactionOnserver( connection:Connection, userKey: string,
+    handle: string, tail_tx: string, type: string, offset: string
+) {
+
+
+    try {
+        const response = await fetch(`${IQ_CONFIG.backendHost}/create-db-code-transaction`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userKeyString: userKey,
+                handle: handle,
+                tail_tx: tail_tx,
+                type: type,
+                offset: offset,
+                // Extra metadata (ignored by current backend but kept for compatibility)
+
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`Error: ${response.statusText}`);
+        }
+        const data: any = await response.json();
+        return _translate_transaction(connection, data.transaction);
+
+    } catch (error) {
+        console.error("Failed to create transaction:", error);
+        throw error;
+    }
+}
+
 export async function createCodeInTransactionOnServer(
+    connection:Connection,
   userKey: string,
   chunkData: string,
   beforeTx: string,
-  chunkIndex: number,
-  totalChunks: number,
-  merkleRoot: string,
-  transactionType: string,
-  handle: string = 'default-handle'
-): Promise<ServerTransactionResponse> {
+): Promise<Transaction> {
   const response = await fetch(`${IQ_CONFIG.backendHost}/create-send-transaction`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -150,20 +200,19 @@ export async function createCodeInTransactionOnServer(
       userKeyString: userKey,
       code: chunkData,
       before_tx: beforeTx,
-      method: chunkIndex,
-      decode_break: totalChunks,
+      method: 0,
+      decode_break: 0,
       // Extra metadata (ignored by current backend but kept for compatibility)
-      merkleRoot,
-      transactionType,
-      handle,
+
     }),
   });
 
   if (!response.ok) {
     throw new Error(`Failed to create transaction: ${response.statusText}`);
   }
+    const data: any = await response.json();
 
-  return await response.json();
+    return await _translate_transaction(connection, data.transaction);
 }
 
 export async function createDbPingTransactionToPDAOnServer(
@@ -262,6 +311,33 @@ export async function getCache(txId?: string, merkleRoot?: string): Promise<any>
   }
 }
 
+export async function makeMerkleRootFromServer(dataList: Array<string>) {
+    const url = IQ_CONFIG.backendHost + "/generate-merkle-root";
+    const requestData = {
+        data: dataList,
+    };
+    try {
+        const response = await fetch(url, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(requestData),
+        });
+
+        if (!response.ok) {
+            throw new Error(`Error: ${response.statusText}`);
+        }
+
+        const data: any = await response.json();
+
+        return data.merkleRoot;
+
+    } catch (error) {
+        console.error("Failed to get Merkle Root:", error);
+        throw error;
+    }
+}
 /**
  * Put data in cache
  */
