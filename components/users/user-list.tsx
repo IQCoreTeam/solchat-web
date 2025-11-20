@@ -91,6 +91,18 @@ interface ProfileCardProps {
 
 function ProfileCard({ profile, isCurrentUser }: ProfileCardProps) {
   const [imageError, setImageError] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyWallet = async () => {
+    try {
+      await navigator.clipboard.writeText(profile.pubkey);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy wallet:', err);
+      alert('Failed to copy wallet address');
+    }
+  };
 
   return (
     <div className={`bg-black/40 border rounded-lg p-4 hover:border-green-500/50 transition ${
@@ -136,13 +148,11 @@ function ProfileCard({ profile, isCurrentUser }: ProfileCardProps) {
           </div>
         )}
         <button
-          onClick={() => {
-            navigator.clipboard?.writeText(profile.pubkey);
-          }}
-          className="text-xs text-green-400 hover:text-green-300 font-bold"
+          onClick={handleCopyWallet}
+          className="text-xs text-green-400 hover:text-green-300 font-bold transition"
           title="Copy wallet address"
         >
-          COPY WALLET
+          {copied ? 'COPIED!' : 'COPY WALLET'}
         </button>
       </div>
     </div>
