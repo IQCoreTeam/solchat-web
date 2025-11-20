@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import { useUserProfile } from './use-user-profile';
 import { shorten } from '@/lib/utils/message-utils';
+import { DefaultProfileAvatar } from '@/components/ui/default-profile-avatar';
 
 interface ProfileModalProps {
   walletAddress: string;
@@ -18,7 +19,6 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
   const { profile, loading, error } = useUserProfile(walletAddress);
   const [imageError, setImageError] = useState(false);
   const [copied, setCopied] = useState(false);
-
   const handleCopyWallet = async () => {
     try {
       await navigator.clipboard.writeText(walletAddress);
@@ -87,9 +87,10 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
                   onError={() => setImageError(true)}
                 />
               ) : (
-                <div className="w-32 h-32 rounded-full bg-green-900/30 border-4 border-green-700 flex items-center justify-center text-green-400 font-bold text-5xl">
-                  {profile.name.charAt(0).toUpperCase() || '?'}
-                </div>
+                <DefaultProfileAvatar
+                  seed={profile.pubkey || profile.name || walletAddress || 'profile'}
+                  className="w-32 h-32 rounded-full border-4 border-green-700"
+                />
               )}
             </div>
 

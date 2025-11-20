@@ -18,7 +18,7 @@ import { DM_STATUS } from '@/lib/friends/types';
 import type { Friend } from '@/lib/friends/types';
 import idl from '@/lib/onchainDB/idl.json';
 import { Idl } from '@coral-xyz/anchor';
-import { Window, WindowHeader, WindowContent, Button, Tabs, Tab, TabBody, Cutout } from 'react95';
+import { Window, WindowHeader, WindowContent, Button, Cutout } from 'react95';
 import { ThemeProvider } from 'styled-components';
 import { MessageBubble } from '@/components/ui/message-bubble';
 import { MessageInputForm } from '@/components/chat/message-input-form';
@@ -507,12 +507,35 @@ export function FriendsList() {
               )}
 
               {/* Tabs and Add Friend Button */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                <Tabs value={activeTab} onChange={(value) => setActiveTab(value as Tab)}>
-                  <Tab value="all">[FRIENDS]</Tab>
-                  <Tab value="pending">[REQUESTS]</Tab>
-                  <Tab value="blocked">[BLOCKED]</Tab>
-                </Tabs>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {([
+                    { value: 'all', label: '[FRIENDS]' },
+                    { value: 'pending', label: '[REQUESTS]' },
+                    { value: 'blocked', label: '[BLOCKED]' }
+                  ] as const).map(({ value, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setActiveTab(value)}
+                      style={{
+                        padding: '6px 14px',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        letterSpacing: '0.05em',
+                        border: '2px solid',
+                        borderColor: activeTab === value ? '#4ade80' : '#16a34a',
+                        backgroundColor: activeTab === value ? 'rgba(74, 222, 128, 0.15)' : 'rgba(0,0,0,0.6)',
+                        color: activeTab === value ? '#4ade80' : '#d1fae5',
+                        boxShadow: activeTab === value ? '0 0 10px rgba(74, 222, 128, 0.35)' : 'none',
+                        cursor: 'pointer',
+                        transition: 'border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease',
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 <Button
                   onClick={() => setAddFriendModalOpen(true)}
                   disabled={!userAddress}
@@ -523,7 +546,7 @@ export function FriendsList() {
                 </Button>
               </div>
 
-              <TabBody style={{ marginTop: '16px', minHeight: '300px' }}>
+              <div style={{ marginTop: '16px', minHeight: '300px' }}>
                 {/* Loading state */}
                 {loading && (
                   <div style={{ textAlign: 'center', padding: '48px 0' }}>
@@ -541,7 +564,7 @@ export function FriendsList() {
                     </p>
                   </Cutout>
                 )}
-
+              
                 {/* Friends list */}
                 {!loading && filteredFriends.length > 0 && (
                   <div style={{ display: 'grid', gap: '12px' }}>
@@ -558,7 +581,7 @@ export function FriendsList() {
                     ))}
                   </div>
                 )}
-              </TabBody>
+              </div>
             </div>
           </WindowContent>
         </Window>
@@ -631,22 +654,23 @@ export function FriendsList() {
             {orderedChatMessages.map((row, index) => {
                 const meta = row as Record<string, any>;
                 const key = meta.__rowId ?? meta.id ?? meta.signature ?? index;
-                const sender = meta.sender ?? meta.author ?? userAddress;
+                const senderAddress = meta.sender ?? meta.author ?? meta.senderAddress ?? userAddress;
+                const displaySender = shortenAddress(senderAddress, 6);
                 const textContent =
                   typeof meta.text === 'string'
                     ? meta.text
                     : typeof meta.message === 'string'
                     ? meta.message
                     : JSON.stringify(meta);
-                const isSender = sender === userAddress;
+                const isSender = senderAddress === userAddress;
                 return (
                   <MessageBubble
                     key={key}
                     id={meta.id || key}
                     text={textContent}
-                    sender={sender}
-                    displayName={meta.displayName || shortenAddress(sender, 6)}
-                    avatarHue={meta.avatarHue}
+                    sender={displaySender}
+                    senderAddress={senderAddress}
+                    displayName={meta.displayName || displaySender}
                     timestamp={meta.timestamp}
                     status={meta.status || 'confirmed'}
                     signature={meta.signature}

@@ -271,10 +271,11 @@ export function ChatClient({ dmModalOpen = false, onCloseDm }: ChatClientProps) 
       const decoded = coder.decode('Root', rootAccount.data);
       if (!decoded) throw new Error('Failed to decode root account');
 
-      // Use global_table_seeds for global rooms visible to everyone
+      // Use table_seeds from the root account; exclude global tables
       const seedsRaw: any[] =
-        (decoded as any).global_table_seeds ??
-        (decoded as any).globalTableSeeds ??
+        (decoded as any).table_seeds ??
+        (decoded as any).tableSeeds ??
+        (decoded as any).table_names ??
         [];
 
       const uniqueSeeds: Uint8Array[] = [];

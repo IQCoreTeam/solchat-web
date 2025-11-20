@@ -91,7 +91,24 @@ export async function getServerPDA(userKey: string, serverId: string): Promise<s
   const data = await response.json();
   return data.PDA ?? data.pda ?? data.serverPDA;
 }
-
+export async function getTransactionDataFromBlockchain(txId: string) {
+    try {
+        const response = await fetch(IQ_CONFIG.backendHost + `/get_transaction_result/${txId}`);
+        if (response.ok) {
+            try {
+                return response.text();
+            } catch (error) {
+                console.error("Error getting transaction:", error);
+                return null;
+            }
+        }
+        console.error("Error getting transaction:", txId);
+        return null;
+    } catch (error) {
+        console.error("Error creating initTransactionOnServer:", error);
+        return null;
+    }
+}
 /**
  * Initialize server/room on backend
  */

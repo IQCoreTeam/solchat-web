@@ -4,7 +4,6 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { WalletButton } from '@/components/ui/wallet-button';
-import { Button } from 'react95';
 import styled from 'styled-components';
 
 const LogoText = styled.span.attrs({ title: 'SOLCHAT' })`
@@ -39,16 +38,31 @@ const LogoText = styled.span.attrs({ title: 'SOLCHAT' })`
   }
 `;
 
-const StyledButton = styled(Button)`
+const StyledButton = styled.button.attrs({ type: 'button' })`
   background-color: black;
   color: #4ade80;
-  border: 2px solid;
+  border: 2px solid #16a34a;
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   width: 100%;
+  font-family: inherit;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.1s ease;
 
-  &:active {
-    padding: 0.5rem 1rem;
+  &:hover:not(:disabled) {
+    border-color: #4ade80;
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   @media (min-width: 768px) {

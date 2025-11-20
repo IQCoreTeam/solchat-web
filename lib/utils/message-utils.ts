@@ -15,18 +15,6 @@ export function shorten(address: string, chars = 4): string {
 }
 
 /**
- * Gets initials from a name
- * @param name - The name to extract initials from
- */
-export function getInitials(name?: string): string {
-    if (!name) return '?';
-    const words = name.split(/\s+/).filter(Boolean);
-    if (words.length === 0) return name.slice(0, 1).toUpperCase();
-    if (words.length === 1) return words[0].slice(0, 1).toUpperCase();
-    return (words[0][0] + words[1][0]).toUpperCase();
-}
-
-/**
  * Derives a consistent avatar hue from an address
  * @param address - The address to derive color from
  */

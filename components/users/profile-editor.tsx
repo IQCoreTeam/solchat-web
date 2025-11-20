@@ -7,6 +7,7 @@
 
 import { useState, useEffect, type FormEvent } from 'react';
 import type { UserProfile } from './user-profile-manager';
+import { DefaultProfileAvatar } from '@/components/ui/default-profile-avatar';
 
 interface ProfileEditorProps {
   profile: UserProfile | null;
@@ -21,6 +22,7 @@ export function ProfileEditor({ profile, onSave, loading }: ProfileEditorProps) 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const previewSeed = profile?.pubkey || name || 'profile';
 
   // Load existing profile data
   useEffect(() => {
@@ -94,12 +96,9 @@ export function ProfileEditor({ profile, onSave, loading }: ProfileEditorProps) 
               placeholder="Tell us about yourself..."
               className="w-full bg-black/60 border border-green-700/30 rounded px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-green-500 resize-none"
               rows={4}
-              maxLength={100}
               disabled={loading || saving}
             />
-            <div className="mt-1 text-xs text-white/40">
-              {bio.length} / 100 characters
-            </div>
+
           </div>
 
           {/* Profile Picture */}
@@ -161,9 +160,10 @@ export function ProfileEditor({ profile, onSave, loading }: ProfileEditorProps) 
                     }}
                   />
                 ) : (
-                  <div className="w-16 h-16 rounded-full bg-green-900/30 border-2 border-green-700 flex items-center justify-center text-green-400 font-bold text-2xl">
-                    {name.charAt(0).toUpperCase() || '?'}
-                  </div>
+                  <DefaultProfileAvatar
+                    seed={previewSeed}
+                    className="w-16 h-16 rounded-full border-2 border-green-700"
+                  />
                 )}
                 <div className="flex-1">
                   <div className="font-bold text-white text-lg">{name || 'No name'}</div>
