@@ -78,11 +78,11 @@ export function useUserProfile(walletAddress: string | undefined) {
             metadata
           );
 
-          if (reconstructed) {
-            profileData = JSON.parse(reconstructed);
-          } else {
+          if (!reconstructed || reconstructed.startsWith('[unable')) {
             throw new Error('Failed to reconstruct metadata from transaction');
           }
+
+          profileData = JSON.parse(reconstructed);
         } else {
           // Direct JSON metadata
           profileData = JSON.parse(metadata);
