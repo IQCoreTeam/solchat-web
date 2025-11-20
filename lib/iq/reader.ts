@@ -159,7 +159,7 @@ async function parseSendCode(
 /**
  * Reconstruct full message by following transaction chain
  */
-async function reconstructMessageFromChain(
+export async function reconstructMessageFromChain(
   connection: Connection,
   dbCodeInSig: string
 ): Promise<string | null> {

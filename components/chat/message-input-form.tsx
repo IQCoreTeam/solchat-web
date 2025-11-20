@@ -5,7 +5,7 @@
 
 'use client';
 
-import { FormEvent, RefObject } from 'react';
+import { type FormEvent, type RefObject, type Dispatch, type SetStateAction } from 'react';
 import { shorten } from '@/lib/utils/message-utils';
 
 interface MessageInputFormProps {
@@ -14,7 +14,7 @@ interface MessageInputFormProps {
     attachmentUrl: string;
     setAttachmentUrl: (value: string) => void;
     showAttachmentInput: boolean;
-    setShowAttachmentInput: (show: boolean) => void;
+    setShowAttachmentInput: Dispatch<SetStateAction<boolean>>;
     attachmentError: string | null;
     setAttachmentError: (error: string | null) => void;
     onSubmit: (e: FormEvent) => void;
