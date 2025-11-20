@@ -5,9 +5,12 @@
 
 'use client';
 
+import { useState } from 'react';
 import type { Friend } from '@/lib/friends/types';
 import { shortenAddress, deriveAvatarHue } from '@/lib/friends/utils';
 import { Frame, Button, Avatar } from 'react95';
+import { useUserProfile } from '@/components/users/use-user-profile';
+import { ProfileModal } from '@/components/users/profile-modal';
 
 interface FriendCardProps {
   friend: Friend;
@@ -35,6 +38,12 @@ export function FriendCard({
   onUnblock,
   onOpenChat,
 }: FriendCardProps) {
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [imageError, setImageError] = useState(false);
+
+  // Fetch user profile
+  const { profile } = useUserProfile(friend.address);
+
   const hue = deriveAvatarHue(friend.address);
   const isRequester = friend.partyA === currentUser ? friend.requester === 0 : friend.requester === 1;
   const isPending = friend.status === 'pending';
@@ -49,30 +58,63 @@ export function FriendCard({
   }[friend.status];
 
   const avatarStyle = { backgroundColor: `hsl(${hue}, 65%, 48%)` };
-  const displayName = friend.name || shortenAddress(friend.address);
+  const displayName = profile?.name || friend.name || shortenAddress(friend.address);
 
   return (
     <Frame variant="outside" style={{ padding: '12px', background: '#0a0a0a' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
         {/* Avatar */}
-        <Avatar
-          size={48}
+        <button
+          onClick={() => setShowProfileModal(true)}
           style={{
-            ...avatarStyle,
-            color: '#000000',
-            textShadow: '0 0 2px rgba(255, 255, 255, 0.5)',
-            fontWeight: 'bold'
+            width: '48px',
+            height: '48px',
+            padding: 0,
+            border: 'none',
+            cursor: 'pointer',
+            background: 'transparent',
           }}
+          title="View profile"
         >
-          {getInitials(displayName)}
-        </Avatar>
+          {profile?.profilePicture && !imageError ? (
+            <img
+              src={profile.profilePicture}
+              alt={displayName}
+              style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '50%',
+                objectFit: 'cover',
+                border: '2px solid #00ff00',
+              }}
+              onError={() => setImageError(true)}
+            />
+          ) : (
+            <Avatar
+              size={48}
+              style={{
+                ...avatarStyle,
+                color: '#000000',
+                textShadow: '0 0 2px rgba(255, 255, 255, 0.5)',
+                fontWeight: 'bold',
+              }}
+            >
+              {getInitials(displayName)}
+            </Avatar>
+          )}
+        </button>
 
         {/* Info */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-            <span style={{ color: '#00ff00', fontSize: '11px' }}>
-              {shortenAddress(friend.address,10)}
+            <span style={{ color: '#00ff00', fontSize: '11px', fontWeight: profile?.name ? 'bold' : 'normal' }}>
+              {profile?.name || shortenAddress(friend.address, 10)}
             </span>
+            {profile?.name && (
+              <span style={{ color: '#666666', fontSize: '9px' }}>
+                {shortenAddress(friend.address, 6)}
+              </span>
+            )}
               {!isApproved && (
             <span style={{
               fontSize: '9px',
@@ -162,6 +204,14 @@ export function FriendCard({
           </div>
         </div>
       </div>
+
+      {/* Profile Modal */}
+      {showProfileModal && (
+        <ProfileModal
+          walletAddress={friend.address}
+          onClose={() => setShowProfileModal(false)}
+        />
+      )}
     </Frame>
   );
 }

@@ -94,12 +94,12 @@ export function UserProfileManager() {
                 metadata
               );
 
-              if (reconstructed) {
-                console.log('[UserProfile] Reconstructed metadata:', reconstructed);
-                profileData = JSON.parse(reconstructed);
-              } else {
+              if (!reconstructed || reconstructed.startsWith('[unable')) {
                 throw new Error('Failed to reconstruct metadata from transaction');
               }
+
+              console.log('[UserProfile] Reconstructed metadata:', reconstructed);
+              profileData = JSON.parse(reconstructed);
             } else {
               // Direct JSON metadata (backwards compatibility)
               console.log('[UserProfile] Metadata is direct JSON');
@@ -202,12 +202,12 @@ export function UserProfileManager() {
                     metadata
                   );
 
-                  if (reconstructed) {
-                    profileData = JSON.parse(reconstructed);
-                  } else {
+                  if (!reconstructed || reconstructed.startsWith('[unable')) {
                     console.error('[UserProfile] Failed to reconstruct metadata for', pubkeyString);
                     continue;
                   }
+
+                  profileData = JSON.parse(reconstructed);
                 } else {
                   // Direct JSON metadata (backwards compatibility)
                   profileData = JSON.parse(metadata);
@@ -262,6 +262,8 @@ export function UserProfileManager() {
       });
 
       console.log('[UserProfile] Storing metadata with codeInWithonlyTailTx...');
+      console.log('[UserProfile] Metadata size:', fullMetadata.length, 'bytes');
+      console.log('[UserProfile] Metadata content:', fullMetadata);
 
       // Zo's system: Store full metadata as transaction, get txID (90 bytes)
       const txId = await codeInWithonlyTailTx(
@@ -273,10 +275,11 @@ export function UserProfileManager() {
       );
 
       if (!txId) {
-        throw new Error('Failed to store metadata transaction');
+        throw new Error('Failed to store metadata transaction - no txID returned');
       }
 
       console.log('[UserProfile] Metadata stored in txID:', txId);
+      console.log('[UserProfile] txID length:', txId.length);
       console.log('[UserProfile] Saving txID with updateUserMetadata...');
 
       // Create writer context
