@@ -6,18 +6,19 @@
 'use client';
 
 import { useState } from 'react';
-import { getInitials, shorten, formatTimestamp, formatFullTimestamp, deriveAvatarHue } from '@/lib/utils/message-utils';
+import { shorten, formatTimestamp, formatFullTimestamp } from '@/lib/utils/message-utils';
 import { AttachmentPreview } from '@/components/ui/attachment-preview';
 import { useUserProfile } from '@/components/users/use-user-profile';
 import { ProfileModal } from '@/components/users/profile-modal';
+import { DefaultProfileAvatar } from '@/components/ui/default-profile-avatar';
 
 export interface MessageBubbleProps {
     // Message data
     id: string;
     text: string;
     sender?: string;
+    senderAddress?: string;
     displayName?: string;
-    avatarHue?: number;
     timestamp?: number;
     status?: 'pending' | 'sent' | 'confirmed' | 'failed';
     signature?: string;
@@ -42,14 +43,13 @@ export function MessageBubble({
     id,
     text,
     sender,
+    senderAddress,
     displayName,
-    avatarHue: propAvatarHue,
     timestamp,
     status = 'confirmed',
     signature,
     file,
     isOwn,
-    viewerAddress,
     mode = 'chat',
     showFullTimestamp = false,
     onCopyAddress,
@@ -62,18 +62,16 @@ export function MessageBubble({
     const [imageError, setImageError] = useState(false);
 
     // Fetch user profile for all senders (including own messages)
-    const { profile } = useUserProfile(sender);
+    const senderKey = senderAddress || sender;
+    const { profile } = useUserProfile(senderKey);
 
     // Derive values
     const profileName = profile?.name || displayName;
-    const bubbleName = profileName || (sender ? shorten(sender) : 'Unknown');
-    const avatarHue = propAvatarHue ?? deriveAvatarHue(sender || bubbleName);
+    const bubbleName = profileName || (sender ? sender : senderAddress ? shorten(senderAddress) : 'Unknown');
     // Messages with signatures are always confirmed, regardless of status field
     // This handles old messages in blockchain that have status: 'pending'
     const isPending = !signature && status === 'pending';
-    const avatarStyle = { backgroundColor: `hsl(${avatarHue}, 65%, 48%)` };
     const formattedTime = showFullTimestamp ? formatFullTimestamp(timestamp) : formatTimestamp(timestamp);
-
     // Message bubble styling based on mode and state
     const bubbleStyle = isOwn
         ? isPending
@@ -108,12 +106,12 @@ export function MessageBubble({
             >
                 {/* Avatar */}
                 <button
-                    onClick={() => sender && setShowProfileModal(true)}
+                    onClick={() => senderKey && setShowProfileModal(true)}
                     className={`flex h-8 w-8 md:h-9 md:w-9 flex-shrink-0 items-center justify-center rounded-full text-xs md:text-sm font-semibold text-white shadow-lg ${
-                        sender ? 'cursor-pointer hover:ring-2 hover:ring-green-400 transition' : 'cursor-default'
+                        senderKey ? 'cursor-pointer hover:ring-2 hover:ring-green-400 transition' : 'cursor-default'
                     }`}
-                    disabled={!sender}
-                    title={sender ? 'View profile' : ''}
+                    disabled={!senderKey}
+                    title={senderKey ? 'View profile' : ''}
                 >
                     {profile?.profilePicture && !imageError ? (
                         <img
@@ -123,9 +121,10 @@ export function MessageBubble({
                             onError={() => setImageError(true)}
                         />
                     ) : (
-                        <div className="w-full h-full rounded-full flex items-center justify-center" style={avatarStyle}>
-                            {getInitials(bubbleName)}
-                        </div>
+                        <DefaultProfileAvatar
+                            seed={senderAddress || sender || bubbleName}
+                            className="w-full h-full rounded-full overflow-hidden"
+                        />
                     )}
                 </button>
 
@@ -139,10 +138,10 @@ export function MessageBubble({
                         <span>{bubbleName}</span>
 
                         {/* Copy address button (chat mode only) */}
-                        {sender && onCopyAddress && mode === 'chat' && (
+                        {senderKey && onCopyAddress && mode === 'chat' && (
                             <button
                                 type="button"
-                                onClick={() => onCopyAddress(sender, id)}
+                                onClick={() => onCopyAddress(senderAddress || sender || '', id)}
                                 className="group relative flex items-center justify-center w-4 h-4 hover:bg-white/10 transition-colors border border-white/10 rounded"
                                 title="Copy wallet address"
                             >

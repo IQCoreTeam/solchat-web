@@ -6,7 +6,8 @@
 'use client';
 
 import { FormEvent, RefObject } from 'react';
-import { shorten, getInitials, deriveAvatarHue, formatTimestamp } from '@/lib/utils/message-utils';
+import { shorten, formatTimestamp } from '@/lib/utils/message-utils';
+import { DefaultProfileAvatar } from '@/components/ui/default-profile-avatar';
 
 interface DmMeta {
     peerAddress: string;
@@ -147,7 +148,6 @@ export function DmModal({
                     {dmMessages.map((message) => {
                         const isOwn = message.sender && viewerAddress && message.sender === viewerAddress;
                         const bubbleName = isOwn ? 'You' : message.displayName || (message.sender ? shorten(message.sender) : 'Unknown');
-                        const avatarHue = message.avatarHue ?? deriveAvatarHue(message.sender || bubbleName);
                         // Messages with signatures are confirmed, regardless of status field
                         const isPending = !message.signature && message.status === 'pending';
                         return (
@@ -155,12 +155,10 @@ export function DmModal({
                                 <div
                                     className={`flex max-w-[90%] items-end gap-3 ${isOwn ? 'flex-row-reverse text-right' : 'text-left'}`}
                                 >
-                                    <div
-                                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white shadow-lg"
-                                        style={{ backgroundColor: `hsl(${avatarHue}, 65%, 48%)` }}
-                                    >
-                                        {getInitials(bubbleName)}
-                                    </div>
+                                    <DefaultProfileAvatar
+                                        seed={message.sender || bubbleName}
+                                        className="h-8 w-8 flex-shrink-0 rounded-full"
+                                    />
                                     <div
                                         className="rounded-2xl border px-3 py-2 text-white"
                                         style={

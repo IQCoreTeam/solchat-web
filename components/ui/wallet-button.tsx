@@ -3,12 +3,13 @@
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { useEffect, useState, useRef } from 'react';
-import { Button, Window, WindowHeader, WindowContent } from 'react95';
+import { Window, WindowHeader, WindowContent } from 'react95';
 import styled from 'styled-components';
 
-const PANEL_WIDTH_CLASS = 'w-full sm:w-[180px]';
-
-const StyledButton = styled(Button)`
+const StyledButton = styled.button.attrs({ type: 'button' })`
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
 
   background-color: black;
   color: #4ade80;
@@ -20,13 +21,16 @@ const StyledButton = styled(Button)`
   display: flex;
   align-items: center;
   gap: 0.5rem;
-
-  &:hover {
+  &:hover:not(:disabled) {
     border-color: #4ade80;
   }
 
-  &:active {
-    padding: 0.5rem 1rem;
+  &:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
   }
 `;
 
@@ -73,20 +77,33 @@ const AddressText = styled.div`
   font-weight: bold;
 `;
 
-const StyledButton95 = styled(Button)<{ $variant?: 'danger' }>`
-  font-size: 0.875rem;
+const StyledButton95 = styled.button.attrs({ type: 'button' })<{ $variant?: 'danger' }>`
   width: 100%;
   margin-bottom: 0.5rem;
-  background-color: ${props => props.$variant === 'danger' ? '#dc2626' : '#c0c0c0'};
-  color: ${props => props.$variant === 'danger' ? 'white' : 'black'};
+  padding: 0.4rem 0.75rem;
+  font-size: 0.875rem;
   font-weight: bold;
+  font-family: inherit;
+  border: 2px solid ${props => (props.$variant === 'danger' ? '#7f1d1d' : '#6b7280')};
+  color: ${props => (props.$variant === 'danger' ? '#fff' : '#000')};
+  background-color: ${props => (props.$variant === 'danger' ? '#dc2626' : '#c0c0c0')};
+  cursor: pointer;
 
   &:last-child {
     margin-bottom: 0;
   }
 
-  &:active {
-    background-color: ${props => props.$variant === 'danger' ? '#b91c1c' : '#a0a0a0'};
+  &:hover:not(:disabled) {
+    filter: brightness(1.05);
+  }
+
+  &:active:not(:disabled) {
+    filter: brightness(0.95);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
   }
 `;
 

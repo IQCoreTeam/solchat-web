@@ -7,10 +7,11 @@
 
 import { useState } from 'react';
 import type { Friend } from '@/lib/friends/types';
-import { shortenAddress, deriveAvatarHue } from '@/lib/friends/utils';
-import { Frame, Button, Avatar } from 'react95';
+import { shortenAddress } from '@/lib/friends/utils';
+import { Frame, Button } from 'react95';
 import { useUserProfile } from '@/components/users/use-user-profile';
 import { ProfileModal } from '@/components/users/profile-modal';
+import { DefaultProfileAvatar } from '@/components/ui/default-profile-avatar';
 
 interface FriendCardProps {
   friend: Friend;
@@ -20,15 +21,6 @@ interface FriendCardProps {
   onUnblock?: (friend: Friend) => void;
   onOpenChat?: (friend: Friend) => void;
 }
-
-const getInitials = (name: string) => {
-  if (!name) return '?';
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  }
-  return name[0].toUpperCase();
-};
 
 export function FriendCard({
   friend,
@@ -44,7 +36,6 @@ export function FriendCard({
   // Fetch user profile
   const { profile } = useUserProfile(friend.address);
 
-  const hue = deriveAvatarHue(friend.address);
   const isRequester = friend.partyA === currentUser ? friend.requester === 0 : friend.requester === 1;
   const isPending = friend.status === 'pending';
   const isBlocked = friend.status === 'blocked';
@@ -57,7 +48,6 @@ export function FriendCard({
     blocked: '#ff0000',
   }[friend.status];
 
-  const avatarStyle = { backgroundColor: `hsl(${hue}, 65%, 48%)` };
   const displayName = profile?.name || friend.name || shortenAddress(friend.address);
 
   return (
@@ -90,17 +80,10 @@ export function FriendCard({
               onError={() => setImageError(true)}
             />
           ) : (
-            <Avatar
-              size={48}
-              style={{
-                ...avatarStyle,
-                color: '#000000',
-                textShadow: '0 0 2px rgba(255, 255, 255, 0.5)',
-                fontWeight: 'bold',
-              }}
-            >
-              {getInitials(displayName)}
-            </Avatar>
+            <DefaultProfileAvatar
+              seed={friend.address}
+              className="block h-12 w-12 rounded-full border-2 border-green-500"
+            />
           )}
         </button>
 

@@ -17,6 +17,7 @@ import { getAnchorProvider, getProgram } from '@/lib/onchainDB/web/provider';
 import idl from '@/lib/onchainDB/idl.json';
 import { ROOT_ID } from '@/lib/onchainDB/constants';
 import { PublicKey } from '@solana/web3.js';
+import type { AccountInfo } from '@solana/web3.js';
 import type { WriterCtx } from '@/lib/onchainDB/web/writer';
 import { codeInWithonlyTailTx } from '@/lib/iq/transaction';
 import { reconstructMessageFromChainForTailTx } from '@/lib/iq/reader';
@@ -76,22 +77,23 @@ export function UserProfileManager() {
         const metadataLen = data.readUInt32LE(offset);
         offset += 4;
         const metadataBytes = data.slice(offset, offset + metadataLen);
-        const metadata = metadataBytes.toString('utf8');
+        const metadata: string = metadataBytes.toString('utf8');
 
         console.log('[UserProfile] Raw metadata:', metadata);
 
-        if (metadata) {
+        if (typeof metadata === 'string' && metadata.length > 2) {
+          const metadataStr = metadata ?? "";
           try {
             // Zo's system: Check if metadata is a transaction ID
             // Transaction IDs are typically 88-90 chars, alphanumeric (base58)
             let profileData;
 
-            if (metadata.length <= 100 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(metadata)) {
+            if (metadataStr.length <= 100 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(metadataStr)) {
               // Looks like a transaction ID, reconstruct the original JSON
               console.log('[UserProfile] Metadata is txID, reconstructing from chain...');
               const reconstructed = await reconstructMessageFromChainForTailTx(
                 connection,
-                metadata
+                String(metadataStr ?? '')
               );
 
               if (!reconstructed || reconstructed.startsWith('[unable')) {
@@ -103,7 +105,7 @@ export function UserProfileManager() {
             } else {
               // Direct JSON metadata (backwards compatibility)
               console.log('[UserProfile] Metadata is direct JSON');
-              profileData = JSON.parse(metadata);
+              profileData = JSON.parse(metadataStr);
             }
 
             setMyProfile({
@@ -116,11 +118,23 @@ export function UserProfileManager() {
             console.log('[UserProfile] Loaded profile from User account');
           } catch (parseErr) {
             console.error('[UserProfile] Failed to parse metadata:', parseErr);
-            setMyProfile(null);
+            setMyProfile({
+              pubkey: userAddress,
+              name: '',
+              bio: '',
+              profilePicture: '',
+              timestamp: Date.now(),
+            });
           }
         } else {
           console.log('[UserProfile] No metadata found');
-          setMyProfile(null);
+          setMyProfile({
+            pubkey: userAddress,
+            name: '',
+            bio: '',
+            profilePicture: '',
+            timestamp: Date.now(),
+          });
         }
       } else {
         console.log('[UserProfile] User account not found (not initialized yet)');
@@ -176,53 +190,33 @@ export function UserProfileManager() {
           // Fetch the User account
           const accountInfo = await connection.getAccountInfo(userAccount);
 
-          if (accountInfo && accountInfo.data) {
-            // Parse the User account data (same as loadMyProfile)
-            const data = Buffer.from(accountInfo.data);
-            let offset = 8; // Skip discriminator
-            offset += 32; // Skip owner
+          const metadata: string = extractUserMetadataString(accountInfo);
+          if (typeof metadata === 'string' && metadata.length > 2) {
+            const metadataStr = metadata ?? "";
+            try {
+              const profileData =
+                metadataStr.length <= 100 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(metadataStr)
+                  ? JSON.parse(
+                      await reconstructMessageFromChainForTailTx(connection, String(metadataStr ?? ''))
+                    )
+                  : JSON.parse(metadataStr);
 
-            const dataLen = data.readUInt32LE(offset);
-            offset += 4 + dataLen;
-
-            const metadataLen = data.readUInt32LE(offset);
-            offset += 4;
-            const metadataBytes = data.slice(offset, offset + metadataLen);
-            const metadata = metadataBytes.toString('utf8');
-
-            if (metadata) {
-              try {
-                // Zo's system: Check if metadata is a transaction ID
-                let profileData;
-
-                if (metadata.length <= 100 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(metadata)) {
-                  // Looks like a transaction ID, reconstruct the original JSON
-                  const reconstructed = await reconstructMessageFromChainForTailTx(
-                    connection,
-                    metadata
-                  );
-
-                  if (!reconstructed || reconstructed.startsWith('[unable')) {
-                    console.error('[UserProfile] Failed to reconstruct metadata for', pubkeyString);
-                    continue;
-                  }
-
-                  profileData = JSON.parse(reconstructed);
-                } else {
-                  // Direct JSON metadata (backwards compatibility)
-                  profileData = JSON.parse(metadata);
-                }
-
-                profiles.push({
-                  pubkey: pubkeyString,
-                  name: profileData.name || '',
-                  bio: profileData.bio || '',
-                  profilePicture: profileData.profilePicture || '',
-                  timestamp: Date.now(),
-                });
-              } catch (parseErr) {
-                console.error('[UserProfile] Failed to parse metadata for', pubkeyString, parseErr);
-              }
+              profiles.push({
+                pubkey: pubkeyString,
+                name: profileData.name || '',
+                bio: profileData.bio || '',
+                profilePicture: profileData.profilePicture || '',
+                timestamp: Date.now(),
+              });
+            } catch (parseErr) {
+              console.error('[UserProfile] Failed to parse metadata for', pubkeyString, parseErr);
+              profiles.push({
+                pubkey: pubkeyString,
+                name: '',
+                bio: '',
+                profilePicture: '',
+                timestamp: Date.now(),
+              });
             }
           }
         } catch (err) {
@@ -230,8 +224,11 @@ export function UserProfileManager() {
         }
       }
 
-      console.log('[UserProfile] Loaded', profiles.length, 'user profiles');
-      setAllProfiles(profiles);
+      const uniqueProfiles = Array.from(
+        new Map(profiles.map((profile) => [profile.pubkey, profile])).values()
+      );
+      console.log('[UserProfile] Loaded', uniqueProfiles.length, 'unique user profiles');
+      setAllProfiles(uniqueProfiles);
     } catch (err) {
       console.error('[UserProfile] Error loading profiles:', err);
       // If table doesn't exist yet, just show empty list
@@ -254,6 +251,10 @@ export function UserProfileManager() {
 
     setError(null);
     try {
+      const rootPk = pdaRoot(ROOT_ID);
+      const userPk = new PublicKey(userAddress);
+      const userPda = pdaUser(rootPk, userPk);
+
       // Prepare full metadata JSON (can be up to 1MB!)
       const fullMetadata = JSON.stringify({
         name: profile.name,
@@ -282,6 +283,9 @@ export function UserProfileManager() {
       console.log('[UserProfile] txID length:', txId.length);
       console.log('[UserProfile] Saving txID with updateUserMetadata...');
 
+      // Snapshot before updating
+      const metadataBefore = extractUserMetadataString(await connection.getAccountInfo(userPda));
+
       // Create writer context
       const writerCtx: WriterCtx<any> = {
         wallet: wallet as any,
@@ -306,41 +310,17 @@ export function UserProfileManager() {
 
       console.log('[UserProfile] Profile saved! Signature:', signature);
 
-      // Zo's vision: Check if user is in global_user_list, add if not
-      try {
-        console.log('[UserProfile] Checking if user is in global_user_list...');
+      const userAccountAfter = await connection.getAccountInfo(userPda);
+      const metadataAfter = extractUserMetadataString(userAccountAfter);
 
-        // Check if user is already in global_user_list
-        let userInList = false;
+      const addedMetadataThisCall = !metadataBefore && !!metadataAfter;
+
+      if (addedMetadataThisCall) {
+          alert('added metadata in this call!');
         try {
-          const rows = await readRowsByTable({
-            connection,
-            rootId: ROOT_ID,
-            userPublicKey: userAddress,
-            tableName: 'global_user_list',
-            idl: idl as any,
-          });
-
-          userInList = rows.some((row) => {
-            try {
-              const rowData = JSON.parse(row.data);
-              return rowData.pubkeyString === userAddress || rowData.pubkey === userAddress;
-            } catch {
-              return false;
-            }
-          });
-
-          console.log('[UserProfile] User in global_user_list:', userInList);
-        } catch (tableErr) {
-          // Table doesn't exist yet, need to create it
-          console.log('[UserProfile] Userlist table does not exist, creating...');
-        }
-
-        if (!userInList) {
           console.log('[UserProfile] Adding user to global_user_list table...');
 
           // Check if global_user_list table exists by checking the account directly
-          const rootPk = pdaRoot(ROOT_ID);
           const tablePk = pdaTable(rootPk, 'global_user_list');
           const tableAccount = await connection.getAccountInfo(tablePk);
 
@@ -376,7 +356,6 @@ export function UserProfileManager() {
           // Add user pubkey to global_user_list
           const globalUserListRow = JSON.stringify({
             pubkeyString: userAddress,
-            timestamp: Date.now(),
           });
 
           const { tx: rowTx } = await writeRowWeb(writerCtx, ROOT_ID, 'global_user_list', globalUserListRow);
@@ -394,10 +373,10 @@ export function UserProfileManager() {
 
           console.log('[UserProfile] User added to global_user_list! Signature:', rowSig);
           setTimeout(() => loadAllProfiles(), 1000);
+        } catch (listErr) {
+          console.error('[UserProfile] Error managing global_user_list:', listErr);
+          // Don't fail the whole operation if global_user_list update fails
         }
-      } catch (listErr) {
-        console.error('[UserProfile] Error managing global_user_list:', listErr);
-        // Don't fail the whole operation if global_user_list update fails
       }
 
       const fullProfile: UserProfile = {
@@ -460,7 +439,7 @@ export function UserProfileManager() {
       <div className="mb-8">
         <h1 className="text-4xl font-bold text-green-400 mb-2">User Profiles</h1>
         <p className="text-white/60">
-          Zo's Vision: Onchain user profiles with metadata stored in User accounts
+          Zo&#39;s Vision: Onchain user profiles with metadata stored in User accounts
         </p>
       </div>
 
@@ -545,4 +524,25 @@ export function UserProfileManager() {
       </div>
     </div>
   );
+}
+
+function extractUserMetadataString(info?: AccountInfo<Buffer> | null): string {
+  if (!info || !info.data) return ''
+  try {
+    const data = Buffer.from(info.data)
+    let offset = 8 // discriminator
+    offset += 32 // owner
+    if (offset + 4 > data.length) return ''
+    const dataLen = data.readUInt32LE(offset)
+    offset += 4 + dataLen
+    if (offset + 4 > data.length) return ''
+    const metadataLen = data.readUInt32LE(offset)
+    offset += 4
+    if (metadataLen <= 0 || offset + metadataLen > data.length) return ''
+    const metadataBytes = data.slice(offset, offset + metadataLen)
+    const metadata = metadataBytes.toString('utf8').trim()
+    return metadata.length > 0 ? metadata : ''
+  } catch {
+    return ''
+  }
 }

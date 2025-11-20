@@ -89,6 +89,41 @@ async function parseSendCode(
   connection: Connection,
   signature: string
 ): Promise<{ chunk: string; previousTx: string } | null> {
+  const SEND_CODE_DISC = Buffer.from([239, 129, 35, 208, 62, 168, 110, 201])
+  const SEND_CODE_UNCONNECTED_DISC = Buffer.from([152, 216, 13, 12, 191, 149, 11, 133])
+
+  const readString = (data: Buffer, pos: number) => {
+    if (pos + 4 > data.length) return null
+    const len = data.readUInt32LE(pos)
+    pos += 4
+    if (len < 0 || pos + len > data.length) return null
+    const value = data.slice(pos, pos + len).toString('utf8')
+    pos += len
+    return { value, pos }
+  }
+
+  const decodeSendCode = (data: Buffer, offset: number) => {
+    const disc = data.slice(offset, offset + 8)
+    let pos = offset + 8
+    if (disc.equals(SEND_CODE_DISC)) {
+      const chunkRes = readString(data, pos)
+      if (!chunkRes) return null
+      pos = chunkRes.pos
+      const prevRes = readString(data, pos)
+      if (!prevRes) return null
+      const chunk = chunkRes.value
+      const previousTx = prevRes.value
+      return { chunk, previousTx }
+    }
+    if (disc.equals(SEND_CODE_UNCONNECTED_DISC)) {
+      const chunkRes = readString(data, pos)
+      if (!chunkRes) return null
+      const chunk = chunkRes.value
+      return { chunk, previousTx: 'Genesis' }
+    }
+    return null
+  }
+
   try {
     const tx = await connection.getTransaction(signature, {
       maxSupportedTransactionVersion: 0,
@@ -99,60 +134,22 @@ async function parseSendCode(
       return null;
     }
 
-    const instructions = tx.transaction.message.compiledInstructions || [];
+    const instructions = tx.transaction.message.compiledInstructions || []
 
     for (const instruction of instructions) {
-      try {
-        const data = Buffer.from(instruction.data);
-
-        // SendCode instruction structure (observed from testing transaction):
-        // [discriminator/metadata] [chunk_len (u32)] [chunk] [prev_tx_len (u32)] [prev_tx] ...
-        if (data.length > 12) {
-          // Try parsing from different offsets to find the data
-          const possibleOffsets = [0, 8, 16];
-
-          for (const startOffset of possibleOffsets) {
-            try {
-              let pos = startOffset;
-
-              if (pos + 4 > data.length) continue;
-
-              // Read chunk length
-              const chunkLen = data.readUInt32LE(pos);
-              pos += 4;
-
-              // Sanity check chunk length
-              if (chunkLen > 0 && chunkLen < 2000 && pos + chunkLen + 4 <= data.length) {
-                const chunk = data.slice(pos, pos + chunkLen).toString('utf8');
-                pos += chunkLen;
-
-                // Read previous tx length
-                const prevTxLen = data.readUInt32LE(pos);
-                pos += 4;
-
-                // Sanity check prev tx length
-                if (prevTxLen > 0 && prevTxLen < 200 && pos + prevTxLen <= data.length) {
-                  const previousTx = data.slice(pos, pos + prevTxLen).toString('utf8');
-
-                  // Validate that chunk contains printable text
-                  if (chunk.length > 0 && /^[\x20-\x7E\s]+$/.test(chunk)) {
-                    return { chunk, previousTx };
-                  }
-                }
-              }
-            } catch (e) {
-              continue;
-            }
-          }
+      if (!instruction.data) continue
+      const raw = Buffer.from(instruction.data)
+      for (let offset = 0; offset + 8 <= raw.length; offset++) {
+        const decoded = decodeSendCode(raw, offset)
+        if (decoded && decoded.chunk.length > 0) {
+          return decoded
         }
-      } catch (e) {
-        continue;
       }
     }
 
-    return null;
+    return null
   } catch (error) {
-    return null;
+    return null
   }
 }
 export async function reconstructMessageFromChainForTailTx(
@@ -163,17 +160,15 @@ export async function reconstructMessageFromChainForTailTx(
 
 
         // If tailTx is "Genesis", there's no actual message content
-        if (tailTx === 'Genesis' || !tailTx) {
-            return `: [empty message]`;
-        }
+
 
         // Follow the transaction chain to collect chunks
         const chunks: string[] = [];
         let currentTx = tailTx;
         let iterations = 0;
-        const maxIterations = 10; // Reduced from 20 to prevent long waits
 
-        while (currentTx && currentTx !== 'Genesis' && iterations < maxIterations) {
+
+        do {
             iterations++;
 
             const sendCode = await parseSendCode(connection, currentTx);
@@ -185,7 +180,7 @@ export async function reconstructMessageFromChainForTailTx(
             console.log(`[reconstruct] Chunk ${iterations}: "${sendCode.chunk.substring(0, 20)}..."`);
             chunks.unshift(sendCode.chunk);
             currentTx = sendCode.previousTx;
-        }
+        }while ( currentTx !== 'Genesis' )
 
         if (chunks.length > 0) {
             const message = chunks.join('');

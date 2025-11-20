@@ -8,6 +8,7 @@
 import { RefObject } from 'react';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { MessageBubble } from '@/components/ui/message-bubble';
+import { shorten } from '@/lib/utils/message-utils';
 
 interface MessageRow {
     id: string;
@@ -56,11 +57,16 @@ export function MessageList({
             )}
             <div className="space-y-4">
                 {messages.map((message) => {
-                    const isOwn = !!(message.sender && viewerAddress && message.sender === viewerAddress);
+                    const resolvedSender = message.sender || (message as any).senderAddress || '';
+                    const displayAddress = resolvedSender ? shorten(resolvedSender) : '';
+                    const isOwn = !!(resolvedSender && viewerAddress && resolvedSender === viewerAddress);
                     return (
                         <MessageBubble
                             key={message.id}
                             {...message}
+                            sender={displayAddress || resolvedSender}
+                            senderAddress={resolvedSender}
+                            displayName={message.displayName || displayAddress}
                             isOwn={isOwn}
                             viewerAddress={viewerAddress}
                             mode="chat"

@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import type { UserProfile } from './user-profile-manager';
 import { shorten } from '@/lib/utils/message-utils';
+import { DefaultProfileAvatar } from '@/components/ui/default-profile-avatar';
 
 interface UserListProps {
   profiles: UserProfile[];
@@ -118,9 +119,10 @@ function ProfileCard({ profile, isCurrentUser }: ProfileCardProps) {
             onError={() => setImageError(true)}
           />
         ) : (
-          <div className="w-12 h-12 rounded-full bg-green-900/30 border-2 border-green-700 flex items-center justify-center text-green-400 font-bold text-xl">
-            {profile.name.charAt(0).toUpperCase() || '?'}
-          </div>
+          <DefaultProfileAvatar
+            seed={profile.pubkey || profile.name || 'profile'}
+            className="w-12 h-12 rounded-full border-2 border-green-700"
+          />
         )}
         <div className="flex-1 min-w-0">
           <div className="font-bold text-white truncate">{profile.name}</div>
