@@ -198,7 +198,7 @@ export function UserProfileManager() {
               const profileData =
                 metadataStr.length <= 100 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(metadataStr)
                   ? JSON.parse(
-                      await reconstructMessageFromChainForTailTx(connection, String(metadataStr ?? ''))
+                      await reconstructMessageFromChainForTailTx(connection, metadataStr) as string
                     )
                   : JSON.parse(metadataStr);
 
@@ -329,7 +329,7 @@ export function UserProfileManager() {
       const addedMetadataThisCall = !metadataBefore && !!metadataAfter;
 
       if (addedMetadataThisCall) {
-          alert('added metadata in this call!');
+         // alert('added metadata in this call!');
         try {
           console.log('[UserProfile] Adding user to global_user_list table...');
 
