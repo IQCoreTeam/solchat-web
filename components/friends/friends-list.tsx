@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { useFriends } from '@/lib/friends/use-friends';
 import { FriendCard } from './friend-card';
@@ -53,6 +54,9 @@ export function FriendsList() {
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const dmQueryAddress = searchParams?.get('dm');
 
   const writerCtx = useMemo<WriterCtx | null>(() => {
     if (!wallet) return null;
@@ -317,7 +321,7 @@ export function FriendsList() {
     [connection, userAddress]
   );
 
-  const handleOpenChat = async (friend: Friend) => {
+  const handleOpenChat = useCallback(async (friend: Friend) => {
     setChatFriend(friend);
     // Don't clear messages to prevent flash - let new messages replace old ones
     setChatError(null);
@@ -327,7 +331,20 @@ export function FriendsList() {
     setTimeout(() => {
       scrollChatToBottom();
     }, 0);
-  };
+  }, [loadChatHistory, scrollChatToBottom]);
+
+  useEffect(() => {
+    if (!dmQueryAddress) return;
+    const friend = friends.find((f) => f.address === dmQueryAddress);
+    if (!friend) return;
+
+    void handleOpenChat(friend);
+
+    const params = new URLSearchParams(searchParams?.toString());
+    params.delete('dm');
+    const query = params.toString();
+    router.replace(query ? `/friends?${query}` : '/friends', { scroll: false });
+  }, [dmQueryAddress, friends, handleOpenChat, router, searchParams]);
 
   const handleSendChatMessage = async (event?: FormEvent) => {
     event?.preventDefault();

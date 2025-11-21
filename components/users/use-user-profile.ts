@@ -30,7 +30,14 @@ export function useUserProfile(walletAddress: string | undefined) {
       setError(null);
 
       try {
-        const userPk = new PublicKey(walletAddress);
+        let userPk: PublicKey;
+        try {
+          userPk = new PublicKey(walletAddress);
+        } catch {
+          setProfile(null);
+          setLoading(false);
+          return;
+        }
         const rootPk = pdaRoot(ROOT_ID);
         const userAccount = pdaUser(rootPk, userPk);
 
@@ -39,7 +46,13 @@ export function useUserProfile(walletAddress: string | undefined) {
 
         if (!accountInfo || !accountInfo.data) {
           if (!cancelled) {
-            setProfile(null);
+            setProfile({
+              pubkey: walletAddress,
+              name: '',
+              bio: '',
+              profilePicture: '',
+              timestamp: Date.now(),
+            });
             setLoading(false);
           }
           return;
@@ -62,7 +75,13 @@ export function useUserProfile(walletAddress: string | undefined) {
 
         if (!metadata) {
           if (!cancelled) {
-            setProfile(null);
+            setProfile({
+              pubkey: walletAddress,
+              name: '',
+              bio: '',
+              profilePicture: '',
+              timestamp: Date.now(),
+            });
             setLoading(false);
           }
           return;
@@ -102,7 +121,13 @@ export function useUserProfile(walletAddress: string | undefined) {
         if (!cancelled) {
           console.error('[useUserProfile] Error fetching profile:', err);
           setError(err instanceof Error ? err.message : 'Failed to load profile');
-          setProfile(null);
+          setProfile({
+            pubkey: walletAddress,
+            name: '',
+            bio: '',
+            profilePicture: '',
+            timestamp: Date.now(),
+          });
           setLoading(false);
         }
       }

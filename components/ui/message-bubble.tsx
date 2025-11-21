@@ -62,8 +62,8 @@ export function MessageBubble({
     const [imageError, setImageError] = useState(false);
 
     // Fetch user profile for all senders (including own messages)
-    const senderKey = senderAddress || sender;
-    const { profile } = useUserProfile(senderKey);
+    const modalAddress = (senderAddress || sender)?.trim() || '';
+    const { profile } = useUserProfile(modalAddress || undefined);
 
     // Derive values
     const profileName = profile?.name || displayName;
@@ -106,12 +106,12 @@ export function MessageBubble({
             >
                 {/* Avatar */}
                 <button
-                    onClick={() => senderKey && setShowProfileModal(true)}
+                    onClick={() => modalAddress && setShowProfileModal(true)}
                     className={`flex h-8 w-8 md:h-9 md:w-9 flex-shrink-0 items-center justify-center rounded-full text-xs md:text-sm font-semibold text-white shadow-lg ${
-                        senderKey ? 'cursor-pointer hover:ring-2 hover:ring-green-400 transition' : 'cursor-default'
+                        modalAddress ? 'cursor-pointer hover:ring-2 hover:ring-green-400 transition' : 'cursor-default'
                     }`}
-                    disabled={!senderKey}
-                    title={senderKey ? 'View profile' : ''}
+                    disabled={!modalAddress}
+                    title={modalAddress ? 'View profile' : ''}
                 >
                     {profile?.profilePicture && !imageError ? (
                         <img
@@ -138,10 +138,10 @@ export function MessageBubble({
                         <span>{bubbleName}</span>
 
                         {/* Copy address button (chat mode only) */}
-                        {senderKey && onCopyAddress && mode === 'chat' && (
+                        {modalAddress && onCopyAddress && mode === 'chat' && (
                             <button
                                 type="button"
-                                onClick={() => onCopyAddress(senderAddress || sender || '', id)}
+                                onClick={() => onCopyAddress(modalAddress, id)}
                                 className="group relative flex items-center justify-center w-4 h-4 hover:bg-white/10 transition-colors border border-white/10 rounded"
                                 title="Copy wallet address"
                             >
@@ -264,9 +264,9 @@ export function MessageBubble({
             </div>
 
             {/* Profile Modal */}
-            {showProfileModal && sender && (
+            {showProfileModal && modalAddress && (
                 <ProfileModal
-                    walletAddress={sender}
+                    walletAddress={modalAddress}
                     onClose={() => setShowProfileModal(false)}
                 />
             )}
