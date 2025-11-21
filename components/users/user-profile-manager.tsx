@@ -19,8 +19,9 @@ import { ROOT_ID } from '@/lib/onchainDB/constants';
 import { PublicKey } from '@solana/web3.js';
 import type { AccountInfo } from '@solana/web3.js';
 import type { WriterCtx } from '@/lib/onchainDB/web/writer';
-import { codeInWithonlyTailTx } from '@/lib/iq/transaction';
+import {codeInWithonlyTailTx, initializeUser, WalletExecutor} from '@/lib/iq/transaction';
 import { reconstructMessageFromChainForTailTx } from '@/lib/iq/reader';
+import {getDBPDA} from "@/lib/iq";
 
 export interface UserProfile {
   pubkey: string;
@@ -266,6 +267,18 @@ export function UserProfileManager() {
       console.log('[UserProfile] Metadata size:', fullMetadata.length, 'bytes');
       console.log('[UserProfile] Metadata content:', fullMetadata);
 
+      const DBPDA = await getDBPDA(userAddress);
+      const isUserHaveIQPDA = await connection.getAccountInfo(new PublicKey(DBPDA));
+      if (!isUserHaveIQPDA) {
+        console.log('[UserProfile] Creating IQPDA for user...');
+          const signingWallet: WalletExecutor = {
+              publicKey: wallet.publicKey!,
+              signTransaction: wallet.signTransaction ?? undefined,
+              sendTransaction: wallet.sendTransaction ?? undefined,
+          };
+        const createIQPDA = await initializeUser(connection,signingWallet);
+        console.log('[UserProfile] IQPDA created:', createIQPDA);
+      }
       // Zo's system: Store full metadata as transaction, get txID (90 bytes)
       const txId = await codeInWithonlyTailTx(
         connection,
