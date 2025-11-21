@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { PublicKey } from '@solana/web3.js';
-import { TextField, Button, Frame } from 'react95';
+import { Button } from 'react95';
 
 interface AddFriendFormProps {
   onSubmit: (friendAddress: string) => Promise<void>;

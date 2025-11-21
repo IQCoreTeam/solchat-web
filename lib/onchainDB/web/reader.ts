@@ -9,6 +9,7 @@ import { Buffer } from 'buffer'
 import { configs } from '../configs'
 import { deriveSeedHex, rootIdToBytes, toBytes, type BytesLike } from '../core/seed'
 import { pdaRoot, pdaTable, pdaTxRef, pdaInstructionTable, pdaDmTable, pdaDmInstructionTable } from '../provider/pda.provider'
+import { fetchWithRetry } from '@/lib/utils/fetch-with-retry'
 
 export type Row = Record<string, any>
 
@@ -155,22 +156,27 @@ async function getTransactionsForAddress(
       return await getFallbackTransactions(connection, address, limit)
     }
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'helius-gtfa',
-        method: 'getTransactionsForAddress',
-        params: [
-          address.toBase58(),
-          {
-            limit,
-            commitment: 'processed',
-          }
-        ]
-      })
-    })
+    const response = await fetchWithRetry(
+      () =>
+        fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 'helius-gtfa',
+            method: 'getTransactionsForAddress',
+            params: [
+              address.toBase58(),
+              {
+                limit,
+                commitment: 'processed',
+              },
+            ],
+          }),
+        }),
+      3,
+      500
+    )
 
     const data = await response.json()
     if (data.result) {

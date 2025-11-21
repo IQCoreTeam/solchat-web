@@ -11,9 +11,5 @@ export const MESSAGE_COLUMNS = [
   'text',
   'file',
   'sender',
-  'displayName',
-  'avatarHue',
   'timestamp',
-  'status',
-  'room',
 ] as const;

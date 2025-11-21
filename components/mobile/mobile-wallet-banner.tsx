@@ -1,24 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { getMobileBrowserInfo } from '@/lib/wallet/mobile-detection';
 
 export function MobileWalletBanner() {
-  const [mobileInfo, setMobileInfo] = useState<ReturnType<typeof getMobileBrowserInfo> | null>(
-    null
-  );
-  const [dismissed, setDismissed] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    setMobileInfo(getMobileBrowserInfo());
+  const mobileInfo = useMemo<ReturnType<typeof getMobileBrowserInfo> | null>(() => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    return getMobileBrowserInfo();
   }, []);
-
-  // Don't render until client-side
-  if (!mounted) {
-    return null;
-  }
+  const [dismissed, setDismissed] = useState(false);
 
   // Don't show if not mobile or already dismissed
   if (!mobileInfo?.isMobile || dismissed) {

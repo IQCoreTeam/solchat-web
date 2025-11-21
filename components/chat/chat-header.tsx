@@ -21,7 +21,6 @@ interface ChatHeaderProps {
     // Wallet & Auth
     walletAddress: string | null;
     isUserInitialized: boolean;
-    isUserInitializing: boolean;
     userInitError: Error | null;
     rootStatus: 'checking' | 'missing' | 'creating' | 'ready' | 'error';
     rootStatusText: string;
@@ -43,7 +42,6 @@ interface ChatHeaderProps {
 export function ChatHeader({
     walletAddress,
     isUserInitialized,
-    isUserInitializing,
     userInitError,
     rootStatus,
     rootStatusText,
@@ -68,14 +66,7 @@ export function ChatHeader({
                         <h1 className="text-xl md:text-2xl font-bold text-green-400 leading-tight uppercase">
                             {selectedRoom ? `ROOM: ${selectedRoom.name}` : 'ON-CHAIN ROOMS'}
                         </h1>
-                        {selectedRoom && (
-                            <>
-                                <span className="text-white/30 hidden md:inline">·</span>
-                                <p className="text-xs text-white/50 leading-tight hidden md:block ">
-                                    {shorten(selectedRoom.tableAddress)} <span className="text-white/30">/</span> {shorten(selectedRoom.instructionAddress)}
-                                </p>
-                            </>
-                        )}
+
                     </div>
                 </div>
 

@@ -16,6 +16,7 @@ interface MessageRow {
     file?: string;
     signature?: string;
     sender?: string;
+    senderAddress?: string;
     displayName?: string;
     avatarHue?: number;
     timestamp?: number;
@@ -57,7 +58,7 @@ export function MessageList({
             )}
             <div className="space-y-4">
                 {messages.map((message) => {
-                    const resolvedSender = message.sender || (message as any).senderAddress || '';
+                    const resolvedSender = message.sender || message.senderAddress || '';
                     const displayAddress = resolvedSender ? shorten(resolvedSender) : '';
                     const isOwn = !!(resolvedSender && viewerAddress && resolvedSender === viewerAddress);
                     return (

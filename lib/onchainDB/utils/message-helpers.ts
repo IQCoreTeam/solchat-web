@@ -66,19 +66,23 @@ export function rowToMessage(row: Row): MessageRow {
     crypto.randomUUID?.() ??
     Math.random().toString(36).slice(2, 10);
 
+  const sender =
+    record.sender != null
+      ? String(record.sender)
+      : (record as any).senderAddress
+        ? String((record as any).senderAddress)
+        : undefined;
+  const displayName = sender || undefined;
+  const avatarHue = sender ? deriveAvatarHue(sender) : undefined;
+
   return {
     id: String(idCandidate),
     text: record.text != null ? String(record.text) : '',
     file: record.file ? String(record.file) : '',
     signature: (record as any).__txSignature,
-    sender: record.sender ? String(record.sender) : (record as any).senderAddress ? String((record as any).senderAddress) : undefined,
-    displayName: record.displayName ? String(record.displayName) : undefined,
-    avatarHue:
-      record.avatarHue != null
-        ? Number(record.avatarHue)
-        : record.sender
-          ? deriveAvatarHue(String(record.sender))
-          : undefined,
+    sender,
+    displayName,
+    avatarHue,
     timestamp: record.timestamp != null ? Number(record.timestamp) : undefined,
     status: record.status ? (String(record.status) as MessageRow['status']) : 'confirmed',
     room: record.room ? String(record.room) : undefined,

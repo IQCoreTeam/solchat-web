@@ -5,7 +5,8 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import dayjs from 'dayjs';
 import { shorten, formatTimestamp, formatFullTimestamp } from '@/lib/utils/message-utils';
 import { AttachmentPreview } from '@/components/ui/attachment-preview';
 import { useUserProfile } from '@/components/users/use-user-profile';
@@ -57,7 +58,7 @@ export function MessageBubble({
     copiedMessageId,
     className = '',
 }: MessageBubbleProps) {
-    const [isAttachmentOpen, setIsAttachmentOpen] = useState(false);
+    const [isAttachmentOpen, setIsAttachmentOpen] = useState(true);
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [imageError, setImageError] = useState(false);
 
@@ -67,11 +68,26 @@ export function MessageBubble({
 
     // Derive values
     const profileName = profile?.name || displayName;
-    const bubbleName = profileName || (sender ? sender : senderAddress ? shorten(senderAddress) : 'Unknown');
+    const rawName = profileName || (sender ? sender : senderAddress ? shorten(senderAddress) : 'Unknown');
+    const bubbleName = rawName.length > 10 ? `${rawName.slice(0, 5)}…${rawName.slice(-5)}` : rawName;
     // Messages with signatures are always confirmed, regardless of status field
     // This handles old messages in blockchain that have status: 'pending'
     const isPending = !signature && status === 'pending';
     const formattedTime = showFullTimestamp ? formatFullTimestamp(timestamp) : formatTimestamp(timestamp);
+    const localizedTime = useMemo(() => {
+        if (!timestamp) return '';
+        const dateTime = dayjs(timestamp);
+        const today = dayjs();
+        const yesterday = dayjs().subtract(1, 'day');
+        const timeString = dateTime.format('hh:mm A');
+        if (dateTime.isSame(today, 'day')) {
+            return timeString;
+        }
+        if (dateTime.isSame(yesterday, 'day')) {
+            return `Yesterday · ${timeString}`;
+        }
+        return `${dateTime.format('YYYY. MM. DD. ') }${timeString}`;
+    }, [timestamp]);
     // Message bubble styling based on mode and state
     const bubbleStyle = isOwn
         ? isPending
@@ -135,7 +151,7 @@ export function MessageBubble({
                 >
                     {/* Sender info */}
                     <div className="mb-1 flex items-center gap-2 text-xs md:text-[11px] uppercase tracking-wide text-white/70">
-                        <span>{bubbleName}</span>
+                        <span title={rawName}>{bubbleName}</span>
 
                         {/* Copy address button (chat mode only) */}
                         {modalAddress && onCopyAddress && mode === 'chat' && (
@@ -183,8 +199,7 @@ export function MessageBubble({
                             <span className="text-white/40">{shorten(sender)}</span>
                         )}
 
-                        {/* Timestamp */}
-                        {formattedTime && <span className="text-white/40">· {formattedTime}</span>}
+
 
                         {/* Pending indicator */}
                         {isPending && mode === 'friend' && (
@@ -239,16 +254,25 @@ export function MessageBubble({
 
                     {/* Message metadata (chat mode only) */}
                     {mode === 'chat' && (
-                        <div className="mt-2 flex items-center gap-2 text-[11px] text-white/50">
-                            <span>#{id.slice(0, 6)}</span>
-                            <span>·</span>
-                            <span>
-                                {isPending
-                                    ? 'Processing…'
-                                    : signature
-                                        ? `Confirmed · ${shorten(signature)}`
-                                        : 'Confirmed'}
-                            </span>
+                        <div className="mt-2 flex items-center gap-4 justify-between text-[11px] text-white/50">
+                            {isPending ? (
+                                <span>Processing…</span>
+                            ) : signature ? (
+                                <a
+                                    href={`https://solscan.io/tx/${signature}${process.env.NEXT_PUBLIC_SOLANA_CLUSTER && process.env.NEXT_PUBLIC_SOLANA_CLUSTER !== 'mainnet-beta'
+                                        ? `?cluster=${process.env.NEXT_PUBLIC_SOLANA_CLUSTER}`
+                                        : ''}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="underline decoration-dotted underline-offset-2 hover:text-white/80 transition"
+                                    title="View on Solscan"
+                                >
+                                    Confirmed
+                                </a>
+                            ) : (
+                                <span>Confirmed</span>
+                            )}
+                            {localizedTime && <span> {localizedTime}</span>}
                         </div>
                     )}
 

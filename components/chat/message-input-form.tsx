@@ -6,6 +6,7 @@
 'use client';
 
 import { type FormEvent, type RefObject, type Dispatch, type SetStateAction } from 'react';
+import type { WriterCtx } from '@/lib/onchainDB/web/writer';
 import { shorten } from '@/lib/utils/message-utils';
 
 interface MessageInputFormProps {
@@ -20,7 +21,7 @@ interface MessageInputFormProps {
     onSubmit: (e: FormEvent) => void;
     canWrite: boolean;
     canSubmit: boolean;
-    writerCtx: any;
+    writerCtx: WriterCtx | null;
     isUserInitialized: boolean;
     userInitError: Error | null;
     inputRef: RefObject<HTMLInputElement | null>;
@@ -83,14 +84,16 @@ export function MessageInputForm({
                     </button>
                 </div>
                 <div className="flex flex-wrap items-center justify-between text-xs text-white/60">
-                    <button
-                        type="button"
-                        onClick={() => setShowAttachmentInput((prev) => !prev)}
-                        className="uppercase tracking-wide text-green-400 underline decoration-dotted underline-offset-2 hover:text-green-300"
-                        disabled={!canWrite}
-                    >
-                        {showAttachmentInput ? '[HIDE ATTACHMENT]' : '[ADD ATTACHMENT]'}
-                    </button>
+                    {!showAttachmentInput && (
+                        <button
+                            type="button"
+                            onClick={() => setShowAttachmentInput(true)}
+                            className="uppercase tracking-wide text-green-400 underline decoration-dotted underline-offset-2 hover:text-green-300"
+                            disabled={!canWrite}
+                        >
+                            [ADD ATTACHMENT]
+                        </button>
+                    )}
                     {attachmentUrl.trim() && !attachmentError && (
                         <span className="text-green-300">Attached: {shorten(attachmentUrl.trim(), 6)}</span>
                     )}

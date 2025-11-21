@@ -177,14 +177,12 @@ export async function reconstructMessageFromChainForTailTx(
                 break;
             }
 
-            console.log(`[reconstruct] Chunk ${iterations}: "${sendCode.chunk.substring(0, 20)}..."`);
             chunks.unshift(sendCode.chunk);
             currentTx = sendCode.previousTx;
         }while ( currentTx !== 'Genesis' )
 
         if (chunks.length > 0) {
             const message = chunks.join('');
-            console.log(`[reconstruct] Success: ${chunks.length} chunks, ${message.length} chars`);
             return `${message}`;
         }
 
@@ -235,14 +233,12 @@ export async function reconstructMessageFromChain(
         break;
       }
 
-      console.log(`[reconstruct] Chunk ${iterations}: "${sendCode.chunk.substring(0, 20)}..."`);
       chunks.unshift(sendCode.chunk);
       currentTx = sendCode.previousTx;
     }
 
     if (chunks.length > 0) {
       const message = chunks.join('');
-      console.log(`[reconstruct] Success: ${chunks.length} chunks, ${message.length} chars`);
       return `${handle}: ${message}`;
     }
 
