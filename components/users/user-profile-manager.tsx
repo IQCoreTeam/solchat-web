@@ -7,16 +7,18 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
 import { ProfileEditor } from './profile-editor';
 import { UserList } from './user-list';
 import { updateUserMetadataWeb, pdaUser, pdaRoot, pdaTable, createExtTableWeb, writeRowWeb, readRowsByTable } from '@/lib/onchainDB';
-import { getAnchorProvider, getProgram } from '@/lib/onchainDB/web/provider';
+import { getAnchorProvider, getProgram, type WalletAdapterLike } from '@/lib/onchainDB/web/provider';
 import idl from '@/lib/onchainDB/idl.json';
+import type { Idl } from '@coral-xyz/anchor';
 import { ROOT_ID } from '@/lib/onchainDB/constants';
 import { PublicKey } from '@solana/web3.js';
+import { sendAndConfirmTx } from '@/lib/onchainDB/utils/transaction-helpers';
 import type { AccountInfo } from '@solana/web3.js';
 import type { WriterCtx } from '@/lib/onchainDB/web/writer';
 import {codeInWithonlyTailTx, initializeUser, WalletExecutor} from '@/lib/iq/transaction';
@@ -34,6 +36,16 @@ export interface UserProfile {
 export function UserProfileManager() {
   const { connection } = useAppConnection();
   const wallet = useAppWallet();
+  const writerWallet = useMemo<WalletAdapterLike | null>(() => {
+    if (!wallet?.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) {
+      return null;
+    }
+    return {
+      publicKey: wallet.publicKey,
+      signTransaction: wallet.signTransaction.bind(wallet),
+      signAllTransactions: wallet.signAllTransactions.bind(wallet),
+    };
+  }, [wallet]);
   const { ready, authenticated, login } = usePrivy();
   const userAddress = wallet?.publicKey?.toBase58();
 
@@ -300,28 +312,20 @@ export function UserProfileManager() {
       const metadataBefore = extractUserMetadataString(await connection.getAccountInfo(userPda));
 
       // Create writer context
-      const writerCtx: WriterCtx<any> = {
-        wallet: wallet as any,
+      if (!writerWallet) {
+        throw new Error('Wallet not connected');
+      }
+      const writerCtx: WriterCtx = {
+        wallet: writerWallet,
         connection,
-        idl: idl as any,
+        idl: idl as Idl,
       };
 
       // Save the txID (90 bytes) in User account
       const { tx } = await updateUserMetadataWeb(writerCtx, ROOT_ID, txId);
 
       // Send transaction
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-      tx.recentBlockhash = blockhash;
-      tx.feePayer = wallet.publicKey!;
-
-      const signed = await wallet.signTransaction!(tx);
-      const signature = await connection.sendRawTransaction(signed.serialize());
-      await connection.confirmTransaction(
-        { signature, blockhash, lastValidBlockHeight },
-        'processed'
-      );
-
-      console.log('[UserProfile] Profile saved! Signature:', signature);
+      await sendAndConfirmTx(connection, wallet, tx, '[UserProfile] Profile saved!');
 
       const userAccountAfter = await connection.getAccountInfo(userPda);
       const metadataAfter = extractUserMetadataString(userAccountAfter);
@@ -348,18 +352,7 @@ export function UserProfileManager() {
               { idColumn: 'pubkeyString' }
             );
 
-            const { blockhash: newBlockhash, lastValidBlockHeight: newHeight } = await connection.getLatestBlockhash();
-            createTableTx.recentBlockhash = newBlockhash;
-            createTableTx.feePayer = wallet.publicKey!;
-
-            const signedTableTx = await wallet.signTransaction!(createTableTx);
-            const tableSig = await connection.sendRawTransaction(signedTableTx.serialize());
-            await connection.confirmTransaction(
-              { signature: tableSig, blockhash: newBlockhash, lastValidBlockHeight: newHeight },
-              'confirmed'
-            );
-
-            console.log('[UserProfile] global_user_list table created:', tableSig);
+            const tableSig = await sendAndConfirmTx(connection, wallet, createTableTx, '[UserProfile] global_user_list table created:');
             // Wait a bit for the table to be fully initialized
             await new Promise(resolve => setTimeout(resolve, 2000));
           } else {
@@ -373,18 +366,7 @@ export function UserProfileManager() {
 
           const { tx: rowTx } = await writeRowWeb(writerCtx, ROOT_ID, 'global_user_list', globalUserListRow);
 
-          const { blockhash: newBlockhash, lastValidBlockHeight: newHeight } = await connection.getLatestBlockhash();
-          rowTx.recentBlockhash = newBlockhash;
-          rowTx.feePayer = wallet.publicKey!;
-
-          const signedRowTx = await wallet.signTransaction!(rowTx);
-          const rowSig = await connection.sendRawTransaction(signedRowTx.serialize());
-          await connection.confirmTransaction(
-            { signature: rowSig, blockhash: newBlockhash, lastValidBlockHeight: newHeight },
-            'processed'
-          );
-
-          console.log('[UserProfile] User added to global_user_list! Signature:', rowSig);
+          const rowSig = await sendAndConfirmTx(connection, wallet, rowTx, '[UserProfile] User added to global_user_list! Signature:');
           setTimeout(() => loadAllProfiles(), 1000);
         } catch (listErr) {
           console.error('[UserProfile] Error managing global_user_list:', listErr);

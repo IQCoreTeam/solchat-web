@@ -6,23 +6,19 @@
 
 'use client';
 
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { initCacheManager } from '@/lib/cache';
 
 export function CacheProvider({ children }: { children: ReactNode }) {
-  const [initialized, setInitialized] = useState(false);
-
   useEffect(() => {
     // Initialize cache on mount
     initCacheManager()
       .then(() => {
         console.log('[CacheProvider] Cache initialized');
-        setInitialized(true);
       })
       .catch((error) => {
         console.error('[CacheProvider] Failed to initialize cache:', error);
         // App should still work without cache
-        setInitialized(true);
       });
   }, []);
 

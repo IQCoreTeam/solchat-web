@@ -3,11 +3,7 @@
  */
 
 import { Connection, Transaction } from '@solana/web3.js';
-
-export interface WalletLike {
-  publicKey: { toBase58: () => string } | null;
-  signTransaction: (tx: Transaction) => Promise<Transaction>;
-}
+import type { WalletAdapterLike } from '../web/provider';
 
 /**
  * Send and confirm a transaction
@@ -19,7 +15,7 @@ export interface WalletLike {
  */
 export async function sendAndConfirmTx(
   connection: Connection,
-  wallet: WalletLike,
+  wallet: WalletAdapterLike,
   tx: Transaction,
   successMsg?: string
 ): Promise<string> {
@@ -29,7 +25,7 @@ export async function sendAndConfirmTx(
 
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
   tx.recentBlockhash = blockhash;
-  tx.feePayer = wallet.publicKey as any;
+  tx.feePayer = wallet.publicKey ?? undefined;
 
   const signed = await wallet.signTransaction(tx);
   const serialized = signed.serialize();

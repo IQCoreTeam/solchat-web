@@ -2,19 +2,14 @@
 
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 export function WalletPrompt() {
   const { publicKey } = useWallet();
   const { setVisible } = useWalletModal();
-  const [mounted, setMounted] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted || publicKey || dismissed) {
+  if (publicKey || dismissed) {
     return null;
   }
 

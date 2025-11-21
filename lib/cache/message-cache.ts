@@ -54,14 +54,12 @@ export async function loadMessagesWithCache(
     ttl = DEFAULT_MESSAGE_TTL,
   } = options;
 
-  console.log(`[MessageCache] Loading messages for room: ${roomId.slice(0, 8)}...`);
 
   try {
     // Try to get from cache first
     const cached = await getCachedMessages(roomId);
 
     if (cached.length > 0) {
-      console.log(`[MessageCache] Cache hit: ${cached.length} messages`);
 
       // Start background refresh if enabled
       if (backgroundRefresh) {

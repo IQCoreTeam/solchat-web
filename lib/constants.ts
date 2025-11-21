@@ -1,5 +1,5 @@
 export const IQ_BACKEND_HOST = process.env.NEXT_PUBLIC_IQ_BACKEND_HOST || 'https://iq-testbackend-381334931214.asia-northeast3.run.app';
-export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'https://devnet.helius-rpc.com/?api-key=54b2d536-e4d8-4ccf-814e-0c38e242cd74';
+export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'https://devnet.helius-rpc.com/?api-key=061e5a39-abc0-439d-90ce-c4e2b3260dff';
 export const SOLANA_NETWORK = process.env.NEXT_PUBLIC_SOLANA_NETWORK || 'devnet';
 
 // Privy Configuration

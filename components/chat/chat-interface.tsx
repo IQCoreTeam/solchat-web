@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { PublicKey } from '@solana/web3.js';
 import { Terminal } from '@/components/ui/terminal';
 import { TerminalInput } from '@/components/ui/terminal-input';
@@ -62,10 +62,7 @@ export function ChatInterface() {
 
   const [handle, setHandle] = useState('User');
   const [encryptionKey, setEncryptionKey] = useState<string | null>(null);
-  const [messageColor, setMessageColor] = useState('#1e90ff');
   const [subscriptionId, setSubscriptionId] = useState<number | null>(null);
-  const [lastTxid, setLastTxid] = useState<string | null>(null);
-  const [isSending, setIsSending] = useState(false);
 
   const encryptionKeyRef = useRef(encryptionKey);
 
@@ -73,7 +70,25 @@ export function ChatInterface() {
     encryptionKeyRef.current = encryptionKey;
   }, [encryptionKey]);
 
+  const addToHistory = useCallback((message: string) => {
+    setHistory((prev) => [...prev, message]);
+  }, []);
+
+  const showMainMenu = useCallback(() => {
+    addToHistory('');
+    addToHistory('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    addToHistory('Main Menu:');
+    addToHistory('  1. Create/Search for a room');
+    addToHistory('  2. Enter friend\'s room (PDA)');
+    addToHistory('  3. Enter Playground');
+    addToHistory('');
+    addToHistory('Type /help for all commands');
+    addToHistory('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    addToHistory('');
+  }, [addToHistory]);
+
   // Show initialization status
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (isInitializing && wallet.publicKey) {
       addToHistory('[SYSTEM] Initializing your account for first-time use...');
@@ -82,9 +97,10 @@ export function ChatInterface() {
     } else if (isInitialized && wallet.publicKey) {
       addToHistory('[SYSTEM] ✓ Account ready');
     }
-  }, [isInitialized, isInitializing, initError]);
+  }, [isInitialized, isInitializing, initError, wallet.publicKey]);
 
   // Show main menu when idle
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (conversationState.phase === 'idle' && wallet.publicKey) {
       showMainMenu();
@@ -100,29 +116,11 @@ export function ChatInterface() {
     };
   }, [subscriptionId, connection]);
 
-  const addToHistory = (message: string) => {
-    setHistory((prev) => [...prev, message]);
-  };
-
-  const showMainMenu = () => {
-    addToHistory('');
-    addToHistory('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    addToHistory('Main Menu:');
-    addToHistory('  1. Create/Search for a room');
-    addToHistory('  2. Enter friend\'s room (PDA)');
-    addToHistory('  3. Enter Playground');
-    addToHistory('');
-    addToHistory('Type /help for all commands');
-    addToHistory('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    addToHistory('');
-  };
-
   const showHelp = () => {
     addToHistory('');
     addToHistory('Available Commands:');
     addToHistory('  /help              - Show this help message');
     addToHistory('  /clear             - Clear screen');
-    addToHistory('  /color [color]     - Change message color (blue/red/green)');
     addToHistory('  /pw [key]          - Set encryption key');
     addToHistory('  /pw off            - Disable encryption');
     addToHistory('  /balance           - Check wallet balance');
@@ -164,24 +162,6 @@ export function ChatInterface() {
         case '/clear':
           setHistory([]);
           showMainMenu();
-          return;
-
-        case '/color':
-          if (parts[1]) {
-            const colorMap: Record<string, string> = {
-              blue: '#1e90ff',
-              red: '#ff4444',
-              green: '#00ff00',
-              yellow: '#ffff00',
-            };
-            const newColor = colorMap[parts[1].toLowerCase()];
-            if (newColor) {
-              setMessageColor(newColor);
-              addToHistory(`[SYSTEM] Message color changed to ${parts[1]}`);
-            } else {
-              addToHistory('[ERROR] Unknown color. Available: blue, red, green, yellow');
-            }
-          }
           return;
 
         case '/pw':

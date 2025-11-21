@@ -10,7 +10,7 @@ const StyledButton = styled.button.attrs({ type: 'button' })`
   font-family: inherit;
   cursor: pointer;
   appearance: none;
-
+justify-content: space-between;
   background-color: black;
   color: #4ade80;
   border: 2px solid #16a34a;

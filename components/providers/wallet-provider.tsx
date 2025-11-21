@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useMemo, useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
-import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import {
   PhantomWalletAdapter,
@@ -11,21 +10,15 @@ import {
   LedgerWalletAdapter,
 } from '@solana/wallet-adapter-wallets';
 import { RPC_URL } from '@/lib/constants';
-import { isMobile, getMobileBrowserInfo } from '@/lib/wallet/mobile-detection';
+import { getMobileBrowserInfo } from '@/lib/wallet/mobile-detection';
 
 // Import wallet adapter CSS
 import '@solana/wallet-adapter-react-ui/styles.css';
 
 export function SolanaWalletProvider({ children }: { children: React.ReactNode }) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   // Configure supported wallets with mobile detection
   const wallets = useMemo(() => {
-    if (!mounted) return [];
+    if (typeof window === 'undefined') return [];
 
     const mobileInfo = getMobileBrowserInfo();
 
@@ -49,7 +42,7 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
       new TorusWalletAdapter(),
       new LedgerWalletAdapter(),
     ];
-  }, [mounted]);
+  }, []);
 
   // Always wrap in providers, even before mounted
   // This prevents WalletContext errors during hydration

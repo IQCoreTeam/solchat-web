@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Footer } from '@/components/layout/footer';
 import { ThemeProvider } from 'styled-components';
-import { Window, WindowHeader, WindowContent, Button, Panel, Frame, GroupBox, Fieldset, Monitor, Tooltip } from 'react95';
+import { Window, WindowHeader, WindowContent, Button, Panel, Monitor, Tooltip } from 'react95';
 import styled from 'styled-components';
 import matrix from 'react95/dist/themes/matrix';
 import toner from 'react95/dist/themes/toner';
@@ -200,15 +200,6 @@ const MonitorScreen = styled.div`
       background-position: 0 200px;
     }
   }
-`;
-
-const DescriptionText = styled.div`
-  font-size: 0.9rem;
-  text-align: center;
-  color: #10b981;
-  max-width: 450px;
-  line-height: 1.6;
-  letter-spacing: 0.02em;
 `;
 
 const ButtonContainer = styled.div`

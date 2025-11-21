@@ -88,10 +88,10 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
     try {
       const senderAddress = wallet.publicKey.toBase58();
       const dmSeed = deriveDmSeed(senderAddress, walletAddress);
-      const writerCtx: WriterCtx<any> = {
-        wallet: wallet as any,
+      const writerCtx: WriterCtx = {
+        wallet,
         connection,
-        idl: idl as any,
+        idl: idl as Idl,
       };
 
       const { tx } = await requestDmWeb(
@@ -140,10 +140,10 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
     setUnblockState('working');
 
     try {
-      const writerCtx: WriterCtx<any> = {
-        wallet: wallet as any,
+      const writerCtx: WriterCtx = {
+        wallet,
         connection,
-        idl: idl as any,
+        idl: idl as Idl,
       };
 
       const { tx } = await manageDmWeb(writerCtx, ROOT_ID, dmSeed, DM_STATUS.APPROVED);
