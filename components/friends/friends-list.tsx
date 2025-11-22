@@ -5,35 +5,35 @@
 
 'use client';
 
-import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {PublicKey} from '@solana/web3.js';
-import type {FormEvent} from 'react';
-import {useRouter, useSearchParams} from 'next/navigation';
-import {useAppConnection, useAppWallet} from '@/lib/wallet/use-app-wallet';
-import {useFriends} from '@/lib/friends/use-friends';
-import {FriendCard} from './friend-card';
-import {AddFriendForm} from './add-friend-form';
-import {configs, requestDmWeb, manageDmWeb, writeDmRowWeb, type WriterCtx} from '@/lib/onchainDB';
-import {readRowsByDmSeed} from '@/lib/onchainDB/web/cached-reader-integration';
-import {deriveDmSeed, shortenAddress} from '@/lib/friends/utils';
-import {DM_STATUS} from '@/lib/friends/types';
-import type {Friend} from '@/lib/friends/types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PublicKey } from '@solana/web3.js';
+import type { FormEvent } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
+import { useFriends } from '@/lib/friends/use-friends';
+import { FriendCard } from './friend-card';
+import { AddFriendForm } from './add-friend-form';
+import { configs, requestDmWeb, manageDmWeb, writeDmRowWeb, type WriterCtx } from '@/lib/onchainDB';
+import { readRowsByDmSeed, invalidateDmCache } from '@/lib/onchainDB/web/cached-reader-integration';
+import { deriveDmSeed, shortenAddress } from '@/lib/friends/utils';
+import { DM_STATUS } from '@/lib/friends/types';
+import type { Friend } from '@/lib/friends/types';
 import idl from '@/lib/onchainDB/idl.json';
-import {Idl} from '@coral-xyz/anchor';
-import type {WalletAdapterLike} from '@/lib/onchainDB/web/provider';
-import {Window, WindowHeader, WindowContent, Button, Cutout} from 'react95';
-import {ThemeProvider} from 'styled-components';
-import {MessageBubble} from '@/components/ui/message-bubble';
-import {MessageInputForm} from '@/components/chat/message-input-form';
-import {normalizeFileUrl} from '@/lib/utils/message-utils';
-import {GlobalStyles, darkGreenTheme} from './theme';
-import {ROOT_ID, MESSAGE_COLUMNS} from '@/lib/onchainDB/constants';
-import {sendAndConfirmTx} from '@/lib/onchainDB/utils/transaction-helpers';
-import {rowToMessage, type MessageRow} from '@/lib/onchainDB/utils/message-helpers';
-import {mergeMessages, type MessagePayload} from '@/lib/onchainDB/shared/message';
-import {usePendingMessages} from '@/lib/onchainDB/shared/use-pending-messages';
-import {useOnLogs} from '@/lib/onchainDB/shared/useOnLogs';
-import {useMessageLoader, type LoaderOptions} from '@/lib/onchainDB/shared/useMessageLoader';
+import { Idl } from '@coral-xyz/anchor';
+import type { WalletAdapterLike } from '@/lib/onchainDB/web/provider';
+import { Window, WindowHeader, WindowContent, Button, Cutout } from 'react95';
+import { ThemeProvider } from 'styled-components';
+import { MessageBubble } from '@/components/ui/message-bubble';
+import { MessageInputForm } from '@/components/chat/message-input-form';
+import { normalizeFileUrl } from '@/lib/utils/message-utils';
+import { GlobalStyles, darkGreenTheme } from './theme';
+import { ROOT_ID, MESSAGE_COLUMNS } from '@/lib/onchainDB/constants';
+import { sendAndConfirmTx } from '@/lib/onchainDB/utils/transaction-helpers';
+import { rowToMessage, type MessageRow } from '@/lib/onchainDB/utils/message-helpers';
+import { mergeMessages, type MessagePayload } from '@/lib/onchainDB/shared/message';
+import { usePendingMessages } from '@/lib/onchainDB/shared/use-pending-messages';
+import { useOnLogs } from '@/lib/onchainDB/shared/useOnLogs';
+import { useMessageLoader, type LoaderOptions } from '@/lib/onchainDB/shared/useMessageLoader';
 
 type Tab = 'all' | 'pending' | 'blocked';
 type ProgramIdl = Idl & { address?: string };
@@ -43,13 +43,13 @@ export function FriendsList() {
     /* --------------------------------------------------------------------------
      * Context & External Hooks
      * -------------------------------------------------------------------------- */
-    const {connection} = useAppConnection();
+    const { connection } = useAppConnection();
     const wallet = useAppWallet();
     const router = useRouter();
     const searchParams = useSearchParams();
     const dmQueryAddress = searchParams?.get('dm');
     const userAddress = wallet?.publicKey?.toBase58();
-    const {friends, loading, error: friendsError, refetch} = useFriends({
+    const { friends, loading, error: friendsError, refetch } = useFriends({
         connection,
         userAddress: userAddress || '',
         programId: configs.programId,
@@ -172,31 +172,33 @@ export function FriendsList() {
     /* --------------------------------------------------------------------------
      * Data Loading Helpers
      * -------------------------------------------------------------------------- */
+    const fetcher = useCallback(async (friend: Friend) => {
+        if (!userAddress) return [];
+        const rows = await readRowsByDmSeed({
+            connection,
+            rootId: ROOT_ID,
+            userPublicKey: userAddress,
+            idl: FRIENDS_IDL,
+            dmSeed: friend.dmSeed,
+            maxTx: 20,
+        });
+        return rows
+            .map((row) => rowToMessage(row))
+            .filter((message) => message.text || message.file);
+    }, [connection, userAddress]);
+
     const {
         loadMessages: loadDmMessages,
         messagesLoading: chatLoading,
         messagesError: chatLoaderError,
         showLoadingSpinner: showChatLoadingSpinner,
     } = useMessageLoader<[Friend]>({
-        fetcher: async (friend) => {
-            if (!userAddress) return [];
-            const rows = await readRowsByDmSeed({
-                connection,
-                rootId: ROOT_ID,
-                userPublicKey: userAddress,
-                idl: FRIENDS_IDL,
-                dmSeed: friend.dmSeed,
-                maxTx: 100,
-            });
-            return rows
-                .map((row) => rowToMessage(row))
-                .filter((message) => message.text || message.file);
-        },
+        fetcher,
     });
     const chatError = chatActionError ?? chatLoaderError;
 
     const scrollChatToBottom = useCallback(() => {
-        chatMessagesEndRef.current?.scrollIntoView({behavior: 'instant'});
+        chatMessagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
     }, []);
 
     const loadChatHistory = useCallback(
@@ -223,10 +225,33 @@ export function FriendsList() {
         }, 0);
     }, [loadChatHistory, scrollChatToBottom]);
 
-    const handleDmLogs = useCallback(async () => {
+    const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const handleDmLogs = useCallback(() => {
         if (!chatFriend) return;
-        await loadChatHistory(chatFriend, {skipLoadingState: true});
+
+        if (refreshTimeoutRef.current) {
+            clearTimeout(refreshTimeoutRef.current);
+        }
+
+        refreshTimeoutRef.current = setTimeout(async () => {
+            try {
+                await invalidateDmCache(chatFriend.dmSeed);
+                await loadChatHistory(chatFriend, { skipLoadingState: true });
+            } catch (error) {
+                console.error('[FriendsList] Failed to refresh messages after logs:', error);
+            }
+        }, 2000);
     }, [chatFriend, loadChatHistory]);
+
+    // Cleanup timeout on unmount
+    useEffect(() => {
+        return () => {
+            if (refreshTimeoutRef.current) {
+                clearTimeout(refreshTimeoutRef.current);
+            }
+        };
+    }, []);
 
     /* --------------------------------------------------------------------------
      * Effects
@@ -241,7 +266,7 @@ export function FriendsList() {
         const params = new URLSearchParams(searchParams?.toString());
         params.delete('dm');
         const query = params.toString();
-        router.replace(query ? `/friends?${query}` : '/friends', {scroll: false});
+        router.replace(query ? `/friends?${query}` : '/friends', { scroll: false });
     }, [dmQueryAddress, friends, handleOpenChat, router, searchParams]);
 
     useEffect(() => {
@@ -294,7 +319,7 @@ export function FriendsList() {
         }
 
         try {
-            const {tx} = await requestDmWeb(
+            const { tx } = await requestDmWeb(
                 writerCtx,
                 ROOT_ID,
                 dmSeed,
@@ -302,7 +327,7 @@ export function FriendsList() {
                 [...MESSAGE_COLUMNS],
                 friendAddress,
                 {},
-                {idColumn: 'id'}
+                { idColumn: 'id' }
             );
             await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] Friend request sent:');
             await refetch();
@@ -341,7 +366,7 @@ export function FriendsList() {
         setError(null);
 
         try {
-            const {tx, dmTable} = await manageDmWeb(writerCtx, ROOT_ID, friend.dmSeed, DM_STATUS.APPROVED);
+            const { tx, dmTable } = await manageDmWeb(writerCtx, ROOT_ID, friend.dmSeed, DM_STATUS.APPROVED);
 
             console.log('[FriendsList] DMTable PDA:', dmTable);
             console.log('[FriendsList] Expected:', friend.tableAddress);
@@ -367,7 +392,7 @@ export function FriendsList() {
         setBlockConfirmOpen(false);
 
         try {
-            const {tx} = await manageDmWeb(writerCtx, ROOT_ID, friendToBlock.dmSeed, DM_STATUS.BLOCKED);
+            const { tx } = await manageDmWeb(writerCtx, ROOT_ID, friendToBlock.dmSeed, DM_STATUS.BLOCKED);
 
             await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] Friend blocked:');
             await refetch();
@@ -386,7 +411,7 @@ export function FriendsList() {
         setError(null);
 
         try {
-            const {tx} = await manageDmWeb(writerCtx, ROOT_ID, friend.dmSeed, DM_STATUS.APPROVED);
+            const { tx } = await manageDmWeb(writerCtx, ROOT_ID, friend.dmSeed, DM_STATUS.APPROVED);
 
             await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] Friend unblocked:');
             await refetch();
@@ -440,9 +465,9 @@ export function FriendsList() {
         addChatPendingMessage(payload);
 
         try {
-            const {tx} = await writeDmRowWeb(writerCtx, ROOT_ID, chatFriend.dmSeed, JSON.stringify(payload));
+            const { tx } = await writeDmRowWeb(writerCtx, ROOT_ID, chatFriend.dmSeed, JSON.stringify(payload));
             await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] DM sent:');
-            await loadChatHistory(chatFriend, {skipLoadingState: true});
+            await loadChatHistory(chatFriend, { skipLoadingState: true });
         } catch (err) {
             removeChatPendingMessage(messageId);
             const message = err instanceof Error ? err.message : 'Failed to send DM';
@@ -474,15 +499,15 @@ export function FriendsList() {
 
     return (
         <ThemeProvider theme={darkGreenTheme}>
-            <GlobalStyles/>
+            <GlobalStyles />
             <div className="flex-1 p-4 md:p-6 max-w-4xl mx-auto w-full">
-                <Window style={{width: '100%', marginBottom: '20px'}}>
+                <Window style={{ width: '100%', marginBottom: '20px' }}>
                     <WindowContent>
-                        <div style={{padding: '8px'}}>
+                        <div style={{ padding: '8px' }}>
                             {/* Error Banner */}
                             {(error || friendsError) && (
-                                <Cutout style={{padding: '8px', marginBottom: '16px', background: '#330000'}}>
-                                    <p style={{color: '#ff0000', fontSize: '12px',}}>
+                                <Cutout style={{ padding: '8px', marginBottom: '16px', background: '#330000' }}>
+                                    <p style={{ color: '#ff0000', fontSize: '12px', }}>
                                         ERROR: {error || friendsError}
                                     </p>
                                 </Cutout>
@@ -497,12 +522,12 @@ export function FriendsList() {
                                 gap: '12px',
                                 flexWrap: 'wrap'
                             }}>
-                                <div style={{display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                     {([
-                                        {value: 'all', label: '[FRIENDS]'},
-                                        {value: 'pending', label: '[REQUESTS]'},
-                                        {value: 'blocked', label: '[BLOCKED]'}
-                                    ] as const).map(({value, label}) => (
+                                        { value: 'all', label: '[FRIENDS]' },
+                                        { value: 'pending', label: '[REQUESTS]' },
+                                        { value: 'blocked', label: '[BLOCKED]' }
+                                    ] as const).map(({ value, label }) => (
                                         <button
                                             key={value}
                                             type="button"
@@ -529,24 +554,24 @@ export function FriendsList() {
                                     onClick={() => setAddFriendModalOpen(true)}
                                     disabled={!userAddress}
                                     primary
-                                    style={{fontSize: '11px', marginLeft: '12px'}}
+                                    style={{ fontSize: '11px', marginLeft: '12px' }}
                                 >
                                     [ADD FRIEND]
                                 </Button>
                             </div>
 
-                            <div style={{marginTop: '16px', minHeight: '300px'}}>
+                            <div style={{ marginTop: '16px', minHeight: '300px' }}>
                                 {/* Loading state */}
                                 {loading && (
-                                    <div style={{textAlign: 'center', padding: '48px 0'}}>
-                                        <p style={{color: '#00ff00',}}>[LOADING...]</p>
+                                    <div style={{ textAlign: 'center', padding: '48px 0' }}>
+                                        <p style={{ color: '#00ff00', }}>[LOADING...]</p>
                                     </div>
                                 )}
 
                                 {/* Empty state */}
                                 {!loading && filteredFriends.length === 0 && (
-                                    <Cutout style={{padding: '48px 16px', textAlign: 'center'}}>
-                                        <p style={{color: '#00ff00', fontSize: '12px'}}>
+                                    <Cutout style={{ padding: '48px 16px', textAlign: 'center' }}>
+                                        <p style={{ color: '#00ff00', fontSize: '12px' }}>
                                             {activeTab === 'all' && '> NO FRIENDS YET. ADD SOMEONE ABOVE!'}
                                             {activeTab === 'pending' && '> NO PENDING REQUESTS'}
                                             {activeTab === 'blocked' && '> NO BLOCKED USERS'}
@@ -556,7 +581,7 @@ export function FriendsList() {
 
                                 {/* Friends list */}
                                 {!loading && filteredFriends.length > 0 && (
-                                    <div style={{display: 'grid', gap: '12px'}}>
+                                    <div style={{ display: 'grid', gap: '12px' }}>
                                         {filteredFriends.map((friend) => (
                                             <FriendCard
                                                 key={friend.tableAddress}
@@ -585,7 +610,7 @@ export function FriendsList() {
                             <h3 className="text-green-400 font-bold">
                                 DM with {shortenAddress(chatFriend.address)}
                             </h3>
-                            <Button onClick={closeChatModal} size="sm" style={{fontSize: '11px'}}>
+                            <Button onClick={closeChatModal} size="sm" style={{ fontSize: '11px' }}>
                                 X
                             </Button>
                         </div>
@@ -615,7 +640,7 @@ export function FriendsList() {
                             {showChatLoadingSpinner && orderedChatMessages.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center h-full px-8">
                                     <p className="text-green-400 text-sm mb-4">Loading messages...</p>
-                                    <div style={{width: '100%', maxWidth: '400px'}}>
+                                    <div style={{ width: '100%', maxWidth: '400px' }}>
                                         <div style={{
                                             height: '24px',
                                             background: '#000000',
@@ -668,7 +693,7 @@ export function FriendsList() {
                                     />
                                 );
                             })}
-                            <div ref={chatMessagesEndRef}/>
+                            <div ref={chatMessagesEndRef} />
                         </div>
 
                         {/* Input form */}
@@ -698,16 +723,16 @@ export function FriendsList() {
             {/* Add Friend Modal */}
             {addFriendModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6">
-                    <Window style={{width: '100%', maxWidth: '500px'}}>
-                        <WindowHeader style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+                    <Window style={{ width: '100%', maxWidth: '500px' }}>
+                        <WindowHeader style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <span>[ADD FRIEND]</span>
                             <Button onClick={() => setAddFriendModalOpen(false)} size="sm"
-                                    style={{padding: '2px 8px', fontSize: '10px'}}>
+                                style={{ padding: '2px 8px', fontSize: '10px' }}>
                                 X
                             </Button>
                         </WindowHeader>
                         <WindowContent>
-                            <AddFriendForm onSubmit={handleAddFriend} disabled={!userAddress}/>
+                            <AddFriendForm onSubmit={handleAddFriend} disabled={!userAddress} />
                         </WindowContent>
                     </Window>
                 </div>
@@ -716,16 +741,16 @@ export function FriendsList() {
             {/* Block Confirmation Modal */}
             {blockConfirmOpen && friendToBlock && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6">
-                    <Window style={{width: '100%', maxWidth: '400px'}}>
+                    <Window style={{ width: '100%', maxWidth: '400px' }}>
                         <WindowHeader>
                             <span>[CONFIRM BLOCK]</span>
                         </WindowHeader>
                         <WindowContent>
-                            <div style={{padding: '16px'}}>
-                                <p style={{color: '#00ff00', fontSize: '12px', marginBottom: '16px'}}>
+                            <div style={{ padding: '16px' }}>
+                                <p style={{ color: '#00ff00', fontSize: '12px', marginBottom: '16px' }}>
                                     Are you sure you want to block {shortenAddress(friendToBlock.address, 6)}?
                                 </p>
-                                <div style={{display: 'flex', gap: '8px', justifyContent: 'flex-end'}}>
+                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                                     <Button onClick={() => {
                                         setBlockConfirmOpen(false);
                                         setFriendToBlock(null);

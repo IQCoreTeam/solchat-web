@@ -168,6 +168,7 @@ export function ChatClient() {
             userPublicKey: walletAddress,
             tableName: room.seedHex,
             idl: PROGRAM_IDL,
+            maxTx: 50,
         });
         return rows
             .map((row: Row) => rowToMessage(row))
