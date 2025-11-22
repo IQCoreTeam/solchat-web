@@ -88,7 +88,7 @@ export function Nav({ onOpenDm }: NavProps) {
       <div className="flex flex-col gap-3 md:hidden">
         <div className="flex items-center justify-between gap-3">
           <Link href="/" className="flex items-center gap-2 text-green-400 text-xl   ">
-            <Image src="/iq_logo.svg" alt="IQ Labs" width={32} height={32} />
+            <Image src="/iq_logo.svg" alt="IQ Labs" width={32} height={32} style={{ width: 'auto', height: '32px' }} />
             <LogoText>SOLCHAT</LogoText>
           </Link>
           <WalletButton />
@@ -141,7 +141,7 @@ export function Nav({ onOpenDm }: NavProps) {
       <div className="hidden md:flex items-center justify-between gap-4 w-full">
         <div className="flex items-center gap-8">
           <Link href="/" className="flex items-center gap-3 text-green-400 text-2xl   ">
-            <Image src="/iq_logo.svg" alt="IQ Labs" width={40} height={40} />
+            <Image src="/iq_logo.svg" alt="IQ Labs" width={40} height={40} style={{ width: 'auto', height: '40px' }} />
             <LogoText>SOLCHAT</LogoText>
           </Link>
 
