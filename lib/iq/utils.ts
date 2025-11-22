@@ -23,7 +23,12 @@ export function reconstructData(chunks: string[]): string {
  */
 export function formatTimestamp(timestamp: number): string {
   const date = new Date(timestamp * 1000);
-  return date.toLocaleTimeString();
+  return date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'UTC',
+  });
 }
 
 /**

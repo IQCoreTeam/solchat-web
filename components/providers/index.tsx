@@ -2,16 +2,16 @@
 
 import { ReactNode } from 'react';
 import { ReactQueryProvider } from './query-provider';
-import { ThemeProvider } from './theme-provider';
+import {  ThemeProvider } from 'styled-components';
 import { PrivyProvider } from './privy-provider';
 import { SolanaWalletProvider } from './wallet-provider';
 import { CacheProvider } from './cache-provider';
 import { StyledComponentsRegistry } from './styled-components-registry';
-
+import solchatTheme from '../styles/solchatTheme'
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <StyledComponentsRegistry>
-      <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+      <ThemeProvider theme={solchatTheme}>
         <CacheProvider>
           <SolanaWalletProvider>
             <PrivyProvider>

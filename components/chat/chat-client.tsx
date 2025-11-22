@@ -489,7 +489,7 @@ export function ChatClient() {
     const canSubmitMessage = canWrite && !!messageInput.trim() && !!selectedRoom;
 
     return (
-        <div className="flex h-full flex-col bg-black text-white">
+        <div className="flex h-full flex-col">
             <ChatHeader
                 walletAddress={wallet.publicKey?.toBase58() || null}
                 isUserInitialized={isUserInitialized}

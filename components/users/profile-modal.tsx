@@ -18,6 +18,7 @@ import { ROOT_ID, MESSAGE_COLUMNS } from '@/lib/onchainDB/constants';
 import idl from '@/lib/onchainDB/idl.json';
 import { sendAndConfirmTx } from '@/lib/onchainDB/utils/transaction-helpers';
 import { useDmRelationship } from './use-dm-relationship';
+import {Idl} from "@coral-xyz/anchor";
 
 interface ProfileModalProps {
   walletAddress: string;
@@ -234,7 +235,7 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
                 WALLET ADDRESS
               </div>
               <div className="flex items-center justify-between gap-2">
-                <div className="text-white/60 text-xs font-mono break-all">
+                <div className="text-white/60 text-xs  break-all">
                   {shorten(walletAddress, 8)}
                 </div>
                 <button

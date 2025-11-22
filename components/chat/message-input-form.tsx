@@ -45,7 +45,7 @@ export function MessageInputForm({
     inputRef,
 }: MessageInputFormProps) {
     return (
-        <form onSubmit={onSubmit} className="border-t border-white/10 bg-black/40 px-3 py-3 md:px-6 md:py-4">
+        <form onSubmit={onSubmit} className="border-t px-3 py-3 md:px-6 md:py-4">
             <div className="flex flex-col gap-2 md:gap-3">
                 <div className="flex gap-2 md:gap-3">
                     <input
@@ -54,18 +54,13 @@ export function MessageInputForm({
                         value={messageInput}
                         onChange={(event) => setMessageInput(event.target.value)}
                         placeholder="Type your message"
-                        className="flex-1 rounded bg-white/10 px-4 py-2 text-sm text-white placeholder-white/50 outline-none focus:ring-2"
-                        style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
+                        className="flex-1 rounded px-4 py-2 text-sm outline-none focus:ring-2"
                         disabled={!canWrite}
                     />
                     <button
                         type="submit"
                         disabled={!canSubmit}
-                        className="rounded px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/60 whitespace-nowrap"
-                        style={{
-                            backgroundColor: canSubmit ? 'rgb(65, 255, 0)' : undefined,
-                            color: canSubmit ? 'rgb(0, 33, 0)' : undefined,
-                        }}
+                        className="rounded px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed whitespace-nowrap"
                         onMouseEnter={(e) => {
                             if (canSubmit) {
                                 e.currentTarget.style.opacity = '0.85';
@@ -83,19 +78,19 @@ export function MessageInputForm({
                         </span>
                     </button>
                 </div>
-                <div className="flex flex-wrap items-center justify-between text-xs text-white/60">
+                <div className="flex flex-wrap items-center justify-between text-xs">
                     {!showAttachmentInput && (
                         <button
                             type="button"
                             onClick={() => setShowAttachmentInput(true)}
-                            className="uppercase tracking-wide text-green-400 underline decoration-dotted underline-offset-2 hover:text-green-300"
+                            className="uppercase tracking-wide underline decoration-dotted underline-offset-2"
                             disabled={!canWrite}
                         >
                             [ADD ATTACHMENT]
                         </button>
                     )}
                     {attachmentUrl.trim() && !attachmentError && (
-                        <span className="text-green-300">Attached: {shorten(attachmentUrl.trim(), 6)}</span>
+                        <span>Attached: {shorten(attachmentUrl.trim(), 6)}</span>
                     )}
                 </div>
                 {showAttachmentInput && (
@@ -109,8 +104,7 @@ export function MessageInputForm({
                                     setAttachmentError(null);
                                 }}
                                 placeholder="https://example.com/asset.png"
-                                className="flex-1 rounded bg-white/5 px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2"
-                                style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
+                                className="flex-1 rounded px-3 py-2 text-sm outline-none focus:ring-2"
                                 disabled={!canWrite}
                             />
                             {attachmentUrl && (
@@ -120,29 +114,29 @@ export function MessageInputForm({
                                         setAttachmentUrl('');
                                         setAttachmentError(null);
                                     }}
-                                    className="rounded border border-white/20 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:border-white/40"
+                                    className="rounded border px-3 py-2 text-xs font-semibold uppercase tracking-wide transition"
                                 >
                                     Clear
                                 </button>
                             )}
                         </div>
-                        <p className="text-[11px] text-white/40">
+                        <p className="text-[11px]">
                             Paste a publicly accessible https:// link to media or files. Recipients load attachments on demand.
                         </p>
                     </div>
                 )}
-                {attachmentError && <p className="text-xs text-red-400">{attachmentError}</p>}
+                {attachmentError && <p className="text-xs">{attachmentError}</p>}
             </div>
             {!writerCtx && (
-                <p className="mt-2 text-xs text-orange-300">Connect your wallet to send messages.</p>
+                <p className="mt-2 text-xs">Connect your wallet to send messages.</p>
             )}
             {writerCtx && !isUserInitialized && !userInitError && (
-                <p className="mt-2 text-xs text-yellow-300">
+                <p className="mt-2 text-xs">
                     Waiting for your on-chain account initialization…
                 </p>
             )}
             {userInitError && (
-                <p className="mt-2 text-xs text-red-400">
+                <p className="mt-2 text-xs">
                     Account initialization failed. Please retry above.
                 </p>
             )}
