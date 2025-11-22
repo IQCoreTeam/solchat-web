@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {initializeRootWeb, pdaRoot} from '../index';
 import { pdaTxRef } from '../provider/pda.provider';
 import idl from '@/lib/onchainDB/idl.json';
@@ -19,9 +19,31 @@ export function useUserInit(rootIdOverride?: BytesLike) {
   const [error, setError] = useState<Error | null>(null);
 
   const derivedRootId = rootIdOverride ?? configs.defaultRootId;
+  const publicKeyRef = useRef(publicKey);
+  const signerRef = useRef<typeof signTransaction | null>(signTransaction ?? null);
+  const signerAllRef = useRef<typeof signAllTransactions | null>(signAllTransactions ?? null);
+  const publicKeyBase58 = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
+  const hasSigner = Boolean(signTransaction);
+  const hasAllSigners = Boolean(signAllTransactions);
+
+  useEffect(() => {
+    publicKeyRef.current = publicKey;
+  }, [publicKey]);
+
+  useEffect(() => {
+    signerRef.current = signTransaction ?? null;
+  }, [signTransaction]);
+
+  useEffect(() => {
+    signerAllRef.current = signAllTransactions ?? null;
+  }, [signAllTransactions]);
 
   const checkAndInitialize = useCallback(async () => {
-    if (!publicKey || !connected || !derivedRootId || !signTransaction) {
+    const currentPublicKey = publicKeyRef.current;
+    const signer = signerRef.current;
+    const signerAll = signerAllRef.current;
+
+    if (!currentPublicKey || !connected || !derivedRootId || !signer) {
       console.log('useUserInit: wallet not ready');
       setIsInitialized(false);
       return;
@@ -52,9 +74,9 @@ export function useUserInit(rootIdOverride?: BytesLike) {
         {
           connection,
           wallet: {
-            publicKey,
-            signTransaction,
-            signAllTransactions,
+            publicKey: currentPublicKey,
+            signTransaction: signer,
+            signAllTransactions: signerAll ?? undefined,
           },
           idl: idl as Idl,
         },
@@ -64,9 +86,9 @@ export function useUserInit(rootIdOverride?: BytesLike) {
       console.log('useUserInit: Transaction built, requesting signature...');
       const latestBlockhash = await connection.getLatestBlockhash('processed');
       tx.recentBlockhash = latestBlockhash.blockhash;
-      tx.feePayer = publicKey;
+      tx.feePayer = currentPublicKey;
 
-      const signedTx = await signTransaction(tx);
+      const signedTx = await signer(tx);
       const signature = await connection.sendRawTransaction(signedTx.serialize());
 
       console.log('useUserInit: Transaction sent:', signature);
@@ -98,16 +120,16 @@ export function useUserInit(rootIdOverride?: BytesLike) {
     } finally {
       setIsInitializing(false);
     }
-  }, [connection, derivedRootId, publicKey, connected, signTransaction, signAllTransactions]);
+  }, [connection, derivedRootId, connected]);
 
   useEffect(() => {
-    if (!publicKey || !connected || !signTransaction || !derivedRootId) {
+    if (!publicKeyBase58 || !connected || !hasSigner || !derivedRootId || !hasAllSigners) {
       setIsInitialized(false);
       return;
     }
 
     checkAndInitialize();
-  }, [checkAndInitialize, derivedRootId, connected, publicKey, signTransaction]);
+  }, [checkAndInitialize, derivedRootId, connected, publicKeyBase58, hasSigner, hasAllSigners]);
 
   return {
     isInitialized,
