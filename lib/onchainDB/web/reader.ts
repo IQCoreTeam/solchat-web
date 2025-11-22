@@ -433,7 +433,6 @@ export async function readRowsByTable(
   const endpoint = params.endpoint || configs.network
   const connection = params.connection || new Connection(endpoint, 'processed')
   const programIdStr = params.programId || configs.programId
-  const user = new PublicKey(params.userPublicKey)
   const rootIdBytes = rootIdToBytes(params.rootId)
   const idl = params.idl
   const tableName = params.tableName
@@ -702,7 +701,6 @@ export async function readRowsByDmSeed(
   const endpoint = params.endpoint || configs.network
   const connection = params.connection || new Connection(endpoint, 'processed')
   const programIdStr = params.programId || configs.programId
-  const user = new PublicKey(params.userPublicKey)
   const rootIdBytes = rootIdToBytes(params.rootId)
   const idl = params.idl
   const dmSeedBytes = toBytes(params.dmSeed)
@@ -823,7 +821,6 @@ export async function readTableMeta(
 ): Promise<{ name: string; columns: string[]; idColumn?: string | number | null; extTableName?: string | null; extKeys?: string[]; tablePda: string; instPda: string | null }> {
   const endpoint = params.endpoint || configs.network
   const connection = params.connection || new Connection(endpoint, 'processed')
-  const user = new PublicKey(params.userPublicKey)
   const rootIdBytes = rootIdToBytes(params.rootId)
   const idl = params.idl
   const tableName = params.tableName
@@ -887,7 +884,6 @@ export async function readDmTableMeta(
 ): Promise<{ name: string; columns: string[]; idColumn?: string | number | null; extKeys?: string[]; tablePda: string; instPda: string | null; partyA?: string | null; partyB?: string | null }> {
   const endpoint = params.endpoint || configs.network
   const connection = params.connection || new Connection(endpoint, 'processed')
-  const user = new PublicKey(params.userPublicKey)
   const rootIdBytes = rootIdToBytes(params.rootId)
   const idl = params.idl
 

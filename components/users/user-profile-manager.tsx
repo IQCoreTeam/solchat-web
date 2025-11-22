@@ -171,10 +171,14 @@ export function UserProfileManager() {
       console.log('[UserProfile] Fetching global_user_list admin table...');
 
       // Fetch all rows from global_user_list table
+      if (!userAddress) {
+        setAllProfiles([]);
+        return;
+      }
       const rows = await readRowsByTable({
         connection,
         rootId: ROOT_ID,
-        userPublicKey: userAddress || '',
+        userPublicKey: userAddress,
         tableName: 'global_user_list',
         idl: idl as any,
       });

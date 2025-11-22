@@ -179,10 +179,11 @@ export function FriendsList() {
         showLoadingSpinner: showChatLoadingSpinner,
     } = useMessageLoader<[Friend]>({
         fetcher: async (friend) => {
+            if (!userAddress) return [];
             const rows = await readRowsByDmSeed({
                 connection,
                 rootId: ROOT_ID,
-                userPublicKey: userAddress || friend.address,
+                userPublicKey: userAddress,
                 idl: FRIENDS_IDL,
                 dmSeed: friend.dmSeed,
                 maxTx: 100,
