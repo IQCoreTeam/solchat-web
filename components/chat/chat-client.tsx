@@ -301,9 +301,18 @@ export function ChatClient() {
     /* --------------------------------------------------------------------------
      * Effects: Room & Message Loading
      * -------------------------------------------------------------------------- */
+    const lastRootAccountRef = useRef<AccountInfo<Buffer> | null>(null);
     useEffect(() => {
+        if (rootStatus !== 'ready' || !rootAccount) {
+            lastRootAccountRef.current = null;
+            return;
+        }
+        if (lastRootAccountRef.current === rootAccount) {
+            return;
+        }
+        lastRootAccountRef.current = rootAccount;
         loadRooms();
-    }, [loadRooms]);
+    }, [rootStatus, rootAccount, loadRooms]);
 
     // Load messages for selected room (stable version for subscriptions)
     const loadMessagesForRoom = useCallback(async (room: RoomMeta, options?: LoaderOptions) => {
@@ -322,10 +331,9 @@ export function ChatClient() {
     }, [selectedSeed, rooms, loadMessagesForRoom]);
 
     useEffect(() => {
-        if (walletAddress) {
-            loadMessages();
-        }
-    }, [loadMessages, walletAddress]);
+        if (!walletAddress || !selectedSeed) return;
+        loadMessages();
+    }, [walletAddress, selectedSeed]);
 
     useEffect(() => {
         if (!pendingMessages.length) return;
