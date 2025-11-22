@@ -455,7 +455,7 @@ export async function readRowsByTable(
           writable: true,
         })
       } catch {
-        ;(clone as any).__rowId = (clone as any)[idColumnName]
+        ; (clone as any).__rowId = (clone as any)[idColumnName]
       }
     }
     return clone
@@ -487,10 +487,11 @@ export async function readRowsByTable(
   const programId = new PublicKey(programIdStr)
   const programIdB58 = programId.toBase58()
 
-  const allTxs = await Promise.all([
-    getTransactionsForAddress(connection, tablePda, maxTx),
-    getTransactionsForAddress(connection, instPda, maxTx)
-  ])
+  // Execute sequentially to avoid rate limiting
+  const txsTable = await getTransactionsForAddress(connection, tablePda, maxTx)
+  const txsInst = await getTransactionsForAddress(connection, instPda, maxTx)
+
+  const allTxs = [txsTable, txsInst]
 
   const txMap = new Map<string, ParsedTransactionWithMeta>()
   for (const txList of allTxs) {
@@ -612,7 +613,7 @@ export async function readRowsByTable(
           writable: false,
         })
       } catch {
-        ;(clone as any)[key] = value
+        ; (clone as any)[key] = value
       }
     }
     defineHidden('__txSignature', signature)
@@ -635,7 +636,7 @@ export async function readRowsByTable(
           writable: true,
         })
       } catch {
-        ;(baseClone as any).__rowId = baseRowId
+        ; (baseClone as any).__rowId = baseRowId
       }
     }
 
@@ -674,7 +675,7 @@ export async function readRowsByTable(
             writable: true,
           })
         } catch {
-          ;(baseClone as any).__rowId = refreshedId
+          ; (baseClone as any).__rowId = refreshedId
         }
       }
     }
@@ -723,7 +724,7 @@ export async function readRowsByDmSeed(
           writable: true,
         })
       } catch {
-        ;(clone as any).__rowId = (clone as any)[idColumnName]
+        ; (clone as any).__rowId = (clone as any)[idColumnName]
       }
     }
     return clone
@@ -753,11 +754,12 @@ export async function readRowsByDmSeed(
   const programId = new PublicKey(programIdStr)
   const programIdB58 = programId.toBase58()
 
-  const allTxs = await Promise.all([
-    getTransactionsForAddress(connection, dmTablePda, maxTx),
-    getTransactionsForAddress(connection, instPda, maxTx),
-    getTransactionsForAddress(connection, txRefPda, maxTx)
-  ])
+  // Execute sequentially to avoid rate limiting
+  const txsTable = await getTransactionsForAddress(connection, dmTablePda, maxTx)
+  const txsInst = await getTransactionsForAddress(connection, instPda, maxTx)
+  // txRefPda scan removed as it is inefficient and likely redundant for DM lookups
+
+  const allTxs = [txsTable, txsInst]
 
   const txMap = new Map<string, ParsedTransactionWithMeta>()
   for (const txList of allTxs) {
@@ -799,7 +801,7 @@ export async function readRowsByDmSeed(
           writable: false,
         })
       } catch {
-        ;(clone as any)[key] = value
+        ; (clone as any)[key] = value
       }
     }
     defineHidden('__txSignature', signature)
