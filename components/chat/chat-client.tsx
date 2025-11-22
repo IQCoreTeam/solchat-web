@@ -167,6 +167,7 @@ export function ChatClient() {
         showLoadingSpinner,
     } = useMessageLoader<[RoomMeta]>({
         fetcher: async (room) => {
+            if (!walletAddress) return [];
             const rows = await readRowsByTable({
                 connection,
                 rootId: ROOT_ID,
@@ -319,8 +320,10 @@ export function ChatClient() {
     }, [selectedSeed, rooms, loadMessagesForRoom]);
 
     useEffect(() => {
-        loadMessages();
-    }, [loadMessages]);
+        if (walletAddress) {
+            loadMessages();
+        }
+    }, [loadMessages, walletAddress]);
 
     useEffect(() => {
         if (!pendingMessages.length) return;

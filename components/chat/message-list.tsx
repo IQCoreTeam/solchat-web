@@ -54,7 +54,9 @@ export function MessageList({
             )}
             {error && <div className="text-red-400">{error}</div>}
             {!isLoading && messages.length === 0 && !error && (
-                <div className="text-white/50">No messages yet. Be the first to say hello!</div>
+                <div className="text-white/50">
+                    {viewerAddress ? 'No messages yet. Be the first to say hello!' : 'Connect wallet first to see messages'}
+                </div>
             )}
             <div className="space-y-4">
                 {messages.map((message) => {
