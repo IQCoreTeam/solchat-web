@@ -11,10 +11,10 @@ import { PrivateEntryCard } from './private-entry-card';
 import { PrivateExitCard } from './private-exit-card';
 import { usePrivyAppWallet, useHasPrivyWallet } from '@/lib/wallet/privy-app-wallet';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { Window, WindowHeader, WindowContent, Panel, Cutout, Button } from 'react95';
+import {Window, WindowHeader, WindowContent, Panel, Cutout, Button, Frame} from 'react95';
 
 const CARD_BASE =
-  'rounded-xl border border-green-600/60 bg-black/80 p-6 shadow-[0_0_25px_rgba(16,185,129,0.15)] backdrop-blur-sm';
+  'rounded-xl border p-6 shadow-md backdrop-blur-sm';
 function formatAddress(value?: string | null, chars = 4) {
   if (!value) return '';
   return `${value.slice(0, chars)}…${value.slice(-chars)}`;
@@ -166,18 +166,18 @@ export function AccountInfo() {
     if (!authenticated) {
       return (
         <Window className="w-full">
-          <WindowHeader className="!bg-green-500 !text-black    ">
-            <span>[PRIVY SETUP]</span>
+          <WindowHeader>
+            [PRIVY SETUP]
           </WindowHeader>
-          <WindowContent className="bg-black text-green-100     space-y-4">
+          <WindowContent className="space-y-4">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.4em] text-green-300/80">Private Treasury</p>
+              <p className="text-[11px] uppercase tracking-[0.4em]">Private Treasury</p>
               <h3 className="text-2xl mt-2">Create your Privy wallet</h3>
-              <p className="text-sm text-green-200/80 mt-2">
+              <p className="text-sm mt-2">
                 Set up a Privy-managed wallet to hold your shielded balance and authenticate with Cloak.
               </p>
             </div>
-            <ul className="text-xs text-green-200/80 space-y-1">
+            <ul className="text-xs space-y-1">
               <li>✓ Enterprise-grade custody</li>
               <li>✓ Cross-device continuity</li>
               <li>✓ Required for Cloak deposits & exits</li>
@@ -198,15 +198,15 @@ export function AccountInfo() {
     if (authenticated && !privyWallet) {
       return (
         <Window className="w-full">
-          <WindowHeader className="!bg-yellow-400 !text-black    ">
+          <WindowHeader>
             <span>[PRIVY SETUP]</span>
           </WindowHeader>
-          <WindowContent className="bg-black text-yellow-100     space-y-3">
+          <WindowContent className="space-y-3">
             <div className="flex items-center gap-3">
-              <span className="h-3 w-3 rounded-full bg-yellow-400 animate-pulse" />
+              <span className="h-3 w-3 rounded-full animate-pulse" />
               <h3 className="text-xl">Provisioning Privy wallet…</h3>
             </div>
-            <p className="text-sm text-yellow-200/80">
+            <p className="text-sm">
               Hang tight while we finish creating your embedded wallet. If this takes more than a minute, refresh the
               page.
             </p>
@@ -217,28 +217,28 @@ export function AccountInfo() {
 
     return (
       <Window className="w-full">
-        <WindowHeader className="!bg-green-500 !text-black    ">
+        <WindowHeader>
           <span>[PRIVY TREASURY]</span>
         </WindowHeader>
-        <WindowContent className="bg-black text-green-100     space-y-4">
+        <WindowContent className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.4em] text-green-400/70">Shielded wallet</p>
+              <p className="text-[11px] uppercase tracking-[0.4em]">Shielded wallet</p>
               <h3 className="text-2xl mt-1">Privy wallet ready</h3>
             </div>
-            <span className="px-3 py-1 rounded-full text-xs bg-green-500 text-black">CLOAK READY</span>
+            <span className="px-3 py-1 rounded-full text-xs">CLOAK READY</span>
           </div>
-          <p className="text-sm text-green-200/80 leading-relaxed">
+          <p className="text-sm leading-relaxed">
             Fund this wallet privately with Cloak and use it as your shielded identity across SolChat.
           </p>
-          <Cutout className="bg-[#050505] border border-green-700/40 p-3">
-            <p className="text-xs text-green-400/80 mb-1">Privy wallet address</p>
-            <p className="text-green-100 text-sm break-all">{privyWallet?.address}</p>
+          <Cutout className="p-3 text-xs break-all space-y-1">
+            <p>Privy wallet address</p>
+            <p className="text-sm">{privyWallet?.address}</p>
           </Cutout>
           <div className="flex flex-wrap gap-3">
             <Button
               onClick={handleCopyPrivyAddress}
-              className="    font-semibold uppercase tracking-wide px-4"
+              className="font-semibold uppercase tracking-wide px-4"
               style={{ backgroundColor: '#22c55e', color: '#0a0a0a' }}
             >
               Copy Address
@@ -246,7 +246,7 @@ export function AccountInfo() {
             <Button
               onClick={handleDisconnectPrivy}
               disabled={disconnectingPrivy}
-              className="    font-semibold uppercase tracking-wide px-4"
+              className="font-semibold uppercase tracking-wide px-4"
               style={{
                 backgroundColor: disconnectingPrivy ? '#cbd5f5' : '#dc2626',
                 color: '#000',
@@ -266,19 +266,23 @@ export function AccountInfo() {
     return (
       <div className="px-4 py-8 sm:px-6 lg:px-8 max-w-4xl mx-auto">
         <Window className="w-full">
-          <WindowHeader className="!bg-green-500 !text-black    ">
+          <WindowHeader >
             <span>[SOLCHAT - ACCOUNT ACCESS]</span>
           </WindowHeader>
-          <WindowContent className="bg-black text-green-100     space-y-3">
-            <h2 className="text-2xl text-green-100">Connect your funding wallet to begin</h2>
-            <p className="text-sm text-green-200/80">
-              SolChat needs your public wallet to fund private deposits and confirm Solana transactions.
-            </p>
-            <ol className="space-y-2 text-xs text-green-200/80">
-              <li>1️⃣ Click “Connect Wallet” in the top-right corner</li>
-              <li>2️⃣ Authenticate with Privy to spin up a private wallet</li>
-              <li>3️⃣ Return here to fund/exit via Cloak</li>
+
+          <WindowContent className="space-y-3 ">
+            <h2 className="text-2xl ">Connect your funding wallet to begin</h2>
+
+              <Frame style={{padding: '1rem'}}>
+            <ol className="space-y-2 text-xs ">
+              <li>1. Click “Connect Wallet” in the top-right corner</li>
+              <li>2. Authenticate with Privy to spin up a private wallet</li>
+              <li>3. Return here to fund/exit via Cloak</li>
             </ol>
+              </Frame>
+              <p className="text-sm ">
+                  SolChat needs your public wallet to fund private deposits and confirm Solana transactions.
+              </p>
           </WindowContent>
         </Window>
       </div>
@@ -308,16 +312,18 @@ export function AccountInfo() {
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8 max-w-6xl mx-auto space-y-6">
-      <Window className="w-full shadow-[0_0_30px_rgba(34,197,94,0.25)]">
-        <WindowHeader className="!bg-green-500 !text-black    ">
+      <Window className="w-full shadow-lg">
+        <WindowHeader>
           <span>[SOLCHAT - ACCOUNT CONSOLE]</span>
         </WindowHeader>
-        <WindowContent className="bg-black text-green-100     space-y-4">
+        <WindowContent className="space-y-4">
           <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.4em] text-green-300/70 ">Account Control</p>
-              <h1 className="text-3xl sm:text-4xl  text-green-100 mt-2">Own your privacy on Solana</h1>
-              <p className="text-green-100/80     text-sm mt-3 max-w-2xl">
+            <div className="">
+                <Frame style={{padding: 3}}>
+              <p className="text-[11px] uppercase tracking-[0.4em]">Account Control</p>
+                </Frame>
+              <h1 className="text-3xl sm:text-4xl mt-2">Own your privacy on Solana</h1>
+              <p className="text-sm mt-3 max-w-2xl">
                 Fund your chat wallet with Cloak for a completely private communication experience. Private entry and exit points combined with AES-256-GCM encryption ensure your messages remain secure.
               </p>
             </div>
@@ -326,9 +332,7 @@ export function AccountInfo() {
                 <Panel
                   key={pill.label}
                   variant="outside"
-                  className={`flex min-h-[88px] min-w-[180px] flex-col justify-between rounded-lg border border-black/30 p-4     ${
-                    pill.variant === 'ready' ? 'bg-green-900/30 text-green-100' : 'bg-yellow-900/30 text-yellow-100'
-                  }`}
+                  className="flex min-h-[88px] min-w-[180px] flex-col justify-between rounded-lg border p-4"
                 >
                   <span className="text-[10px] uppercase tracking-[0.3em] block opacity-80">{pill.label}</span>
                   <span className="text-lg">{pill.value}</span>
@@ -347,36 +351,36 @@ export function AccountInfo() {
         </section>
 
         <section className="space-y-6">
-          <Window className="w-full shadow-[0_0_25px_rgba(16,185,129,0.15)]">
-            <WindowHeader className="!bg-blue-400 !text-black    ">
+          <Window className="w-full shadow-md">
+            <WindowHeader>
               <span>[PUBLIC WALLET]</span>
             </WindowHeader>
-            <WindowContent className="bg-black text-green-100     space-y-4">
+            <WindowContent className="space-y-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.4em] text-green-400/70">Funding wallet</p>
-                  <h3 className="text-2xl mt-1 text-green-100">Public balances</h3>
+                  <p className="text-[11px] uppercase tracking-[0.4em]">Funding wallet</p>
+                  <h3 className="text-2xl mt-1">Public balances</h3>
                 </div>
-                <span className="px-3 py-1 rounded-full text-xs bg-blue-500/80 text-black">PUBLIC</span>
+                <span className="px-3 py-1 rounded-full text-xs">PUBLIC</span>
               </div>
-              <Cutout className="bg-[#050505] border border-green-600/40 p-4 text-xs break-all">
+              <Cutout className="p-4 text-xs break-all border">
                 {fundingAddress}
               </Cutout>
               <div className="grid gap-4 sm:grid-cols-2">
-                <Cutout className="bg-[#060606] border border-green-600/30 p-4">
-                  <p className="text-xs text-green-400/70 mb-1">SOL balance</p>
-                  <p className="text-2xl font-bold text-green-100">
+                <Cutout className="border p-4">
+                  <p className="text-xs mb-1">SOL balance</p>
+                  <p className="text-2xl font-bold">
                     {balance !== undefined ? balance.toFixed(4) : '…'}
                   </p>
                 </Cutout>
-                <Cutout className="bg-[#060606] border border-green-600/30 p-4">
-                  <p className="text-xs text-green-400/70 mb-1">BONK balance</p>
-                  <p className="text-2xl font-bold text-green-100">
+                <Cutout className="border p-4">
+                  <p className="text-xs mb-1">BONK balance</p>
+                  <p className="text-2xl font-bold">
                     {bonkBalance !== undefined ? bonkBalance.toFixed(2) : '…'}
                   </p>
                 </Cutout>
               </div>
-              <p className="text-xs text-green-300/80">
+              <p className="text-xs">
                 Use this wallet to fund private deposits. Cloak keeps your Privy wallet unlinkable.
               </p>
             </WindowContent>
@@ -384,35 +388,36 @@ export function AccountInfo() {
 
           <div className={`${CARD_BASE} space-y-4`}>
             <div className="flex items-center justify-between">
-              <h3 className="text-green-200     text-xl">Send SOL</h3>
-              <span className="text-xs     text-green-400/80">Direct transfer</span>
+              <h3 className="text-xl">Send SOL</h3>
+              <span className="text-xs">Direct transfer</span>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="text-green-400     text-sm block mb-2">Recipient address</label>
+                <label className="text-sm block mb-2">Recipient address</label>
                 <input
                   type="text"
                   value={sendAddress}
                   onChange={(e) => setSendAddress(e.target.value)}
-                  className="w-full rounded-md border border-green-600/50 bg-black/70 text-green-100     p-3 focus:border-green-300 outline-none"
+                  className="w-full rounded-md border p-3 focus:ring-2 outline-none"
                   placeholder="Enter Solana address…"
                 />
               </div>
               <div>
-                <label className="text-green-400     text-sm block mb-2">Amount (SOL)</label>
+                <label className="text-sm block mb-2">Amount (SOL)</label>
                 <input
                   type="number"
                   step="0.01"
                   value={sendAmount}
                   onChange={(e) => setSendAmount(e.target.value)}
-                  className="w-full rounded-md border border-green-600/50 bg-black/70 text-green-100     p-3 focus:border-green-300 outline-none"
+                  className="w-full rounded-md border p-3 focus:ring-2 outline-none"
                   placeholder="0.00"
                 />
               </div>
               <button
                 onClick={handleSendSOL}
                 disabled={sendingSOL || !sendAddress || !sendAmount}
-                className="w-full bg-green-500/90 hover:bg-green-400 text-black     py-3 rounded-md disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                className="w-full py-3 rounded-md disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                style={{ backgroundColor: '#22c55e', color: '#0a0a0a' }}
               >
                 {sendingSOL ? 'Sending…' : 'Send SOL'}
               </button>
@@ -421,14 +426,15 @@ export function AccountInfo() {
 
           <div className={`${CARD_BASE} space-y-4`}>
             <div className="flex items-center justify-between">
-              <h3 className="text-green-200     text-xl">Quick tools</h3>
-              <span className="text-xs     text-green-400/80">Devnet helpers</span>
+              <h3 className="text-xl">Quick tools</h3>
+              <span className="text-xs">Devnet helpers</span>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <button
                 onClick={handleAirdrop}
                 disabled={requestingAirdrop}
-                className="w-full bg-green-500/90 hover:bg-green-400 text-black     py-3 rounded-md disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                className="w-full py-3 rounded-md disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                style={{ backgroundColor: '#22c55e', color: '#0a0a0a' }}
               >
                 {requestingAirdrop ? 'Requesting…' : 'Request 1 SOL'}
               </button>
@@ -438,33 +444,33 @@ export function AccountInfo() {
                   refetchBonk();
                   setMessage('Balances refreshed');
                 }}
-                className="w-full border border-green-500/60 text-green-100     py-3 rounded-md hover:bg-green-500/10 transition-colors"
+                className="w-full border py-3 rounded-md transition-colors"
               >
                 Refresh balances
               </button>
             </div>
-            <p className="text-xs text-green-300/80    ">
+            <p className="text-xs">
               Requests are Devnet-only. Use refresh if airdrops or transfers haven’t reflected yet.
             </p>
           </div>
 
           <div className={`${CARD_BASE} space-y-4`}>
             <div className="flex items-center justify-between">
-              <h3 className="text-green-200     text-xl">Token accounts</h3>
-              <span className="text-xs     text-green-400/80">{tokens?.length ?? 0} tracked</span>
+              <h3 className="text-xl">Token accounts</h3>
+              <span className="text-xs">{tokens?.length ?? 0} tracked</span>
             </div>
             {tokens && tokens.length > 0 ? (
               <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
                 {tokens.map((token, index) => (
                   <div
                     key={`${token.mint}-${index}`}
-                    className="rounded-lg border border-green-600/30 bg-black/60 p-3 text-sm text-green-100    "
+                    className="rounded-lg border p-3 text-sm"
                   >
-                    <p className="text-[11px] uppercase tracking-[0.3em] text-green-400/70 mb-1">Mint</p>
+                    <p className="text-[11px] uppercase tracking-[0.3em] mb-1">Mint</p>
                     <p className="break-all mb-2">{token.mint}</p>
                     <p>
                       Balance:{' '}
-                      <span className="text-green-300">
+                      <span>
                         {token.amount?.toFixed(token.decimals || 0) || 0}
                       </span>
                     </p>
@@ -472,15 +478,15 @@ export function AccountInfo() {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-green-300/80    ">No SPL token accounts detected for this wallet.</p>
+              <p className="text-sm">No SPL token accounts detected for this wallet.</p>
             )}
           </div>
         </section>
       </div>
 
       {message && (
-        <div className={`${CARD_BASE} border-green-500/60`}>
-          <p className="text-green-300     text-sm">{message}</p>
+        <div className={`${CARD_BASE}`}>
+          <p className="text-sm">{message}</p>
         </div>
       )}
     </div>

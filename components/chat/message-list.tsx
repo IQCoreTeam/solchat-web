@@ -48,13 +48,13 @@ export function MessageList({
     copiedMessageId,
 }: MessageListProps) {
     return (
-        <div className="flex-1 overflow-y-auto bg-black/20 px-3 py-3 md:px-6 md:py-4">
+        <div className="flex-1 overflow-y-auto px-3 py-3 md:px-6 md:py-4">
             {showLoadingSpinner && messages.length === 0 && (
-                <LoadingSpinner message="Loading" color="rgb(65, 255, 0)" />
+                <LoadingSpinner message="Loading" />
             )}
-            {error && <div className="text-red-400">{error}</div>}
+            {error && <div>{error}</div>}
             {!isLoading && messages.length === 0 && !error && (
-                <div className="text-white/50">
+                <div>
                     {viewerAddress ? 'No messages yet. Be the first to say hello!' : 'Connect wallet first to see messages'}
                 </div>
             )}

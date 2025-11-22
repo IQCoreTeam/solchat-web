@@ -35,7 +35,12 @@ export function deriveAvatarHue(address: string): number {
 export function formatTimestamp(ts?: number): string {
     if (!ts) return '';
     const date = new Date(ts);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'UTC',
+    });
 }
 
 /**
@@ -45,7 +50,15 @@ export function formatTimestamp(ts?: number): string {
 export function formatFullTimestamp(ts?: number): string {
     if (!ts) return '';
     const date = new Date(ts);
-    return date.toLocaleString();
+    return date.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'UTC',
+    });
 }
 
 /**

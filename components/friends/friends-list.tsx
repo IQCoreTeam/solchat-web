@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PublicKey } from '@solana/web3.js';
 import type { FormEvent } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { useFriends } from '@/lib/friends/use-friends';
 import { FriendCard } from './friend-card';
@@ -22,7 +22,6 @@ import idl from '@/lib/onchainDB/idl.json';
 import { Idl } from '@coral-xyz/anchor';
 import type { WalletAdapterLike } from '@/lib/onchainDB/web/provider';
 import { Window, WindowHeader, WindowContent, Button, Cutout } from 'react95';
-import { ThemeProvider } from 'styled-components';
 import { MessageBubble } from '@/components/ui/message-bubble';
 import { MessageInputForm } from '@/components/chat/message-input-form';
 import { normalizeFileUrl } from '@/lib/utils/message-utils';
@@ -39,15 +38,17 @@ type Tab = 'all' | 'pending' | 'blocked';
 type ProgramIdl = Idl & { address?: string };
 const FRIENDS_IDL = idl as ProgramIdl;
 
-export function FriendsList() {
+type FriendsListProps = {
+    dmQueryAddress?: string;
+};
+
+export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     /* --------------------------------------------------------------------------
      * Context & External Hooks
      * -------------------------------------------------------------------------- */
     const { connection } = useAppConnection();
     const wallet = useAppWallet();
     const router = useRouter();
-    const searchParams = useSearchParams();
-    const dmQueryAddress = searchParams?.get('dm');
     const userAddress = wallet?.publicKey?.toBase58();
     const { friends, loading, error: friendsError, refetch } = useFriends({
         connection,
@@ -262,12 +263,8 @@ export function FriendsList() {
         if (!friend) return;
 
         void handleOpenChat(friend);
-
-        const params = new URLSearchParams(searchParams?.toString());
-        params.delete('dm');
-        const query = params.toString();
-        router.replace(query ? `/friends?${query}` : '/friends', { scroll: false });
-    }, [dmQueryAddress, friends, handleOpenChat, router, searchParams]);
+        router.replace('/friends', { scroll: false });
+    }, [dmQueryAddress, friends, handleOpenChat, router]);
 
     useEffect(() => {
         if (chatOpen) {
@@ -498,7 +495,7 @@ export function FriendsList() {
     }, []);
 
     return (
-        <ThemeProvider theme={darkGreenTheme}>
+        <div>
             <GlobalStyles />
             <div className="flex-1 p-4 md:p-6 max-w-4xl mx-auto w-full">
                 <Window style={{ width: '100%', marginBottom: '20px' }}>
@@ -766,7 +763,7 @@ export function FriendsList() {
                     </Window>
                 </div>
             )}
-        </ThemeProvider>
+        </div>
     );
 }
 

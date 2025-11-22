@@ -126,7 +126,7 @@ function ProfileCard({ profile, isCurrentUser }: ProfileCardProps) {
         )}
         <div className="flex-1 min-w-0">
           <div className="font-bold text-white truncate">{profile.name}</div>
-          <div className="text-xs text-white/40 font-mono truncate">
+          <div className="text-xs text-white/40  truncate">
             {shorten(profile.pubkey, 6)}
           </div>
           {isCurrentUser && (
@@ -146,7 +146,7 @@ function ProfileCard({ profile, isCurrentUser }: ProfileCardProps) {
       <div className="flex items-center justify-between pt-3 border-t border-white/10">
         {profile.timestamp && (
           <div className="text-xs text-white/30">
-            {new Date(profile.timestamp).toLocaleDateString()}
+            {new Date(profile.timestamp).toISOString().slice(0, 10)}
           </div>
         )}
         <button

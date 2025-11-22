@@ -40,19 +40,19 @@ interface ChatHeaderProps {
 }
 
 export function ChatHeader({
-    walletAddress,
-    isUserInitialized,
-    userInitError,
-    rootStatus,
-    rootStatusText,
-    userInitStatus,
-    onRetryUserInit,
-    onDisconnect,
-    disconnecting,
-    isSidebarOpen,
-    onToggleSidebar,
-    selectedRoom,
-}: ChatHeaderProps) {
+                               walletAddress,
+                               isUserInitialized,
+                               userInitError,
+                               rootStatus,
+                               rootStatusText,
+                               userInitStatus,
+                               onRetryUserInit,
+                               onDisconnect,
+                               disconnecting,
+                               isSidebarOpen,
+                               onToggleSidebar,
+                               selectedRoom,
+                           }: ChatHeaderProps) {
     return (
         <header className="border-b-2 border-green-600 bg-black px-3 py-3 md:px-6">
             <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3">

@@ -46,24 +46,24 @@ interface RoomSidebarProps {
 }
 
 export function RoomSidebar({
-    newRoomName,
-    setNewRoomName,
-    newRoomGateMint,
-    setNewRoomGateMint,
-    creatingRoom,
-    onCreateRoom,
-    rooms,
-    selectedSeed,
-    onSelectRoom,
-    roomsLoading,
-    roomsError,
-    canWrite,
-    writerCtx,
-    isUserInitialized,
-    userInitError,
-    isSidebarOpen,
-    onCloseSidebar,
-}: RoomSidebarProps) {
+                                newRoomName,
+                                setNewRoomName,
+                                newRoomGateMint,
+                                setNewRoomGateMint,
+                                creatingRoom,
+                                onCreateRoom,
+                                rooms,
+                                selectedSeed,
+                                onSelectRoom,
+                                roomsLoading,
+                                roomsError,
+                                canWrite,
+                                writerCtx,
+                                isUserInitialized,
+                                userInitError,
+                                isSidebarOpen,
+                                onCloseSidebar,
+                            }: RoomSidebarProps) {
     return (
         <aside className={`
       flex w-72 flex-col border-r border-white/10 bg-black z-50
@@ -155,7 +155,7 @@ export function RoomSidebar({
                             key={room.seedHex}
                             onClick={() => onSelectRoom(room.seedHex)}
                             className={`w-full rounded px-3 py-2 text-left transition ${selectedSeed === room.seedHex ? 'text-white' : 'bg-white/5 text-white/80 hover:bg-white/10'
-                                }`}
+                            }`}
                             style={selectedSeed === room.seedHex ? { backgroundColor: 'rgba(65, 255, 0, 0.2)' } : undefined}
                         >
                             <div className="font-semibold">{room.name}</div>

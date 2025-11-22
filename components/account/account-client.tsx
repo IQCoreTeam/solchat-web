@@ -9,7 +9,7 @@ const AccountInfoDynamic = dynamic(
     ssr: false,
     loading: () => (
       <div className="flex items-center justify-center h-full p-6">
-        <div className="text-green-400 ">Loading account...</div>
+        <div >Loading account...</div>
       </div>
     ),
   }

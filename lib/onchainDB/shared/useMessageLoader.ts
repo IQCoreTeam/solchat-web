@@ -31,7 +31,7 @@ export function useMessageLoader<TArgs extends unknown[]>({
       }
 
       try {
-        return await fetcher(...(args as TArgs))
+        return await fetcher(...(args as unknown as TArgs))
       } catch (error) {
         setMessagesError(error instanceof Error ? error.message : 'Failed to load messages')
         throw error
