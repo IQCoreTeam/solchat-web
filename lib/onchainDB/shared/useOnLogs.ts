@@ -42,5 +42,5 @@ export function useOnLogs({
         subscriptionRef.current = null
       }
     }
-  }, [connection, account, commitment, handler])
+  }, [connection, account?.toBase58(), commitment, handler])
 }

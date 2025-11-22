@@ -68,7 +68,7 @@ export async function readRowsByTable(params: ReadTableParams): Promise<Row[]> {
       roomId,
       () => originalReadRowsByTable(params),
       {
-        backgroundRefresh: true,
+        backgroundRefresh: false,
         maxRetries: 2,
         retryDelay: 500,
       }
@@ -106,7 +106,7 @@ export async function readRowsByDmSeed(params: ReadDmParams): Promise<Row[]> {
       dmSeedHex,
       () => originalReadRowsByDmSeed(params),
       {
-        backgroundRefresh: true,
+        backgroundRefresh: false,
         maxRetries: 2,
         retryDelay: 500,
       }

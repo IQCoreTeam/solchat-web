@@ -1,25 +1,25 @@
 'use client';
 
-import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import type {FormEvent} from 'react';
-import type {AccountInfo} from '@solana/web3.js';
-import {PublicKey} from '@solana/web3.js';
-import {Buffer} from 'buffer';
-import {BorshAccountsCoder, type Idl} from '@coral-xyz/anchor';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { FormEvent } from 'react';
+import type { AccountInfo } from '@solana/web3.js';
+import { PublicKey } from '@solana/web3.js';
+import { Buffer } from 'buffer';
+import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
 import idl from '@/lib/onchainDB/idl.json';
-import type {WalletAdapterLike} from '@/lib/onchainDB/web/provider';
+import type { WalletAdapterLike } from '@/lib/onchainDB/web/provider';
 import {
     initializeRootWeb,
     createTableWeb,
     writeRowWeb,
     type WriterCtx,
 } from '@/lib/onchainDB/web/writer';
-import {readRowsByTable, invalidateRoomCache, type Row} from '@/lib/onchainDB/web/cached-reader-integration';
-import {pdaInstructionTable, pdaRoot, pdaTable} from '@/lib/onchainDB';
-import {useUserInit} from '@/lib/onchainDB/hooks/use-user-init';
-import {useAppConnection, useAppWallet} from '@/lib/wallet/use-app-wallet';
-import {usePrivy} from '@privy-io/react-auth';
-import {normalizeFileUrl} from '@/lib/utils/message-utils';
+import { readRowsByTable, invalidateRoomCache, type Row } from '@/lib/onchainDB/web/cached-reader-integration';
+import { pdaInstructionTable, pdaRoot, pdaTable } from '@/lib/onchainDB';
+import { useUserInit } from '@/lib/onchainDB/hooks/use-user-init';
+import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
+import { usePrivy } from '@privy-io/react-auth';
+import { normalizeFileUrl } from '@/lib/utils/message-utils';
 import {
     bytesToHex,
     normalizeBytes,
@@ -27,18 +27,18 @@ import {
     rowToMessage,
     type MessageRow,
 } from '@/lib/onchainDB/utils/message-helpers';
-import {mergeMessages, type MessagePayload} from '@/lib/onchainDB/shared/message';
-import {usePendingMessages} from '@/lib/onchainDB/shared/use-pending-messages';
-import {useOnLogs} from '@/lib/onchainDB/shared/useOnLogs';
-import {useMessageLoader, type LoaderOptions} from '@/lib/onchainDB/shared/useMessageLoader';
-import {ROOT_ID, MESSAGE_COLUMNS} from '@/lib/onchainDB/constants';
+import { mergeMessages, type MessagePayload } from '@/lib/onchainDB/shared/message';
+import { usePendingMessages } from '@/lib/onchainDB/shared/use-pending-messages';
+import { useOnLogs } from '@/lib/onchainDB/shared/useOnLogs';
+import { useMessageLoader, type LoaderOptions } from '@/lib/onchainDB/shared/useMessageLoader';
+import { ROOT_ID, MESSAGE_COLUMNS } from '@/lib/onchainDB/constants';
 
 // Import new components
-import {ChatHeader} from './chat-header';
-import {RoomSidebar} from './room-sidebar';
-import {MessageList} from './message-list';
-import {MessageInputForm} from './message-input-form';
-import {sendAndConfirmTx} from '@/lib/onchainDB/utils/transaction-helpers';
+import { ChatHeader } from './chat-header';
+import { RoomSidebar } from './room-sidebar';
+import { MessageList } from './message-list';
+import { MessageInputForm } from './message-input-form';
+import { sendAndConfirmTx } from '@/lib/onchainDB/utils/transaction-helpers';
 
 type ProgramIdl = Idl & { address?: string };
 type RootAccountData = {
@@ -67,7 +67,7 @@ export function ChatClient() {
     /* --------------------------------------------------------------------------
      * Context & External Hooks
      * -------------------------------------------------------------------------- */
-    const {connection} = useAppConnection();
+    const { connection } = useAppConnection();
     const wallet = useAppWallet();
     const {
         isInitialized: isUserInitialized,
@@ -75,7 +75,7 @@ export function ChatClient() {
         error: userInitError,
         retry: retryUserInit,
     } = useUserInit();
-    const {logout} = usePrivy();
+    const { logout } = usePrivy();
 
     const coder = useMemo(() => new BorshAccountsCoder(PROGRAM_IDL), []);
     const rootPubkey = useMemo(() => pdaRoot(ROOT_ID), []);
@@ -160,25 +160,27 @@ export function ChatClient() {
 
     const canWrite = Boolean(writerCtx && isUserInitialized);
 
+    const fetcher = useCallback(async (room: RoomMeta) => {
+        if (!walletAddress) return [];
+        const rows = await readRowsByTable({
+            connection,
+            rootId: ROOT_ID,
+            userPublicKey: walletAddress,
+            tableName: room.seedHex,
+            idl: PROGRAM_IDL,
+        });
+        return rows
+            .map((row: Row) => rowToMessage(row))
+            .filter((message: MessageRow) => message.text || message.file);
+    }, [walletAddress, connection]);
+
     const {
         loadMessages: loadRoomMessages,
         messagesLoading,
         messagesError,
         showLoadingSpinner,
     } = useMessageLoader<[RoomMeta]>({
-        fetcher: async (room) => {
-            if (!walletAddress) return [];
-            const rows = await readRowsByTable({
-                connection,
-                rootId: ROOT_ID,
-                userPublicKey: walletAddress,
-                tableName: room.seedHex,
-                idl: PROGRAM_IDL,
-            });
-            return rows
-                .map((row: Row) => rowToMessage(row))
-                .filter((message: MessageRow) => message.text || message.file);
-        },
+        fetcher,
     });
 
     const rootStatusText = useMemo(() => {
@@ -229,7 +231,7 @@ export function ChatClient() {
         if (!writerCtx) return;
         setRootStatus('creating');
         try {
-            const {tx} = await initializeRootWeb(writerCtx, ROOT_ID);
+            const { tx } = await initializeRootWeb(writerCtx, ROOT_ID);
             await sendAndConfirmTx(connection, writerCtx.wallet, tx, '[ChatClient] Root initialized:');
             const acc = await connection.getAccountInfo(rootPubkey);
             setRootAccount(acc);
@@ -333,15 +335,18 @@ export function ChatClient() {
     /* --------------------------------------------------------------------------
      * Effects: WebSocket Subscriptions
      * -------------------------------------------------------------------------- */
-    const refreshMessagesFromLogs = useCallback(async () => {
+    const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const refreshMessagesFromLogs = useCallback(() => {
         if (!selectedRoom) return;
-        try {
-            await invalidateRoomCache(selectedRoom.seedHex);
-            await loadMessagesForRoom(selectedRoom, {skipLoadingState: true});
-        } catch (error) {
-            console.error('[ChatClient] Failed to refresh messages after logs:', error);
-        }
-    }, [selectedRoom, loadMessagesForRoom]);
+
+        if (refreshTimeoutRef.current) {
+            clearTimeout(refreshTimeoutRef.current);
+            if (refreshTimeoutRef.current) {
+                clearTimeout(refreshTimeoutRef.current);
+            }
+        };
+    }, []);
 
     useOnLogs({
         connection,
@@ -362,7 +367,7 @@ export function ChatClient() {
      * -------------------------------------------------------------------------- */
     // Scroll to bottom
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({behavior: 'instant'});
+        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
     }, [allMessages]);
 
     /* --------------------------------------------------------------------------
@@ -381,12 +386,12 @@ export function ChatClient() {
                 ? new PublicKey(newRoomGateMint.trim())
                 : undefined;
 
-            const {tx} = await createTableWeb(
+            const { tx } = await createTableWeb(
                 writerCtx,
                 ROOT_ID,
                 newRoomName.trim(),
                 [...MESSAGE_COLUMNS],
-                {idColumn: 'id', gateMint: gateMintPubkey}
+                { idColumn: 'id', gateMint: gateMintPubkey }
             );
 
             await sendAndConfirmTx(connection, writerCtx.wallet, tx, '[ChatClient] Room created:');
@@ -436,7 +441,7 @@ export function ChatClient() {
         addPendingMessage(payload);
 
         try {
-            const {tx} = await writeRowWeb(writerCtx, ROOT_ID, selectedRoom.seedHex, JSON.stringify(payload));
+            const { tx } = await writeRowWeb(writerCtx, ROOT_ID, selectedRoom.seedHex, JSON.stringify(payload));
             await sendAndConfirmTx(connection, writerCtx.wallet, tx, '[ChatClient] Message submitted:');
             // Invalidate cache so WebSocket listeners get fresh data
             await invalidateRoomCache(selectedRoom.seedHex);
