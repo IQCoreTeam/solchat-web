@@ -27,9 +27,12 @@ import {
     rowToMessage,
     type MessageRow,
 } from '@/lib/onchainDB/utils/message-helpers';
+
+
 import {mergeMessages, type MessagePayload} from '@/lib/onchainDB/shared/message';
 import {usePendingMessages} from '@/lib/onchainDB/shared/use-pending-messages';
 import {useOnLogs} from '@/lib/onchainDB/shared/useOnLogs';
+
 import {useMessageLoader, type LoaderOptions} from '@/lib/onchainDB/shared/useMessageLoader';
 import {ROOT_ID, MESSAGE_COLUMNS} from '@/lib/onchainDB/constants';
 
@@ -160,25 +163,27 @@ export function ChatClient() {
 
     const canWrite = Boolean(writerCtx && isUserInitialized);
 
+    const fetchRoomMessages = useCallback(async (room: RoomMeta) => {
+        if (!walletAddress) return [];
+        const rows = await readRowsByTable({
+            connection,
+            rootId: ROOT_ID,
+            userPublicKey: walletAddress,
+            tableName: room.seedHex,
+            idl: PROGRAM_IDL,
+        });
+        return rows
+            .map((row: Row) => rowToMessage(row))
+            .filter((message: MessageRow) => message.text || message.file);
+    }, [walletAddress, connection]);
+
     const {
         loadMessages: loadRoomMessages,
         messagesLoading,
         messagesError,
         showLoadingSpinner,
     } = useMessageLoader<[RoomMeta]>({
-        fetcher: async (room) => {
-            if (!walletAddress) return [];
-            const rows = await readRowsByTable({
-                connection,
-                rootId: ROOT_ID,
-                userPublicKey: walletAddress,
-                tableName: room.seedHex,
-                idl: PROGRAM_IDL,
-            });
-            return rows
-                .map((row: Row) => rowToMessage(row))
-                .filter((message: MessageRow) => message.text || message.file);
-        },
+        fetcher: fetchRoomMessages,
     });
 
     const rootStatusText = useMemo(() => {
@@ -299,9 +304,18 @@ export function ChatClient() {
     /* --------------------------------------------------------------------------
      * Effects: Room & Message Loading
      * -------------------------------------------------------------------------- */
+    const lastRootAccountRef = useRef<AccountInfo<Buffer> | null>(null);
     useEffect(() => {
+        if (rootStatus !== 'ready' || !rootAccount) {
+            lastRootAccountRef.current = null;
+            return;
+        }
+        if (lastRootAccountRef.current === rootAccount) {
+            return;
+        }
+        lastRootAccountRef.current = rootAccount;
         loadRooms();
-    }, [loadRooms]);
+    }, [rootStatus, rootAccount, loadRooms]);
 
     // Load messages for selected room (stable version for subscriptions)
     const loadMessagesForRoom = useCallback(async (room: RoomMeta, options?: LoaderOptions) => {
@@ -320,10 +334,9 @@ export function ChatClient() {
     }, [selectedSeed, rooms, loadMessagesForRoom]);
 
     useEffect(() => {
-        if (walletAddress) {
-            loadMessages();
-        }
-    }, [loadMessages, walletAddress]);
+        if (!walletAddress || !selectedSeed) return;
+        loadMessages();
+    }, [walletAddress, selectedSeed]);
 
     useEffect(() => {
         if (!pendingMessages.length) return;
