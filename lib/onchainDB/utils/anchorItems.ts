@@ -15,9 +15,9 @@ export function getProvider(): anchor.AnchorProvider {
     // provider 미설정 → 새로 생성
   }
 
-  const connection = new Connection(configs.network, 'processed')
+  const connection = new Connection(configs.network, 'confirmed')
   const wallet = anchor.Wallet.local()
-  const provider = new anchor.AnchorProvider(connection, wallet, { commitment: 'processed' })
+  const provider = new anchor.AnchorProvider(connection, wallet, { commitment: 'confirmed' })
   anchor.setProvider(provider)
   return provider
 }

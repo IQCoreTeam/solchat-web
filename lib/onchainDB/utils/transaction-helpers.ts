@@ -41,7 +41,7 @@ export async function sendAndConfirmTx(
       blockhash,
       lastValidBlockHeight,
     },
-    'processed'
+    'confirmed'
   );
 
   return signature;

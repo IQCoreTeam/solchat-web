@@ -84,7 +84,7 @@ export function useUserInit(rootIdOverride?: BytesLike) {
       );
 
       console.log('useUserInit: Transaction built, requesting signature...');
-      const latestBlockhash = await connection.getLatestBlockhash('processed');
+      const latestBlockhash = await connection.getLatestBlockhash('confirmed');
       tx.recentBlockhash = latestBlockhash.blockhash;
       tx.feePayer = currentPublicKey;
 
@@ -100,7 +100,7 @@ export function useUserInit(rootIdOverride?: BytesLike) {
           blockhash: latestBlockhash.blockhash,
           lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
         },
-        'processed'
+        'confirmed'
       );
 
       console.log('useUserInit: ✓ User initialized successfully!');

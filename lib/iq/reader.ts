@@ -382,7 +382,7 @@ export function joinChat(
           console.error('Failed to process new message:', error);
         }
       },
-      'processed'
+      'confirmed'
     );
 
     console.log('Subscribed to chat:', pdaString, 'Subscription ID:', subscriptionId);
