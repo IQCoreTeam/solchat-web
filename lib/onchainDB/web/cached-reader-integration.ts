@@ -35,6 +35,7 @@ interface ReadTableParams {
   idl: Idl;
   maxTx?: number;
   perTableLimit?: number;
+  onProgress?: (rows: Row[]) => void;
 }
 
 interface ReadDmParams {
@@ -45,6 +46,7 @@ interface ReadDmParams {
   idl: Idl;
   maxTx?: number;
   perTableLimit?: number;
+  onProgress?: (rows: Row[]) => void;
 }
 
 /**
@@ -71,6 +73,7 @@ export async function readRowsByTable(params: ReadTableParams): Promise<Row[]> {
         backgroundRefresh: false,
         maxRetries: 2,
         retryDelay: 500,
+        onProgress: params.onProgress,
       }
     );
 
@@ -109,6 +112,7 @@ export async function readRowsByDmSeed(params: ReadDmParams): Promise<Row[]> {
         backgroundRefresh: false,
         maxRetries: 2,
         retryDelay: 500,
+        onProgress: params.onProgress,
       }
     );
 

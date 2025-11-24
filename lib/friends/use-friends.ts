@@ -119,6 +119,10 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
           }
 
           const status = STATUS_LABELS[decoded.status] || 'pending';
+          const lastTimestampRaw = (decoded as any).last_timestamp ?? (decoded as any).lastTimestamp ?? 0;
+          const lastTimestamp = typeof lastTimestampRaw === 'number'
+            ? lastTimestampRaw
+            : Number(lastTimestampRaw || 0);
 
           friendsList.push({
             address: friendAddress,
@@ -130,6 +134,7 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
             tableAddress: actualAddress,
             partyA,
             partyB,
+            lastTimestamp,
           });
         } catch (decodeErr) {
           console.warn('[useFriends] Failed to decode DMTable:', decodeErr);

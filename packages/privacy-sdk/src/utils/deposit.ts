@@ -815,7 +815,7 @@ export async function deposit(
 						lastValidBlockHeight:
 							latestBlockhash.lastValidBlockHeight,
 					},
-					" confirmed",
+					"confirmed",
 				);
 
 			if (confirmationResult.value.err) {

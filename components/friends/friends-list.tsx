@@ -25,14 +25,18 @@ import { Window, WindowHeader, WindowContent, Button, Cutout } from 'react95';
 import { MessageBubble } from '@/components/ui/message-bubble';
 import { MessageInputForm } from '@/components/chat/message-input-form';
 import { normalizeFileUrl } from '@/lib/utils/message-utils';
-import { GlobalStyles, darkGreenTheme } from './theme';
+import { GlobalStyles } from './theme';
 import { ROOT_ID, MESSAGE_COLUMNS } from '@/lib/onchainDB/constants';
 import { sendAndConfirmTx } from '@/lib/onchainDB/utils/transaction-helpers';
 import { rowToMessage, type MessageRow } from '@/lib/onchainDB/utils/message-helpers';
 import { mergeMessages, type MessagePayload } from '@/lib/onchainDB/shared/message';
 import { usePendingMessages } from '@/lib/onchainDB/shared/use-pending-messages';
 import { useMessageLoader, type LoaderOptions } from '@/lib/onchainDB/shared/useMessageLoader';
-import {useOnAccountChange} from "@/lib/onchainDB/shared/useOnAccountChange";
+import { useOnAccountChange } from '@/lib/onchainDB/shared/useOnAccountChange';
+import { makeDmTimestampKey, setLastMessageTimestamp, getLastMessageTimestamp } from '@/lib/cache/message-timestamp-cache';
+import { NotificationToggle } from '@/components/ui/notification-toggle';
+import { RpcConfigPrompt } from '@/components/ui/rpc-config-prompt';
+import { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
 type Tab = 'all' | 'pending' | 'blocked';
 type ProgramIdl = Idl & { address?: string };
 const FRIENDS_IDL = idl as ProgramIdl;
@@ -45,7 +49,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     /* --------------------------------------------------------------------------
      * Context & External Hooks
      * -------------------------------------------------------------------------- */
-    const { connection } = useAppConnection();
+    const { connection, endpointSource, setCustomRpcEndpoint } = useAppConnection();
     const wallet = useAppWallet();
     const router = useRouter();
     const userAddress = wallet?.publicKey?.toBase58();
@@ -81,6 +85,15 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     const [showAttachmentInput, setShowAttachmentInput] = useState(false);
     const [attachmentUrl, setAttachmentUrl] = useState('');
     const [attachmentError, setAttachmentError] = useState<string | null>(null);
+    const [dmNotificationsEnabled, setDmNotificationsEnabled] = useState(true);
+    const [friendTimestamps, setFriendTimestamps] = useState<Record<string, number>>({});
+    const [dmAlerts, setDmAlerts] = useState<Record<string, boolean>>({});
+    const [dmWsConnected, setDmWsConnected] = useState(false);
+    const dmFetchInFlightRef = useRef<Set<string>>(new Set());
+    const DM_RATE_LIMIT = 3;
+    const [chatSlowRpcMode, setChatSlowRpcMode] = useState(endpointSource === 'default');
+    const dmWsBackoffRef = useRef<number>(0);
+    const dmPingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     // Modal/UI state
     const [addFriendModalOpen, setAddFriendModalOpen] = useState(false);
@@ -91,6 +104,8 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     // Refs
     const chatMessagesEndRef = useRef<HTMLDivElement>(null);
     const chatInputRef = useRef<HTMLInputElement>(null);
+    const dmSocketRef = useRef<WebSocket | null>(null);
+    const dmSubscribedIdsRef = useRef<Set<string>>(new Set());
 
     /* --------------------------------------------------------------------------
      * Writer Context
@@ -141,23 +156,102 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     );
 
     // Filter friends by tab
+    const friendMapBySeedHex = useMemo(() => {
+        const map: Record<string, Friend> = {};
+        friends.forEach((friend) => {
+            if (friend.dmSeedHex) {
+                map[friend.dmSeedHex] = friend;
+            }
+        });
+        return map;
+    }, [friends]);
+
+    useEffect(() => {
+        setFriendTimestamps((prev) => {
+            const next: Record<string, number> = { ...prev };
+            friends.forEach((friend) => {
+                if (!friend.dmSeedHex) return;
+                const candidate = friend.lastTimestamp ?? 0;
+                if (!(friend.dmSeedHex in next) || candidate > next[friend.dmSeedHex]) {
+                    next[friend.dmSeedHex] = candidate;
+                }
+            });
+            // Remove entries for friends that no longer exist
+            Object.keys(next).forEach((key) => {
+                if (!friends.some((friend) => friend.dmSeedHex === key)) {
+                    delete next[key];
+                }
+            });
+            return next;
+        });
+    }, [friends]);
+
+    useEffect(() => {
+        const alerts: Record<string, boolean> = {};
+        friends.forEach((friend) => {
+            if (!friend.dmSeedHex) return;
+            const latest = friendTimestamps[friend.dmSeedHex] ?? friend.lastTimestamp ?? 0;
+            const cached = getLastMessageTimestamp(makeDmTimestampKey(friend.dmSeedHex)) ?? 0;
+            alerts[friend.dmSeedHex] = Boolean(latest && latest > cached);
+        });
+        setDmAlerts(alerts);
+    }, [friends, friendTimestamps]);
+
+    useEffect(() => {
+        setChatSlowRpcMode(endpointSource === 'default');
+    }, [endpointSource]);
+
+    const enrichedFriends = useMemo(() => {
+        return friends.map((friend) => ({
+            ...friend,
+            lastTimestamp: friendTimestamps[friend.dmSeedHex] ?? friend.lastTimestamp ?? 0,
+        }));
+    }, [friends, friendTimestamps]);
+
     const filteredFriends = useMemo(() => {
+        let list: Friend[] = [];
         if (activeTab === 'all') {
-            return friends.filter((f) => f.status === 'approved');
+            list = enrichedFriends.filter((f) => f.status === 'approved');
+        } else if (activeTab === 'pending') {
+            list = enrichedFriends.filter((f) => f.status === 'pending');
+        } else if (activeTab === 'blocked') {
+            list = enrichedFriends.filter((f) => f.status === 'blocked');
+        } else {
+            list = enrichedFriends;
         }
-        if (activeTab === 'pending') {
-            return friends.filter((f) => f.status === 'pending');
-        }
-        if (activeTab === 'blocked') {
-            return friends.filter((f) => f.status === 'blocked');
-        }
-        return friends;
-    }, [friends, activeTab]);
+        return [...list].sort((a, b) => (b.lastTimestamp || 0) - (a.lastTimestamp || 0));
+    }, [enrichedFriends, activeTab]);
 
     const orderedChatMessages = useMemo(
         () => mergeMessages(chatMessages, chatPendingMessages),
         [chatMessages, chatPendingMessages]
     );
+
+    const existingChatSignatures = useMemo(() => {
+        const sigs = new Set<string>();
+        chatMessages.forEach((msg) => {
+            if (msg.signature) sigs.add(msg.signature);
+        });
+        return sigs;
+    }, [chatMessages]);
+
+    useEffect(() => {
+        setChatMessages([]);
+        resetChatPendingMessages();
+    }, [chatFriend?.dmSeedHex, resetChatPendingMessages]);
+
+    const upsertChatMessages = useCallback((incoming: MessageRow[]) => {
+        if (!incoming.length) return;
+        setChatMessages((prev) => {
+            const map = new Map<string, MessageRow>();
+            [...prev, ...incoming].forEach((msg) => {
+                if (!msg) return;
+                const key = msg.signature || msg.id || `${msg.timestamp ?? 0}-${msg.sender ?? ''}`;
+                map.set(key, msg);
+            });
+            return Array.from(map.values()).sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+        });
+    }, []);
 
     const chatFriendTable = useMemo(() => {
         if (!chatFriend) return null;
@@ -174,18 +268,30 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
      * -------------------------------------------------------------------------- */
     const fetcher = useCallback(async (friend: Friend) => {
         if (!userAddress) return [];
+        const maxTx = endpointSource === 'default' ? 40 : 200;
         const rows = await readRowsByDmSeed({
             connection,
             rootId: ROOT_ID,
             userPublicKey: userAddress,
             idl: FRIENDS_IDL,
             dmSeed: friend.dmSeed,
-            maxTx: 20,
+            maxTx,
+            onProgress: (partialRows) => {
+                if (chatFriend && chatFriend.dmSeedHex !== friend.dmSeedHex) return;
+                const partialMessages = partialRows
+                    .map((row) => rowToMessage(row))
+                    .filter((message) => message.text || message.file);
+                upsertChatMessages(partialMessages);
+                if (endpointSource === 'default') {
+                    setChatSlowRpcMode(true);
+                }
+            },
+            knownSignatures: existingChatSignatures,
         });
         return rows
             .map((row) => rowToMessage(row))
             .filter((message) => message.text || message.file);
-    }, [connection, userAddress]);
+    }, [connection, userAddress, endpointSource, chatFriend, upsertChatMessages, existingChatSignatures]);
 
     const {
         loadMessages: loadDmMessages,
@@ -204,15 +310,136 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     const loadChatHistory = useCallback(
         async (friend: Friend | null, options?: LoaderOptions) => {
             if (!friend) return;
+            const dmKey = friend.dmSeedHex;
+            if (dmKey && dmFetchInFlightRef.current.has(dmKey)) {
+                console.log('[FriendsList] Skipping DM fetch, already in-flight for', dmKey.slice(0, 8));
+                return;
+            }
+            if (dmKey) dmFetchInFlightRef.current.add(dmKey);
             try {
-                const rows = await loadDmMessages(friend, options);
-                setChatMessages(rows);
+                const rows = await runWithRpcRateLimit(
+                    () => loadDmMessages(friend, options),
+                    {
+                        enabled: endpointSource === 'default',
+                        maxPerSecond: DM_RATE_LIMIT,
+                    }
+                );
+                upsertChatMessages(rows);
+                const latestTimestamp = rows.reduce((max, msg) => {
+                    const ts = msg.timestamp ?? 0;
+                    return ts > max ? ts : max;
+                }, 0);
+                if (latestTimestamp && friend.dmSeedHex) {
+                    setLastMessageTimestamp(makeDmTimestampKey(friend.dmSeedHex), latestTimestamp);
+                    setFriendTimestamps((prev) => ({ ...prev, [friend.dmSeedHex]: latestTimestamp }));
+                    setDmAlerts((prev) => ({ ...prev, [friend.dmSeedHex]: false }));
+                }
             } catch (err) {
                 console.error('[FriendsList] Failed to load DM conversation', err);
+            } finally {
+                if (dmKey) dmFetchInFlightRef.current.delete(dmKey);
             }
         },
-        [loadDmMessages]
+        [loadDmMessages, endpointSource, upsertChatMessages]
     );
+
+    const appendLatestChatMessage = useCallback(
+        async (friend: Friend | null) => {
+            if (!friend || !userAddress) return;
+            if (friend.dmSeedHex && dmFetchInFlightRef.current.has(friend.dmSeedHex)) {
+                return;
+            }
+            try {
+                if (friend.dmSeedHex) dmFetchInFlightRef.current.add(friend.dmSeedHex);
+                await invalidateDmCache(friend.dmSeed);
+                const rows = await runWithRpcRateLimit(
+                    () =>
+                        readRowsByDmSeed({
+                            connection,
+                            rootId: ROOT_ID,
+                            userPublicKey: userAddress,
+                            idl: FRIENDS_IDL,
+                            dmSeed: friend.dmSeed,
+                            maxTx: 5,
+                            perTableLimit: 1,
+                        }),
+                    {
+                        enabled: endpointSource === 'default',
+                        maxPerSecond: DM_RATE_LIMIT,
+                    }
+                );
+                const latest = rows
+                    .map((row) => rowToMessage(row))
+                    .find((message) => message.text || message.file);
+                if (!latest) return;
+
+                setChatMessages((prev) => {
+                    if (prev.some((msg) => msg.id === latest.id)) {
+                        return prev;
+                    }
+                    const next = [...prev, latest];
+                    next.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                    return next;
+                });
+
+                if (friend.dmSeedHex) {
+                    setLastMessageTimestamp(
+                        makeDmTimestampKey(friend.dmSeedHex),
+                        latest.timestamp ?? Date.now()
+                    );
+                    setFriendTimestamps((prev) => ({
+                        ...prev,
+                        [friend.dmSeedHex]: latest.timestamp ?? Date.now(),
+                    }));
+                    setDmAlerts((prev) => ({ ...prev, [friend.dmSeedHex]: false }));
+                }
+            } catch (error) {
+                console.error('[FriendsList] Failed to append latest DM message', error);
+                throw error;
+            } finally {
+                if (friend.dmSeedHex) dmFetchInFlightRef.current.delete(friend.dmSeedHex);
+            }
+        },
+        [connection, userAddress, endpointSource]
+    );
+
+    const handleDmSocketPayload = useCallback(async (payload: { type?: string; roomId?: string; lastTimestamp?: number }) => {
+        const roomId = payload?.roomId;
+        if (!roomId || !roomId.startsWith('dm:')) {
+            return;
+        }
+        const dmSeedHex = roomId.slice(3);
+        const incomingTimestamp = typeof payload.lastTimestamp === 'number'
+            ? payload.lastTimestamp
+            : Number(payload.lastTimestamp || 0);
+
+        const targetFriend = friendMapBySeedHex[dmSeedHex];
+        if (targetFriend) {
+            try {
+                await invalidateDmCache(targetFriend.dmSeed);
+            } catch (error) {
+                console.error('[FriendsList] Failed to invalidate DM cache', error);
+            }
+        }
+
+        setFriendTimestamps((prev) => {
+            const current = prev[dmSeedHex] ?? 0;
+            if (incomingTimestamp <= current) {
+                return prev;
+            }
+            return { ...prev, [dmSeedHex]: incomingTimestamp };
+        });
+
+        if (chatFriend?.dmSeedHex === dmSeedHex && chatOpen) {
+            try {
+                await appendLatestChatMessage(chatFriend);
+            } catch (error) {
+                console.error('[FriendsList] Failed to refresh DM after notification', error);
+            }
+        } else {
+            setDmAlerts((prev) => ({ ...prev, [dmSeedHex]: true }));
+        }
+    }, [appendLatestChatMessage, chatFriend, chatOpen, friendMapBySeedHex]);
 
     const handleOpenChat = useCallback(async (friend: Friend) => {
         setChatFriend(friend);
@@ -236,13 +463,17 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
 
         refreshTimeoutRef.current = setTimeout(async () => {
             try {
-                await invalidateDmCache(chatFriend.dmSeed);
-                await loadChatHistory(chatFriend, { skipLoadingState: true });
+                await appendLatestChatMessage(chatFriend);
             } catch (error) {
-                console.error('[FriendsList] Failed to refresh messages after logs:', error);
+                console.error('[FriendsList] Failed to append latest message, reloading history:', error);
+                try {
+                    await loadChatHistory(chatFriend, { skipLoadingState: true });
+                } catch (reloadError) {
+                    console.error('[FriendsList] Failed fallback reload after append error:', reloadError);
+                }
             }
-        }, 2000);
-    }, [chatFriend, loadChatHistory]);
+        }, 500);
+    }, [appendLatestChatMessage, chatFriend, loadChatHistory]);
 
     // Cleanup timeout on unmount
     useEffect(() => {
@@ -283,7 +514,122 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             void handleDmLogs();
         },
         commitment: 'processed',
+        enabled: !dmWsConnected,
     });
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const url = process.env.NEXT_PUBLIC_NOTI_WS_URL || 'ws://localhost:8080';
+        let active = true;
+
+        const clearPing = () => {
+            if (dmPingIntervalRef.current) {
+                clearInterval(dmPingIntervalRef.current);
+                dmPingIntervalRef.current = null;
+            }
+        };
+
+        const scheduleReconnect = () => {
+            setDmWsConnected(false);
+            clearPing();
+            dmSubscribedIdsRef.current.clear();
+            dmSocketRef.current = null;
+            if (!active) return;
+            dmWsBackoffRef.current = Math.min(
+                dmWsBackoffRef.current ? dmWsBackoffRef.current * 2 : 2000,
+                30000
+            );
+            setTimeout(connect, dmWsBackoffRef.current);
+        };
+
+        const connect = () => {
+            if (!active) return;
+            try {
+                const socket = new WebSocket(url);
+                dmSocketRef.current = socket;
+
+                socket.addEventListener('open', () => {
+                    if (!active) return;
+                    console.log('[FriendsList] DM WS connected');
+                    dmWsBackoffRef.current = 0;
+                    setDmWsConnected(true);
+                    clearPing();
+                    dmPingIntervalRef.current = setInterval(() => {
+                        if (socket.readyState === WebSocket.OPEN) {
+                            socket.send(JSON.stringify({ type: 'ping' }));
+                        }
+                    }, 20000);
+                });
+
+                socket.addEventListener('message', (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data?.type === 'pong') return;
+                        console.log('[FriendsList] DM WS message:', data);
+                        if (data && (data.type === 'roomUpdated' || data.type === 'roomSnapshot')) {
+                            void handleDmSocketPayload(data);
+                        }
+                    } catch (error) {
+                        console.warn('[FriendsList] Failed to parse DM notification payload', error);
+                    }
+                });
+
+                socket.addEventListener('close', () => {
+                    console.log('[FriendsList] DM WS closed');
+                    scheduleReconnect();
+                });
+
+                socket.addEventListener('error', (error) => {
+                    console.warn('[FriendsList] DM WS error', error);
+                });
+            } catch (error) {
+                console.warn('[FriendsList] Failed to connect DM notifications', error);
+                scheduleReconnect();
+            }
+        };
+
+        connect();
+
+        return () => {
+            active = false;
+            clearPing();
+            dmSubscribedIdsRef.current.clear();
+            dmSocketRef.current?.close();
+            dmSocketRef.current = null;
+        };
+    }, [handleDmSocketPayload]);
+
+    useEffect(() => {
+        if (!dmWsConnected || !dmSocketRef.current) return;
+        if (dmSocketRef.current.readyState !== WebSocket.OPEN) {
+            console.warn('[FriendsList] DM WS not ready, state =', dmSocketRef.current.readyState);
+            return;
+        }
+        const socket = dmSocketRef.current;
+        const desired = new Set(
+            friends
+                .map((friend) => friend.dmSeedHex)
+                .filter((seed): seed is string => Boolean(seed))
+                .map((seed) => makeDmTimestampKey(seed))
+        );
+        const current = dmSubscribedIdsRef.current;
+
+        for (const id of desired) {
+            if (!current.has(id)) {
+                socket.send(JSON.stringify({ type: 'subscribe', roomId: id }));
+                current.add(id);
+            }
+        }
+
+        for (const id of Array.from(current)) {
+            if (!desired.has(id)) {
+                socket.send(JSON.stringify({ type: 'unsubscribe', roomId: id }));
+                current.delete(id);
+            }
+        }
+
+        dmSubscribedIdsRef.current = desired;
+    }, [friends, dmWsConnected]);
 
     /* --------------------------------------------------------------------------
      * Event Handlers
@@ -420,6 +766,26 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         }
     };
 
+    const notifyDmMessageSent = useCallback((dmSeedHex: string, ts: number) => {
+        const socket = dmSocketRef.current;
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            console.warn('[FriendsList] DM notify skipped, state =', socket?.readyState ?? 'no socket');
+            return;
+        }
+        try {
+            socket.send(
+                JSON.stringify({
+                    type: 'messageSent',
+                    roomId: makeDmTimestampKey(dmSeedHex),
+                    timestamp: ts,
+                })
+            );
+            console.log('[FriendsList] DM notify sent for', dmSeedHex.slice(0, 8), 'ts', ts);
+        } catch (error) {
+            console.warn('[FriendsList] Failed to emit DM notification', error);
+        }
+    }, []);
+
     const handleSendChatMessage = async (event?: FormEvent) => {
         event?.preventDefault();
         if (!chatFriend || !writerCtx || !userAddress) return;
@@ -460,12 +826,21 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         setShowAttachmentInput(false);
         setChatActionError(null);
 
+        if (chatFriend?.dmSeedHex) {
+            const dmKey = chatFriend.dmSeedHex;
+            setLastMessageTimestamp(makeDmTimestampKey(dmKey), timestamp);
+            setFriendTimestamps((prev) => ({ ...prev, [dmKey]: timestamp }));
+            setDmAlerts((prev) => ({ ...prev, [dmKey]: false }));
+        }
+
         addChatPendingMessage(payload);
 
         try {
             const { tx } = await writeDmRowWeb(writerCtx, ROOT_ID, chatFriend.dmSeed, JSON.stringify(payload));
             await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] DM sent:');
-            await loadChatHistory(chatFriend, { skipLoadingState: true });
+            if (chatFriend.dmSeedHex) {
+                notifyDmMessageSent(chatFriend.dmSeedHex, timestamp);
+            }
         } catch (err) {
             removeChatPendingMessage(messageId);
             const message = err instanceof Error ? err.message : 'Failed to send DM';
@@ -497,6 +872,10 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
 
     return (
         <div>
+            <RpcConfigPrompt
+                endpointSource={endpointSource}
+                setCustomRpcEndpoint={setCustomRpcEndpoint}
+            />
             <GlobalStyles />
             <div className="flex-1 p-4 md:p-6 max-w-4xl mx-auto w-full">
                 <Window style={{ width: '100%', marginBottom: '20px' }}>
@@ -589,6 +968,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                                                 onBlock={showBlockConfirm}
                                                 onUnblock={handleUnblockFriend}
                                                 onOpenChat={handleOpenChat}
+                                                hasUnread={Boolean(friend.dmSeedHex && dmAlerts[friend.dmSeedHex])}
                                             />
                                         ))}
                                     </div>
@@ -608,9 +988,17 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                             <h3 className="text-green-400 font-bold">
                                 DM with {shortenAddress(chatFriend.address)}
                             </h3>
-                            <Button onClick={closeChatModal} size="sm" style={{ fontSize: '11px' }}>
-                                X
-                            </Button>
+                            <div className="flex items-center gap-3">
+                                <NotificationToggle
+                                    enabled={dmNotificationsEnabled}
+                                    onToggle={() => setDmNotificationsEnabled((prev) => !prev)}
+                                    label="NOTI"
+                                    size="sm"
+                                />
+                                <Button onClick={closeChatModal} size="sm" style={{ fontSize: '11px' }}>
+                                    X
+                                </Button>
+                            </div>
                         </div>
 
                         {/* Info banner */}
@@ -632,6 +1020,12 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                                 {chatFriend.status === 'blocked' && ' (unblock to continue)'}
                             </div>
                         </div>
+
+                        {chatSlowRpcMode && (
+                            <div className="border-b border-yellow-700/40 bg-yellow-900/20 px-4 py-2 text-xs text-amber-200 flex-shrink-0">
+                                Using public RPC — slow load mode (1 tx/sec). Messages will appear as they arrive.
+                            </div>
+                        )}
 
                         {/* Messages */}
                         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 min-h-0">

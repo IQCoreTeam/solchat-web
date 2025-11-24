@@ -26,6 +26,8 @@ export interface Friend {
   partyB: string;
   /** Optional display name */
   name?: string;
+  /** Last timestamp tracked on-chain */
+  lastTimestamp?: number;
 }
 
 export const DM_STATUS = {

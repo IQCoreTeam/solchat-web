@@ -15,16 +15,18 @@ export function useOnAccountChange({
   account,
   handler,
   commitment = 'processed',
+  enabled = true,
 }: {
   connection: Connection
   account: PublicKey | null
   handler: OnAccountChangeHandler
   commitment?: 'processed' | 'confirmed' | 'finalized'
+  enabled?: boolean
 }) {
   const subscriptionRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (!account) return
+    if (!enabled || !account) return
 
     const subscribe = async () => {
       try {
@@ -49,5 +51,5 @@ export function useOnAccountChange({
         subscriptionRef.current = null
       }
     }
-  }, [connection, account?.toBase58(), commitment, handler])
+  }, [connection, account?.toBase58(), commitment, handler, enabled])
 }
