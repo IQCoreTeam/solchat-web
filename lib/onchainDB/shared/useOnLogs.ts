@@ -1,7 +1,14 @@
 import { useEffect, useRef } from 'react'
-import { PublicKey, type Connection } from '@solana/web3.js'
+import { PublicKey, type Connection, type Logs } from '@solana/web3.js'
 
-type OnLogsHandler = (connection: Connection, account: PublicKey) => void | Promise<void>
+export type OnLogsCallbackArgs = {
+  connection: Connection
+  account: PublicKey
+  signature: string
+  logs: Logs
+}
+
+type OnLogsHandler = (args: OnLogsCallbackArgs) => void | Promise<void>
 
 export function useOnLogs({
   connection,
@@ -23,8 +30,13 @@ export function useOnLogs({
       try {
         const id = await connection.onLogs(
           account,
-          () => {
-            void handler(connection, account)
+          (logs) => {
+            void handler({
+              connection,
+              account,
+              signature: logs.signature,
+              logs,
+            })
           },
           commitment
         )

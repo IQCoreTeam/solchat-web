@@ -5,6 +5,7 @@ import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { useCloakSdk } from '@/lib/cloak/use-cloak-sdk';
 import type { TransactionSigner } from '@cloak-dev/sdk';
 import type { PrivyAppWallet } from '@/lib/wallet/privy-app-wallet';
+import { Window, WindowHeader, WindowContent, Panel, Button, Cutout } from 'react95';
 
 interface PrivateEntryCardProps {
   privyWallet: PrivyAppWallet | null;

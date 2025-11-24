@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import type { AccountInfo } from '@solana/web3.js';
+import type { AccountInfo, ParsedTransactionWithMeta } from '@solana/web3.js';
 import { PublicKey } from '@solana/web3.js';
 import { Buffer } from 'buffer';
-import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
+import bs58 from 'bs58';
+import { BorshAccountsCoder, BorshInstructionCoder, type Idl } from '@coral-xyz/anchor';
 import idl from '@/lib/onchainDB/idl.json';
 import type { WalletAdapterLike } from '@/lib/onchainDB/web/provider';
 import {
@@ -16,6 +17,7 @@ import {
 } from '@/lib/onchainDB/web/writer';
 import { readRowsByTable, invalidateRoomCache, type Row } from '@/lib/onchainDB/web/cached-reader-integration';
 import { pdaInstructionTable, pdaRoot, pdaTable } from '@/lib/onchainDB';
+import { configs } from '@/lib/onchainDB/configs';
 import { useUserInit } from '@/lib/onchainDB/hooks/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
@@ -29,9 +31,92 @@ import {
 } from '@/lib/onchainDB/utils/message-helpers';
 import { mergeMessages, type MessagePayload } from '@/lib/onchainDB/shared/message';
 import { usePendingMessages } from '@/lib/onchainDB/shared/use-pending-messages';
-import { useOnLogs } from '@/lib/onchainDB/shared/useOnLogs';
+import { useOnLogs, type OnLogsCallbackArgs } from '@/lib/onchainDB/shared/useOnLogs';
 import { useMessageLoader, type LoaderOptions } from '@/lib/onchainDB/shared/useMessageLoader';
 import { ROOT_ID, MESSAGE_COLUMNS } from '@/lib/onchainDB/constants';
+
+const textDecoder = new TextDecoder();
+
+const toU8 = (x: any): Uint8Array => {
+    if (x instanceof Uint8Array) return x;
+    if (Array.isArray(x)) return new Uint8Array(x);
+    if (x?.data) return new Uint8Array(x.data);
+    return new Uint8Array();
+};
+
+const toStr = (u8: any): string => {
+    try {
+        if (typeof u8 === 'string') return u8;
+        const bytes = toU8(u8);
+        if (bytes.length === 0) return '';
+        try {
+            return textDecoder.decode(bytes).replace(/\0+$/, '');
+        } catch {
+            return Buffer.from(bytes).toString('hex');
+        }
+    } catch {
+        return '';
+    }
+};
+
+const toHex = (x: any): string => Buffer.from(toU8(x)).toString('hex');
+
+function tryParseJsonLoose(s: string): Row {
+    if (!s) return {};
+    let normalized = s.trim();
+    if (normalized) {
+        try {
+            return JSON.parse(normalized) as Row;
+        } catch {
+            // continue
+        }
+    }
+    if (!/^\s*\{/.test(normalized)) {
+        return { value: normalized } as Row;
+    }
+    normalized = normalized.replace(/'([^']*)'/g, (_m, g1) => `"${g1}"`).replace(/(\w+)\s*:/g, '"$1":');
+    try {
+        return JSON.parse(normalized) as Row;
+    } catch {
+        try {
+            const fixed = normalized.replace(/(\{|,)\s*([A-Za-z0-9_]+)\s*:/g, '$1 "$2":');
+            return JSON.parse(fixed) as Row;
+        } catch {
+            return { raw: s } as Row;
+        }
+    }
+}
+
+function decodeAllIxsFromTx(
+    tx: ParsedTransactionWithMeta,
+    programIdB58: string,
+    ixCoder: BorshInstructionCoder
+) {
+    const accKeys = tx.transaction?.message?.accountKeys ?? [];
+    const out: { name: string; data: any }[] = [];
+
+    const outer = tx.transaction?.message?.instructions ?? [];
+    const innerGroups = tx.meta?.innerInstructions ?? [];
+    const inner = innerGroups.flatMap((g) => g.instructions ?? []);
+    const all = [...outer, ...inner];
+
+    for (const ix of all) {
+        const pidIndex = (ix as any).programIdIndex;
+        const pid = pidIndex != null ? (accKeys[pidIndex]?.pubkey || accKeys[pidIndex]) : (ix as any).programId;
+        const pidB58 = typeof (pid as any)?.toBase58 === 'function' ? (pid as any).toBase58() : String(pid);
+        if (pidB58 !== programIdB58) continue;
+        const data = (ix as any).data;
+        if (!data) continue;
+        try {
+            const encoded = typeof data === 'string' ? data : bs58.encode(toU8(data));
+            const decoded = ixCoder.decode(encoded, 'base58');
+            if (decoded) out.push(decoded);
+        } catch {
+            // skip invalid ix
+        }
+    }
+    return out;
+}
 
 // Import new components
 import { ChatHeader } from './chat-header';
@@ -78,6 +163,8 @@ export function ChatClient() {
     const { logout } = usePrivy();
 
     const coder = useMemo(() => new BorshAccountsCoder(PROGRAM_IDL), []);
+    const instructionCoder = useMemo(() => new BorshInstructionCoder(PROGRAM_IDL), []);
+    const programIdB58 = useMemo(() => PROGRAM_IDL.address || configs.programId, []);
     const rootPubkey = useMemo(() => pdaRoot(ROOT_ID), []);
 
     /* --------------------------------------------------------------------------
@@ -334,7 +421,7 @@ export function ChatClient() {
     useEffect(() => {
         if (!walletAddress || !selectedSeed) return;
         loadMessages();
-    }, [walletAddress, selectedSeed]);
+    }, [walletAddress, selectedSeed, loadMessages]);
 
     useEffect(() => {
         if (!pendingMessages.length) return;
@@ -344,18 +431,49 @@ export function ChatClient() {
     /* --------------------------------------------------------------------------
      * Effects: WebSocket Subscriptions
      * -------------------------------------------------------------------------- */
-    const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-    const refreshMessagesFromLogs = useCallback(() => {
-        if (!selectedRoom) return;
-
-        if (refreshTimeoutRef.current) {
-            clearTimeout(refreshTimeoutRef.current);
-            if (refreshTimeoutRef.current) {
-                clearTimeout(refreshTimeoutRef.current);
+    const decodeRowFromSignature = useCallback(async (signature: string, seedHex: string) => {
+        if (!programIdB58) return null;
+        const tx = await connection.getTransaction(signature, {
+            maxSupportedTransactionVersion: 0,
+            commitment: 'confirmed',
+        });
+        if (!tx) return null;
+        const decoded = decodeAllIxsFromTx(tx as ParsedTransactionWithMeta, programIdB58, instructionCoder);
+        for (const d of decoded) {
+            try {
+                if (d.name === 'write_data') {
+                    const targetSeedHex = toHex(d.data.table_seed ?? d.data[0]);
+                    if (targetSeedHex !== seedHex) continue;
+                    const payloadStr = toStr(d.data.row_json_tx ?? d.data[2]);
+                    return tryParseJsonLoose(payloadStr);
+                }
+            } catch {
+                // ignore decode errors
             }
-        };
-    }, []);
+        }
+        return null;
+    }, [connection, instructionCoder, programIdB58]);
+
+    const appendMessageFromSignature = useCallback(async (signature: string) => {
+        if (!selectedRoom) return;
+        try {
+            const row = await decodeRowFromSignature(signature, selectedRoom.seedHex);
+            if (!row) {
+                await loadMessagesForRoom(selectedRoom, { skipLoadingState: true });
+                return;
+            }
+            const message = rowToMessage(row);
+            setMessages((prev) => mergeMessages(prev, [message]));
+            pruneConfirmedMessages([message]);
+        } catch (error) {
+            console.error('[ChatClient] Failed to append message from logs:', error);
+        }
+    }, [decodeRowFromSignature, loadMessagesForRoom, pruneConfirmedMessages, selectedRoom]);
+
+    const refreshMessagesFromLogs = useCallback(({ signature }: OnLogsCallbackArgs) => {
+        if (!signature) return;
+        void appendMessageFromSignature(signature);
+    }, [appendMessageFromSignature]);
 
     useOnLogs({
         connection,
