@@ -1,6 +1,6 @@
 import { PublicKey } from '@solana/web3.js'
 
-const DEFAULT_PROGRAM_ID = 'Ame1MLzQwrrSeTjgfM5HH4a9gDwTJXySFjz3LBpQpwkN'
+const DEFAULT_PROGRAM_ID = '56chGT6U3fvbYQwFcNJcygg7nBngvuC8Zr5FztzSfd44'
 const DEFAULT_ROOT_ID = 'solchat-root'
 
 export const configs = {
