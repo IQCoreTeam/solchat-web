@@ -2890,6 +2890,7 @@
         },
         {
           "name": "table",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -3127,6 +3128,7 @@
         },
         {
           "name": "dm_table",
+          "writable": true,
           "pda": {
             "seeds": [
               {
