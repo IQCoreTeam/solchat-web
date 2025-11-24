@@ -93,7 +93,7 @@ export function usePrivyWalletAdapter() {
  * Compatibility hook for useConnection
  */
 export function usePrivyConnection() {
-  const connection = useMemo(() => new Connection(RPC_URL, 'processed'), []);
+  const connection = useMemo(() => new Connection(RPC_URL, 'confirmed'), []);
 
   return { connection };
 }

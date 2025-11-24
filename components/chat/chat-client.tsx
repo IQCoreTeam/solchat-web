@@ -361,14 +361,14 @@ export function ChatClient() {
         connection,
         account: tableAccount,
         handler: refreshMessagesFromLogs,
-        commitment: 'processed',
+        commitment: 'confirmed',
     });
 
     useOnLogs({
         connection,
         account: instructionAccount,
         handler: refreshMessagesFromLogs,
-        commitment: 'processed',
+        commitment: 'confirmed',
     });
 
     /* --------------------------------------------------------------------------

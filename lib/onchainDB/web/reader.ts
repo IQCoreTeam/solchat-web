@@ -169,7 +169,7 @@ async function getTransactionsForAddress(
               address.toBase58(),
               {
                 limit,
-                commitment: 'processed',
+                commitment: 'confirmed',
               },
             ],
           }),
@@ -202,7 +202,7 @@ async function getFallbackTransactions(
     const batch = sigs.slice(i, i + BATCH_SIZE)
     const txs = await Promise.all(
       batch.map(s =>
-        connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0, commitment: 'confirmed' })
+        connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0, })
       )
     )
     transactions.push(...txs.filter(tx => tx !== null))
@@ -316,7 +316,7 @@ async function collectRowsFromTxRef(
  */
 export async function readRecentRows(params: ReaderParams): Promise<ReaderResult> {
   const endpoint = params.endpoint || configs.network
-  const connection = params.connection || new Connection(endpoint, 'processed')
+  const connection = params.connection || new Connection(endpoint, 'confirmed')
   const programIdStr = params.programId || configs.programId
   const user = new PublicKey(params.userPublicKey)
   const rootIdBytes = rootIdToBytes(params.rootId)
@@ -431,7 +431,7 @@ export async function readRowsByTable(
   params: ReaderParams & { tableName: string }
 ): Promise<Row[]> {
   const endpoint = params.endpoint || configs.network
-  const connection = params.connection || new Connection(endpoint, 'processed')
+  const connection = params.connection || new Connection(endpoint, 'confirmed')
   const programIdStr = params.programId || configs.programId
   const rootIdBytes = rootIdToBytes(params.rootId)
   const idl = params.idl
@@ -700,7 +700,7 @@ export async function readRowsByDmSeed(
   params: ReaderParams & { dmSeed: BytesLike }
 ): Promise<Row[]> {
   const endpoint = params.endpoint || configs.network
-  const connection = params.connection || new Connection(endpoint, 'processed')
+  const connection = params.connection || new Connection(endpoint, 'confirmed')
   const programIdStr = params.programId || configs.programId
   const rootIdBytes = rootIdToBytes(params.rootId)
   const idl = params.idl
@@ -822,7 +822,7 @@ export async function readTableMeta(
   params: ReaderParams & { tableName: string }
 ): Promise<{ name: string; columns: string[]; idColumn?: string | number | null; extTableName?: string | null; extKeys?: string[]; tablePda: string; instPda: string | null }> {
   const endpoint = params.endpoint || configs.network
-  const connection = params.connection || new Connection(endpoint, 'processed')
+  const connection = params.connection || new Connection(endpoint, 'confirmed')
   const rootIdBytes = rootIdToBytes(params.rootId)
   const idl = params.idl
   const tableName = params.tableName
@@ -885,7 +885,7 @@ export async function readDmTableMeta(
   params: ReaderParams & { dmSeed: BytesLike }
 ): Promise<{ name: string; columns: string[]; idColumn?: string | number | null; extKeys?: string[]; tablePda: string; instPda: string | null; partyA?: string | null; partyB?: string | null }> {
   const endpoint = params.endpoint || configs.network
-  const connection = params.connection || new Connection(endpoint, 'processed')
+  const connection = params.connection || new Connection(endpoint, 'confirmed')
   const rootIdBytes = rootIdToBytes(params.rootId)
   const idl = params.idl
 

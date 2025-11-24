@@ -7,7 +7,7 @@ export function useOnLogs({
   connection,
   account,
   handler,
-  commitment = 'processed',
+  commitment = 'confirmed',
 }: {
   connection: Connection
   account: PublicKey | null

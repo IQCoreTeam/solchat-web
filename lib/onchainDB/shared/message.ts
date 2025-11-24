@@ -10,14 +10,14 @@ export type MessagePayload = {
 };
 
 export function mergeMessages(
-  confirmed: MessageRow[],
+ confirmed: MessageRow[],
   pending: MessageRow[]
 ): MessageRow[] {
   const byId = new Map<string, MessageRow>();
   pending.forEach((msg) => {
     byId.set(msg.id, msg);
   });
-  confirmed.forEach((msg) => {
+ confirmed.forEach((msg) => {
     byId.set(msg.id, msg);
   });
   return Array.from(byId.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
@@ -37,7 +37,7 @@ export function createPendingMessage(payload: MessagePayload): MessageRow {
 
 export function prunePendingMessages(
   pending: MessageRow[],
-  confirmed: MessageRow[]
+ confirmed: MessageRow[]
 ): MessageRow[] {
   const confirmedIds = new Set(confirmed.map((msg) => msg.id));
   if (!confirmedIds.size) return pending;

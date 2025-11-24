@@ -63,7 +63,7 @@ async function main() {
 	const connection = new Connection(
 		process.env.RPC_URL ||
 			"https://devnet.helius-rpc.com/?api-key=",
-		"processed",
+		" confirmed",
 	);
 
 	// Initialize SDK
