@@ -7,12 +7,12 @@ import { FriendsList } from '@/components/friends/friends-list';
 import { Nav } from '@/components/layout/nav';
 
 type FriendsPageProps = {
-  searchParams: { [key: string]: string | string[] | undefined };
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 };
 
-export default function FriendsPage({ searchParams }: FriendsPageProps) {
-  const dm =
-    typeof searchParams?.dm === 'string' ? searchParams.dm : undefined;
+export default async function FriendsPage({ searchParams }: FriendsPageProps) {
+  const params = await searchParams;
+  const dm = typeof params?.dm === 'string' ? params.dm : undefined;
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-black via-[#001a00] to-[#002100]">

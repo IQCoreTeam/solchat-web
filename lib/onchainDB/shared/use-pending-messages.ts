@@ -14,7 +14,12 @@ export function usePendingMessages(): PendingMessagesHookReturn {
   const [pendingMessages, setPendingMessages] = useState<MessageRow[]>([]);
 
   const addPendingMessage = useCallback((payload: MessagePayload) => {
-    setPendingMessages((prev) => [...prev, createPendingMessage(payload)]);
+    setPendingMessages((prev) => {
+      if (prev.some((msg) => msg.id === payload.id)) {
+        return prev;
+      }
+      return [...prev, createPendingMessage(payload)];
+    });
   }, []);
 
   const pruneConfirmedMessages = useCallback((confirmed: MessageRow[]) => {

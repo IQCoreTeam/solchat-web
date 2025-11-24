@@ -284,6 +284,8 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         commitment: 'confirmed',
     });
 
+    // No secondary tx_ref subscription; DM table logs are enough to trigger refreshes
+
     /* --------------------------------------------------------------------------
      * Event Handlers
      * -------------------------------------------------------------------------- */
