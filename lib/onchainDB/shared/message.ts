@@ -6,6 +6,7 @@ export type MessagePayload = {
   sender: string;
   timestamp: number;
   file?: string;
+  room?: string;
 };
 
 export function mergeMessages(
@@ -29,6 +30,7 @@ export function createPendingMessage(payload: MessagePayload): MessageRow {
     sender: payload.sender,
     timestamp: payload.timestamp,
     file: payload.file,
+    room: payload.room,
     status: 'pending',
   };
 }
