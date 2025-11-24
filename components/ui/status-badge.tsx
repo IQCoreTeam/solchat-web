@@ -15,7 +15,7 @@ interface StatusBadgeProps {
 const statusConfig: Record<Status, { color: string; label: string }> = {
     pending: { color: '#ffff00', label: 'PENDING' },
     sent: { color: '#00ff00', label: 'SENT' },
-    confirmed: { color: '#00ff00', label: 'CONFIRMED' },
+    confirmed: { color: '#00ff00', label: 'confirmed' },
     failed: { color: '#ff0000', label: 'FAILED' },
     approved: { color: '#00ff00', label: 'APPROVED' },
     blocked: { color: '#ff0000', label: 'BLOCKED' },

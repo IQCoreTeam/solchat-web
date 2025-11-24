@@ -28,7 +28,8 @@ export function useOnLogs({
       if (!account) return
 
       try {
-        const id = await connection.onLogs(
+
+        const id = connection.onLogs(
           account,
           (logs) => {
             void handler({

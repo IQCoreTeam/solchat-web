@@ -281,7 +281,7 @@ export function MessageBubble({
                         <div className="mt-1 flex items-center gap-2 text-[11px] text-white/50">
                             {mode === 'dm' && formattedTime && <span>{formattedTime}</span>}
                             {mode === 'dm' && formattedTime && <span>·</span>}
-                            <span>{isPending ? 'Pending' : 'Confirmed'}</span>
+                            <span>{isPending ? 'Pending' : 'confirmed'}</span>
                         </div>
                     )}
                 </div>

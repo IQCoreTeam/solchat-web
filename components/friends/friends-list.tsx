@@ -31,9 +31,8 @@ import { sendAndConfirmTx } from '@/lib/onchainDB/utils/transaction-helpers';
 import { rowToMessage, type MessageRow } from '@/lib/onchainDB/utils/message-helpers';
 import { mergeMessages, type MessagePayload } from '@/lib/onchainDB/shared/message';
 import { usePendingMessages } from '@/lib/onchainDB/shared/use-pending-messages';
-import { useOnLogs } from '@/lib/onchainDB/shared/useOnLogs';
 import { useMessageLoader, type LoaderOptions } from '@/lib/onchainDB/shared/useMessageLoader';
-
+import {useOnAccountChange} from "@/lib/onchainDB/shared/useOnAccountChange";
 type Tab = 'all' | 'pending' | 'blocked';
 type ProgramIdl = Idl & { address?: string };
 const FRIENDS_IDL = idl as ProgramIdl;
@@ -75,7 +74,6 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         removePendingMessage: removeChatPendingMessage,
         resetPendingMessages: resetChatPendingMessages,
     } = usePendingMessages();
-
     const [chatActionError, setChatActionError] = useState<string | null>(null);
     const [chatMessageInput, setChatMessageInput] = useState('');
 
@@ -278,16 +276,14 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         pruneChatPendingMessages(chatMessages);
     }, [chatMessages, chatPendingMessages.length, pruneChatPendingMessages]);
 
-    useOnLogs({
+    useOnAccountChange({
         connection,
         account: chatFriendTable,
         handler: () => {
             void handleDmLogs();
         },
-        commitment: 'confirmed',
+        commitment: 'processed',
     });
-
-    // No secondary tx_ref subscription; DM table logs are enough to trigger refreshes
 
     /* --------------------------------------------------------------------------
      * Event Handlers
@@ -729,7 +725,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                         <WindowHeader style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <span>[ADD FRIEND]</span>
                             <Button onClick={() => setAddFriendModalOpen(false)} size="sm"
-                                style={{ padding: '2px 8px', fontSize: '10px' }}>
+                                    style={{ padding: '2px 8px', fontSize: '10px' }}>
                                 X
                             </Button>
                         </WindowHeader>

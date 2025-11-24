@@ -3426,16 +3426,21 @@
     },
     {
       "code": 6012,
+      "name": "InvalidMetadataLength",
+      "msg": "Table name too long"
+    },
+    {
+      "code": 6013,
       "name": "InvalidRootId",
       "msg": "Root id must be <= 32 bytes"
     },
     {
-      "code": 6013,
+      "code": 6014,
       "name": "InvalidDmStatus",
       "msg": "Invalid DM status"
     },
     {
-      "code": 6014,
+      "code": 6015,
       "name": "InvalidDmTransition",
       "msg": "Invalid DM status transition"
     }
@@ -3489,6 +3494,10 @@
           {
             "name": "blocker",
             "type": "u8"
+          },
+          {
+            "name": "last_timestamp",
+            "type": "i64"
           }
         ]
       }
@@ -3557,6 +3566,10 @@
           {
             "name": "name",
             "type": "bytes"
+          },
+          {
+            "name": "last_timestamp",
+            "type": "i64"
           },
           {
             "name": "gate_mint",
