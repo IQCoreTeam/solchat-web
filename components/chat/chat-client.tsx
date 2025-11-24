@@ -127,6 +127,7 @@ export function ChatClient() {
     const [roomAlerts, setRoomAlerts] = useState<Record<string, boolean>>({});
     const [roomWsConnected, setRoomWsConnected] = useState(false);
     const [slowRpcMode, setSlowRpcMode] = useState(endpointSource === 'default');
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
 
     // Refs
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -138,6 +139,7 @@ export function ChatClient() {
     const lastAccountRefreshRef = useRef<number>(0);
     const roomWsBackoffRef = useRef<number>(0);
     const roomPingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const ROOM_RATE_LIMIT = 3;
 
     // Writer context
@@ -191,8 +193,15 @@ export function ChatClient() {
         });
         return sigs;
     }, [messages]);
-
     const canWrite = Boolean(writerCtx && isUserInitialized);
+
+    const showToast = useCallback((text: string) => {
+        if (toastTimeoutRef.current) {
+            clearTimeout(toastTimeoutRef.current);
+        }
+        setToastMessage(text);
+        toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 1000);
+    }, []);
 
     const upsertMessages = useCallback((incoming: MessageRow[]) => {
         if (!incoming.length) return;
@@ -267,6 +276,19 @@ export function ChatClient() {
         });
         setRoomAlerts(alerts);
     }, [rooms]);
+
+    useEffect(() => {
+        for (const room of rooms) {
+            if (selectedSeed && room.seedHex === selectedSeed) continue;
+            const key = makeRoomTimestampKey(room.seedHex);
+            const cached = getLastMessageTimestamp(key) ?? 0;
+            if (room.lastTimestamp && room.lastTimestamp > cached) {
+                const label = room.name || room.seedHex.slice(0, 6);
+                showToast(`New message available in ${label}`);
+                break;
+            }
+        }
+    }, [rooms, showToast, selectedSeed]);
 
     useEffect(() => {
         setSlowRpcMode(endpointSource === 'default');
@@ -608,6 +630,14 @@ export function ChatClient() {
         pruneConfirmedMessages(messages);
     }, [messages, pendingMessages.length, pruneConfirmedMessages]);
 
+    useEffect(() => {
+        return () => {
+            if (toastTimeoutRef.current) {
+                clearTimeout(toastTimeoutRef.current);
+            }
+        };
+    }, []);
+
     /* --------------------------------------------------------------------------
      * Effects: Account Change Subscriptions
      * -------------------------------------------------------------------------- */
@@ -889,6 +919,11 @@ export function ChatClient() {
                     )}
                 </div>
             </div>
+            {toastMessage && (
+                <div className="fixed bottom-4 right-4 z-50 rounded bg-black/80 px-4 py-2 text-xs text-amber-200 border border-amber-400/60 shadow-lg">
+                    {toastMessage}
+                </div>
+            )}
         </div>
     );
 }

@@ -502,7 +502,6 @@ export async function readRowsByTable(
 
   const rpcEndpoint = (connection as any)?._rpcEndpoint || endpoint
   const isDefaultRpc = rpcEndpoint.includes('solana.com')
-  const rpcThrottle = getRpcThrottle(rpcEndpoint)
   const knownSigSet = params.knownSignatures
     ? new Set(Array.from(params.knownSignatures))
     : new Set<string>()
@@ -649,6 +648,9 @@ export async function readRowsByTable(
       emitProgress(sorted)
     }
 
+
+    const throttle = getRpcThrottle(rpcEndpoint)
+
     for (let i = 0; i < sigs.length; i++) {
       const sig = sigs[i]
       const tx = await connection.getTransaction(sig.signature, { maxSupportedTransactionVersion: 0, commitment: 'confirmed' })
@@ -677,8 +679,8 @@ export async function readRowsByTable(
           }
         }
       }
-      if (rpcThrottle.delayMs > 0 && i + 1 < sigs.length) {
-        await sleep(rpcThrottle.delayMs)
+      if (throttle.delayMs > 0 && i + 1 < sigs.length) {
+        await sleep(throttle.delayMs)
       }
     }
 
@@ -961,7 +963,6 @@ export async function readRowsByDmSeed(
 
   const rpcEndpoint = (connection as any)?._rpcEndpoint || endpoint
   const isDefaultRpc = rpcEndpoint.includes('solana.com')
-  const rpcThrottle = getRpcThrottle(rpcEndpoint)
   const knownSigSet = params.knownSignatures
     ? new Set(Array.from(params.knownSignatures))
     : new Set<string>()
@@ -1136,8 +1137,8 @@ export async function readRowsByDmSeed(
           }
         }
       }
-      if (rpcThrottle.delayMs > 0 && i + 1 < sigs.length) {
-        await sleep(rpcThrottle.delayMs)
+      if (throttle.delayMs > 0 && i + 1 < sigs.length) {
+        await sleep(throttle.delayMs)
       }
     }
 

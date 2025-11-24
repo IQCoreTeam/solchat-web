@@ -94,6 +94,8 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     const [chatSlowRpcMode, setChatSlowRpcMode] = useState(endpointSource === 'default');
     const dmWsBackoffRef = useRef<number>(0);
     const dmPingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
+    const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     // Modal/UI state
     const [addFriendModalOpen, setAddFriendModalOpen] = useState(false);
@@ -197,6 +199,28 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         setDmAlerts(alerts);
     }, [friends, friendTimestamps]);
 
+    const showToast = useCallback((text: string) => {
+        if (toastTimeoutRef.current) {
+            clearTimeout(toastTimeoutRef.current);
+        }
+        setToastMessage(text);
+        toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 1000);
+    }, []);
+
+    useEffect(() => {
+        for (const friend of friends) {
+            if (chatOpen && chatFriend?.dmSeedHex === friend.dmSeedHex) continue;
+            if (!friend.dmSeedHex) continue;
+            const latest = friendTimestamps[friend.dmSeedHex] ?? friend.lastTimestamp ?? 0;
+            const cached = getLastMessageTimestamp(makeDmTimestampKey(friend.dmSeedHex)) ?? 0;
+            if (latest && latest > cached) {
+                const label = friend.displayName || shortenAddress(friend.address, 6);
+                showToast(`New message available from ${label}`);
+                break;
+            }
+        }
+    }, [friends, friendTimestamps, showToast]);
+
     useEffect(() => {
         setChatSlowRpcMode(endpointSource === 'default');
     }, [endpointSource]);
@@ -239,6 +263,14 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         setChatMessages([]);
         resetChatPendingMessages();
     }, [chatFriend?.dmSeedHex, resetChatPendingMessages]);
+
+    useEffect(() => {
+        return () => {
+            if (toastTimeoutRef.current) {
+                clearTimeout(toastTimeoutRef.current);
+            }
+        };
+    }, []);
 
     const upsertChatMessages = useCallback((incoming: MessageRow[]) => {
         if (!incoming.length) return;
@@ -438,8 +470,13 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             }
         } else {
             setDmAlerts((prev) => ({ ...prev, [dmSeedHex]: true }));
+            const targetFriend = friendMapBySeedHex[dmSeedHex];
+            if (targetFriend) {
+                const label = targetFriend.displayName || shortenAddress(targetFriend.address, 6);
+                showToast(`New message from ${label}`);
+            }
         }
-    }, [appendLatestChatMessage, chatFriend, chatOpen, friendMapBySeedHex]);
+    }, [appendLatestChatMessage, chatFriend, chatOpen, friendMapBySeedHex, showToast, shortenAddress]);
 
     const handleOpenChat = useCallback(async (friend: Friend) => {
         setChatFriend(friend);
@@ -1156,6 +1193,11 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                             </div>
                         </WindowContent>
                     </Window>
+                </div>
+            )}
+            {toastMessage && (
+                <div className="fixed bottom-4 right-4 z-50 rounded bg-black/80 px-4 py-2 text-xs text-amber-200 border border-amber-400/60 shadow-lg">
+                    {toastMessage}
                 </div>
             )}
         </div>
