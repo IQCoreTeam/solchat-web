@@ -20,6 +20,7 @@ interface FriendCardProps {
   onBlock?: (friend: Friend) => void;
   onUnblock?: (friend: Friend) => void;
   onOpenChat?: (friend: Friend) => void;
+  hasUnread?: boolean;
 }
 
 export function FriendCard({
@@ -29,6 +30,7 @@ export function FriendCard({
   onBlock,
   onUnblock,
   onOpenChat,
+  hasUnread = false,
 }: FriendCardProps) {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -97,6 +99,9 @@ export function FriendCard({
               <span style={{ color: '#666666', fontSize: '9px' }}>
                 {shortenAddress(friend.address, 6)}
               </span>
+            )}
+            {hasUnread && (
+              <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#ff4d4f' }} aria-label="Unread messages" />
             )}
               {!isApproved && (
             <span style={{

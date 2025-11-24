@@ -7,7 +7,7 @@ export const configs = {
   network:
     process.env.NEXT_PUBLIC_RPC_URL ||
     process.env.NETWORK_URL ||
-    'https://devnet.helius-rpc.com/?api-key=061e5a39-abc0-439d-90ce-c4e2b3260dff',
+      "https://api.devnet.solana.com",
   programId:
     process.env.NEXT_PUBLIC_PROGRAM_ID ||
     process.env.PROGRAM_ID ||

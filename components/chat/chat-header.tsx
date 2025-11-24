@@ -5,8 +5,8 @@
 
 'use client';
 
-import { shorten } from '@/lib/utils/message-utils';
 import { MobileMenuButton } from '@/components/ui/mobile-menu-button';
+import { NotificationToggle } from '@/components/ui/notification-toggle';
 
 interface RoomMeta {
     seedHex: string;
@@ -37,6 +37,8 @@ interface ChatHeaderProps {
 
     // Room info
     selectedRoom: RoomMeta | null;
+    notificationsEnabled: boolean;
+    onToggleNotifications: () => void;
 }
 
 export function ChatHeader({
@@ -52,6 +54,8 @@ export function ChatHeader({
                                isSidebarOpen,
                                onToggleSidebar,
                                selectedRoom,
+                               notificationsEnabled,
+                               onToggleNotifications,
                            }: ChatHeaderProps) {
     return (
         <header className="border-b-2 border-green-600 bg-black px-3 py-3 md:px-6">
@@ -62,11 +66,16 @@ export function ChatHeader({
                         onClick={onToggleSidebar}
                         ariaLabel="Toggle sidebar"
                     />
-                    <div className="flex items-baseline gap-3 flex-wrap">
+                    <div className="flex items-center gap-3 flex-wrap">
                         <h1 className="text-xl md:text-2xl font-bold text-green-400 leading-tight uppercase">
                             {selectedRoom ? `ROOM: ${selectedRoom.name}` : 'ON-CHAIN ROOMS'}
                         </h1>
-
+                        <NotificationToggle
+                            enabled={notificationsEnabled}
+                            onToggle={onToggleNotifications}
+                            label="NOTI"
+                            size="sm"
+                        />
                     </div>
                 </div>
 

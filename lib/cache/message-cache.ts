@@ -23,6 +23,7 @@ export interface MessageCacheOptions {
   retryDelay?: number; // Initial delay in ms
   backgroundRefresh?: boolean;
   ttl?: number;
+  onProgress?: (rows: Row[]) => void;
 }
 
 export interface LoadMessagesResult {
@@ -49,7 +50,7 @@ export async function loadMessagesWithCache(
 ): Promise<LoadMessagesResult> {
   const {
     maxRetries = 3,
-    retryDelay = 1000,
+    retryDelay = 3000,
     backgroundRefresh = true,
     ttl = DEFAULT_MESSAGE_TTL,
   } = options;

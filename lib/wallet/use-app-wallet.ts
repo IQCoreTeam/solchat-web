@@ -5,7 +5,7 @@
  * External wallets (Phantom, Solflare) are ONLY used for Privy authentication.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { Connection, PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
 import { usePrivy } from '@privy-io/react-auth';
 import { useWallets } from '@privy-io/react-auth/solana';
@@ -155,7 +155,78 @@ export function useAppWallet(): AppWallet {
 /**
  * Connection hook - returns consistent Solana connection
  */
+const RPC_STORAGE_KEY = 'solchat:rpc-endpoint';
+
+function extractWalletRpcEndpoint(wallet: any): string | null {
+  if (!wallet) return null;
+  return (
+    wallet.rpcUrl ||
+    wallet.rpcEndpoint ||
+    wallet.endpoint ||
+    wallet.url ||
+    wallet.provider?.rpcUrl ||
+    wallet.provider?.endpoint ||
+    null
+  );
+}
+
 export function useAppConnection() {
-  const connection = useMemo(() => new Connection(RPC_URL, 'confirmed'), []);
-  return { connection };
+  const { wallets } = useWallets();
+  const [customRpc, setCustomRpc] = useState<string | null>(null);
+  const [providerRpc, setProviderRpc] = useState<string | null>(null);
+
+  // Load persisted custom RPC once on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = window.localStorage.getItem(RPC_STORAGE_KEY);
+      if (stored) {
+        setCustomRpc(stored);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Track RPC exposed by the connected wallet (if any)
+  useEffect(() => {
+    const primary = wallets && wallets.length > 0 ? wallets[0] : null;
+    const candidate = extractWalletRpcEndpoint(primary);
+    if (candidate) {
+      setProviderRpc(candidate);
+    } else {
+      setProviderRpc(null);
+    }
+  }, [wallets]);
+
+  const setCustomRpcEndpoint = useCallback((endpoint: string | null) => {
+    setCustomRpc(endpoint);
+    if (typeof window !== 'undefined') {
+      try {
+        if (endpoint) {
+          window.localStorage.setItem(RPC_STORAGE_KEY, endpoint);
+        } else {
+          window.localStorage.removeItem(RPC_STORAGE_KEY);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
+  const endpoint = customRpc || providerRpc || RPC_URL;
+  const endpointSource: 'custom' | 'provider' | 'default' = customRpc
+    ? 'custom'
+    : providerRpc
+      ? 'provider'
+      : 'default';
+
+  const connection = useMemo(() => new Connection(endpoint, 'confirmed'), [endpoint]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    (window as any).solchatSetRpcEndpoint = setCustomRpcEndpoint;
+  }, [setCustomRpcEndpoint]);
+
+  return { connection, rpcEndpoint: endpoint, endpointSource, setCustomRpcEndpoint };
 }

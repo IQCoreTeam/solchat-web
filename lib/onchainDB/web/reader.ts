@@ -10,8 +10,11 @@ import { configs } from '../configs'
 import { deriveSeedHex, rootIdToBytes, toBytes, type BytesLike } from '../core/seed'
 import { pdaRoot, pdaTable, pdaTxRef, pdaInstructionTable, pdaDmTable, pdaDmInstructionTable } from '../provider/pda.provider'
 import { fetchWithRetry } from '@/lib/utils/fetch-with-retry'
+import { getRpcThrottle } from './rpc-throttle'
 
 export type Row = Record<string, any>
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export type ReaderParams = {
   // Optional externally-provided connection; falls back to configs.network
@@ -195,17 +198,27 @@ async function getFallbackTransactions(
   limit: number
 ): Promise<ParsedTransactionWithMeta[]> {
   const sigs = await getSignaturesFor(address, connection, limit)
-  const BATCH_SIZE = 10
+  const endpoint = (connection as any)?._rpcEndpoint || ''
+  const throttle = getRpcThrottle(endpoint)
+  console.log(
+    `[reader] ${throttle.isDefault ? 'Basic' : 'Custom'} RPC detected; batching ${
+      throttle.batchSize
+    } tx(s) with ${throttle.delayMs}ms delay`
+  )
+
   const transactions: any[] = []
 
-  for (let i = 0; i < sigs.length; i += BATCH_SIZE) {
-    const batch = sigs.slice(i, i + BATCH_SIZE)
+  for (let i = 0; i < sigs.length; i += throttle.batchSize) {
+    const batch = sigs.slice(i, i + throttle.batchSize)
     const txs = await Promise.all(
-      batch.map(s =>
-        connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0, })
+      batch.map((s) =>
+        connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 })
       )
     )
-    transactions.push(...txs.filter(tx => tx !== null))
+    transactions.push(...txs.filter((tx) => tx !== null))
+    if (throttle.delayMs > 0 && i + throttle.batchSize < sigs.length) {
+      await sleep(throttle.delayMs)
+    }
   }
 
   return transactions as ParsedTransactionWithMeta[]
@@ -428,7 +441,7 @@ export async function readRecentRows(params: ReaderParams): Promise<ReaderResult
  * - 지정한 테이블 이름의 로우만 스캔/디코딩해서 반환
  */
 export async function readRowsByTable(
-  params: ReaderParams & { tableName: string }
+  params: ReaderParams & { tableName: string; onProgress?: (rows: Row[]) => void; knownSignatures?: Set<string> | string[] }
 ): Promise<Row[]> {
   const endpoint = params.endpoint || configs.network
   const connection = params.connection || new Connection(endpoint, 'confirmed')
@@ -479,7 +492,7 @@ export async function readRowsByTable(
   // Derive PDAs (pure computation, no network read)
   const rootPda = pdaRoot(rootIdBytes)
   const tablePda = pdaTable(rootPda, tableName)
-  const instPda = pdaInstructionTable(rootPda, tableName)
+  const instPda = null // instruction PDA not used in this lite reader path
   const targetSeedHex = deriveSeedHex(tableName)
 
   // Scan signatures touching both table PDA and instruction PDA (if present)
@@ -487,11 +500,195 @@ export async function readRowsByTable(
   const programId = new PublicKey(programIdStr)
   const programIdB58 = programId.toBase58()
 
+  const rpcEndpoint = (connection as any)?._rpcEndpoint || endpoint
+  const isDefaultRpc = rpcEndpoint.includes('solana.com')
+  const rpcThrottle = getRpcThrottle(rpcEndpoint)
+  const knownSigSet = params.knownSignatures
+    ? new Set(Array.from(params.knownSignatures))
+    : new Set<string>()
+
+  const emitProgress = (rows: Row[]) => {
+    if (!params.onProgress) return
+    const limited = perTableLimit ? rows.slice(0, perTableLimit) : rows
+    params.onProgress(limited)
+  }
+
+  if (isDefaultRpc) {
+    const sigsAll = await getSignaturesFor(tablePda, connection, maxTx)
+    const sigs = sigsAll.filter((s) => !knownSigSet.has(s.signature))
+    const instructionMap = new Map<string, Row>()
+    const writeRowBase = new Map<string, Row>()
+    const rowMap = new Map<string, Row>()
+
+    const shouldDeleteLocal = (override: Row | undefined): boolean => {
+      if (!override || typeof override !== 'object') return false
+      const lower = (val: any) => (typeof val === 'string' ? val.toLowerCase() : '')
+      if (
+        override.delete === true ||
+        override.deleted === true ||
+        (override as any).__delete === true ||
+        lower((override as any).action) === 'delete' ||
+        lower((override as any).mode) === 'delete' ||
+        lower((override as any).op) === 'delete' ||
+        lower((override as any).type) === 'delete' ||
+        lower((override as any).status) === 'deleted'
+      ) {
+        return true
+      }
+      return false
+    }
+
+    const applyInstruction = (baseRow: Row, override: Row | undefined): Row | null => {
+      if (!override) return baseRow
+      if (shouldDeleteLocal(override as Row)) return null
+
+      const baseClone: Row = baseRow && typeof baseRow === 'object' ? { ...baseRow } : {}
+      const baseRowId = (baseRow as any)?.__rowId
+      if (baseRowId !== undefined) {
+        try {
+          Object.defineProperty(baseClone, '__rowId', {
+            value: baseRowId,
+            enumerable: false,
+            configurable: true,
+            writable: true,
+          })
+        } catch {
+          ; (baseClone as any).__rowId = baseRowId
+        }
+      }
+
+      if (typeof override !== 'object') {
+        if (override == null) {
+          return normalizeRow(baseClone)
+        }
+        baseClone.value = override
+        return normalizeRow(baseClone)
+      }
+
+      if (Array.isArray(override.entries)) {
+        const merged = entriesToRow(override.entries)
+        return normalizeRow({ ...baseClone, ...merged })
+      }
+
+      const baseRowKeys = Object.keys(baseRow ?? {})
+      const overrideKeys = Object.keys(override ?? {})
+      const ordered = Array.from(new Set([...baseRowKeys, ...overrideKeys]))
+
+      for (const key of ordered) {
+        const baseVal = (baseRow as any)?.[key]
+        const overrideVal = (override as any)?.[key]
+
+        if (overrideVal === undefined) {
+          if (baseVal !== undefined) baseClone[key] = baseVal
+        } else if (overrideVal === null) {
+          delete (baseClone as any)[key]
+        } else {
+          baseClone[key] = overrideVal
+        }
+      }
+
+      if (idColumnName) {
+        const overrideId = Object.prototype.hasOwnProperty.call(override, idColumnName)
+          ? (override as any)[idColumnName]
+          : undefined
+        if (overrideId !== undefined && overrideId !== null) {
+          baseClone[idColumnName] = overrideId
+        } else if ((baseClone as any)[idColumnName] == null && (baseRow as any)?.[idColumnName] != null) {
+          baseClone[idColumnName] = (baseRow as any)[idColumnName]
+        }
+        const refreshedId = (baseClone as any)[idColumnName]
+        if (refreshedId !== undefined) {
+          try {
+            Object.defineProperty(baseClone, '__rowId', {
+              value: refreshedId,
+              enumerable: false,
+              configurable: true,
+              writable: true,
+            })
+          } catch {
+            ; (baseClone as any).__rowId = refreshedId
+          }
+        }
+      }
+      return normalizeRow(baseClone)
+    }
+
+    const attachHiddenMeta = (row: Row, signature: string): Row => {
+      if (!row || typeof row !== 'object') return row
+      const clone: Row = { ...row }
+      const defineHidden = (key: string, value: string) => {
+        try {
+          Object.defineProperty(clone, key, {
+            value,
+            enumerable: false,
+            configurable: false,
+            writable: false,
+          })
+        } catch {
+          ; (clone as any)[key] = value
+        }
+      }
+      defineHidden('__txSignature', signature)
+      defineHidden('__tableSeed', targetSeedHex)
+      return clone
+    }
+
+    const applyAndEmit = (signature: string) => {
+      const base = writeRowBase.get(signature)
+      if (!base) return
+      const override = instructionMap.get(signature)
+      const applied = applyInstruction(base, override)
+      if (!applied) {
+        rowMap.delete(signature)
+      } else {
+        rowMap.set(signature, attachHiddenMeta(applied, signature))
+      }
+      const sorted = Array.from(rowMap.values()).sort(
+        (a, b) => ((a as any).timestamp ?? 0) - ((b as any).timestamp ?? 0)
+      )
+      emitProgress(sorted)
+    }
+
+    for (let i = 0; i < sigs.length; i++) {
+      const sig = sigs[i]
+      const tx = await connection.getTransaction(sig.signature, { maxSupportedTransactionVersion: 0, commitment: 'confirmed' })
+      if (tx) {
+        const decoded = decodeAllIxsFromTx(tx as any, programIdB58, ixCoder)
+        for (const d of decoded) {
+          try {
+            if (d.name === 'write_data') {
+              const seedHex = toHex(d.data.table_seed ?? d.data[0])
+              if (seedHex !== targetSeedHex) continue
+              const payloadStr = toStr(d.data.row_json_tx ?? d.data.rowJsonTx ?? d.data[1])
+              const normalized = normalizeRow(tryParseJsonLoose(payloadStr))
+              writeRowBase.set(sig.signature, normalized)
+              applyAndEmit(sig.signature)
+            } else if (d.name === 'database_instruction') {
+              const seedHex = toHex(d.data.table_seed ?? d.data[0])
+              if (seedHex !== targetSeedHex) continue
+              const targetSig = toStr(d.data.target_tx ?? d.data[1])
+              if (!targetSig) continue
+              const contentStr = toStr(d.data.contentJsonTx ?? d.data.content_json_tx ?? d.data[3])
+              instructionMap.set(targetSig, parseInstructionContent(contentStr))
+              applyAndEmit(targetSig)
+            }
+          } catch {
+            // skip decode errors
+          }
+        }
+      }
+      if (rpcThrottle.delayMs > 0 && i + 1 < sigs.length) {
+        await sleep(rpcThrottle.delayMs)
+      }
+    }
+
+    const finalRows = Array.from(rowMap.values())
+    return perTableLimit ? finalRows.slice(0, perTableLimit) : finalRows
+  }
+
   // Execute sequentially to avoid rate limiting
   const txsTable = await getTransactionsForAddress(connection, tablePda, maxTx)
-  const txsInst = await getTransactionsForAddress(connection, instPda, maxTx)
-
-  const allTxs = [txsTable, txsInst]
+  const allTxs = [txsTable]
 
   const txMap = new Map<string, ParsedTransactionWithMeta>()
   for (const txList of allTxs) {
@@ -686,10 +883,18 @@ export async function readRowsByTable(
   for (const { signature, row } of writeRows) {
     const override = instructionMap.get(signature)
     const applied = applyInstruction(row, override)
-    if (applied) filteredRows.push(attachHiddenMeta(applied, signature))
+    if (applied) {
+      const withMeta = attachHiddenMeta(applied, signature)
+      filteredRows.push(withMeta)
+      if (params.onProgress) {
+        const current = perTableLimit ? filteredRows.slice(0, perTableLimit) : [...filteredRows]
+        params.onProgress(current)
+      }
+    }
   }
 
-  return perTableLimit ? filteredRows.slice(0, perTableLimit) : filteredRows
+  const finalRows = perTableLimit ? filteredRows.slice(0, perTableLimit) : filteredRows
+  return finalRows
 }
 
 /**
@@ -697,7 +902,7 @@ export async function readRowsByTable(
  * - Scan UseDMTable/write_dm_data instructions for a specific DM seed.
  */
 export async function readRowsByDmSeed(
-  params: ReaderParams & { dmSeed: BytesLike }
+  params: ReaderParams & { dmSeed: BytesLike; onProgress?: (rows: Row[]) => void; knownSignatures?: Set<string> | string[] }
 ): Promise<Row[]> {
   const endpoint = params.endpoint || configs.network
   const connection = params.connection || new Connection(endpoint, 'confirmed')
@@ -753,6 +958,192 @@ export async function readRowsByDmSeed(
   const ixCoder = makeIxCoder(idl)
   const programId = new PublicKey(programIdStr)
   const programIdB58 = programId.toBase58()
+
+  const rpcEndpoint = (connection as any)?._rpcEndpoint || endpoint
+  const isDefaultRpc = rpcEndpoint.includes('solana.com')
+  const rpcThrottle = getRpcThrottle(rpcEndpoint)
+  const knownSigSet = params.knownSignatures
+    ? new Set(Array.from(params.knownSignatures))
+    : new Set<string>()
+
+  const emitProgress = (rows: Row[]) => {
+    if (!params.onProgress) return
+    const limited = perTableLimit ? rows.slice(0, perTableLimit) : rows
+    params.onProgress(limited)
+  }
+
+  if (isDefaultRpc) {
+    const sigsAll = await getSignaturesFor(dmTablePda, connection, maxTx)
+    const sigs = sigsAll.filter((s) => !knownSigSet.has(s.signature))
+    const instructionMap = new Map<string, Row>()
+    const writeRowBase = new Map<string, Row>()
+    const rowMap = new Map<string, Row>()
+
+    const shouldDeleteLocal = (override: Row | undefined): boolean => {
+      if (!override || typeof override !== 'object') return false
+      const lower = (val: any) => (typeof val === 'string' ? val.toLowerCase() : '')
+      if (
+        override.delete === true ||
+        override.deleted === true ||
+        (override as any).__delete === true ||
+        lower((override as any).action) === 'delete' ||
+        lower((override as any).mode) === 'delete' ||
+        lower((override as any).op) === 'delete' ||
+        lower((override as any).type) === 'delete' ||
+        lower((override as any).status) === 'deleted'
+      ) {
+        return true
+      }
+      return false
+    }
+
+    const applyInstruction = (baseRow: Row, override: Row | undefined): Row | null => {
+      if (!override) return baseRow
+      if (shouldDeleteLocal(override as Row)) return null
+
+      const baseClone: Row = baseRow && typeof baseRow === 'object' ? { ...baseRow } : {}
+      const baseRowId = (baseRow as any)?.__rowId
+      if (baseRowId !== undefined) {
+        try {
+          Object.defineProperty(baseClone, '__rowId', {
+            value: baseRowId,
+            enumerable: false,
+            configurable: true,
+            writable: true,
+          })
+        } catch {
+          ; (baseClone as any).__rowId = baseRowId
+        }
+      }
+
+      if (typeof override !== 'object') {
+        if (override == null) {
+          return normalizeRow(baseClone)
+        }
+        baseClone.value = override
+        return normalizeRow(baseClone)
+      }
+
+      if (Array.isArray(override.entries)) {
+        const merged = entriesToRow(override.entries)
+        return normalizeRow({ ...baseClone, ...merged })
+      }
+
+      const baseRowKeys = Object.keys(baseRow ?? {})
+      const overrideKeys = Object.keys(override ?? {})
+      const ordered = Array.from(new Set([...baseRowKeys, ...overrideKeys]))
+
+      for (const key of ordered) {
+        const baseVal = (baseRow as any)?.[key]
+        const overrideVal = (override as any)?.[key]
+
+        if (overrideVal === undefined) {
+          if (baseVal !== undefined) baseClone[key] = baseVal
+        } else if (overrideVal === null) {
+          delete (baseClone as any)[key]
+        } else {
+          baseClone[key] = overrideVal
+        }
+      }
+
+      if (idColumnName) {
+        const overrideId = Object.prototype.hasOwnProperty.call(override, idColumnName)
+          ? (override as any)[idColumnName]
+          : undefined
+        if (overrideId !== undefined && overrideId !== null) {
+          baseClone[idColumnName] = overrideId
+        } else if ((baseClone as any)[idColumnName] == null && (baseRow as any)?.[idColumnName] != null) {
+          baseClone[idColumnName] = (baseRow as any)[idColumnName]
+        }
+        const refreshedId = (baseClone as any)[idColumnName]
+        if (refreshedId !== undefined) {
+          try {
+            Object.defineProperty(baseClone, '__rowId', {
+              value: refreshedId,
+              enumerable: false,
+              configurable: true,
+              writable: true,
+            })
+          } catch {
+            ; (baseClone as any).__rowId = refreshedId
+          }
+        }
+      }
+      return normalizeRow(baseClone)
+    }
+
+    const attachHiddenMeta = (row: Row, signature: string): Row => {
+      if (!row || typeof row !== 'object') return row
+      const clone: Row = { ...row }
+      const defineHidden = (key: string, value: string) => {
+        try {
+          Object.defineProperty(clone, key, {
+            value,
+            enumerable: false,
+            configurable: false,
+            writable: false,
+          })
+        } catch {
+          ; (clone as any)[key] = value
+        }
+      }
+      defineHidden('__txSignature', signature)
+      defineHidden('__tableSeed', targetSeedHex)
+      return clone
+    }
+
+    const applyAndEmit = (signature: string) => {
+      const base = writeRowBase.get(signature)
+      if (!base) return
+      const override = instructionMap.get(signature)
+      const applied = applyInstruction(base, override)
+      if (!applied) {
+        rowMap.delete(signature)
+      } else {
+        rowMap.set(signature, attachHiddenMeta(applied, signature))
+      }
+      const sorted = Array.from(rowMap.values()).sort(
+        (a, b) => ((a as any).timestamp ?? 0) - ((b as any).timestamp ?? 0)
+      )
+      emitProgress(sorted)
+    }
+
+    for (let i = 0; i < sigs.length; i++) {
+      const sig = sigs[i]
+      const tx = await connection.getTransaction(sig.signature, { maxSupportedTransactionVersion: 0, commitment: 'confirmed' })
+      if (tx) {
+        const decoded = decodeAllIxsFromTx(tx as any, programIdB58, ixCoder)
+        for (const d of decoded) {
+          try {
+            if (d.name === 'write_dm_data' || d.name === 'use_dm_table') {
+              const seedHex = toHex(d.data.dm_seed ?? d.data._dm_seed ?? d.data[1])
+              if (seedHex !== targetSeedHex) continue
+              const payloadStr = toStr(d.data.row_json_tx ?? d.data.rowJsonTx ?? d.data[2])
+              const normalized = normalizeRow(tryParseJsonLoose(payloadStr))
+              writeRowBase.set(sig.signature, normalized)
+              applyAndEmit(sig.signature)
+            } else if (d.name === 'database_instruction') {
+              const seedHex = toHex(d.data.table_seed ?? d.data[0])
+              if (seedHex !== targetSeedHex) continue
+              const targetSig = toStr(d.data.target_tx ?? d.data[1])
+              if (!targetSig) continue
+              const contentStr = toStr(d.data.contentJsonTx ?? d.data.content_json_tx ?? d.data[3])
+              instructionMap.set(targetSig, parseInstructionContent(contentStr))
+              applyAndEmit(targetSig)
+            }
+          } catch {
+            // skip decode errors
+          }
+        }
+      }
+      if (rpcThrottle.delayMs > 0 && i + 1 < sigs.length) {
+        await sleep(rpcThrottle.delayMs)
+      }
+    }
+
+    const finalRows = Array.from(rowMap.values())
+    return perTableLimit ? finalRows.slice(0, perTableLimit) : finalRows
+  }
 
   // Execute sequentially to avoid rate limiting
   const txsTable = await getTransactionsForAddress(connection, dmTablePda, maxTx)
@@ -811,10 +1202,16 @@ export async function readRowsByDmSeed(
 
   const filteredRows: Row[] = []
   for (const { signature, row } of writeRows) {
-    filteredRows.push(attachHiddenMeta(row, signature))
+    const withMeta = attachHiddenMeta(row, signature)
+    filteredRows.push(withMeta)
+    if (params.onProgress) {
+      const current = perTableLimit ? filteredRows.slice(0, perTableLimit) : [...filteredRows]
+      params.onProgress(current)
+    }
   }
 
-  return perTableLimit ? filteredRows.slice(0, perTableLimit) : filteredRows
+  const finalRows = perTableLimit ? filteredRows.slice(0, perTableLimit) : filteredRows
+  return finalRows
 }
 
 

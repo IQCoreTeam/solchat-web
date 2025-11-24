@@ -5,7 +5,7 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function fetchWithRetry(
   request: RequestFactory,
   retries = 3,
-  delayMs = 500
+  delayMs = 3000
 ): Promise<Response> {
   try {
     const response = await request();
