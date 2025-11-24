@@ -75,6 +75,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         removePendingMessage: removeChatPendingMessage,
         resetPendingMessages: resetChatPendingMessages,
     } = usePendingMessages();
+
     const [chatActionError, setChatActionError] = useState<string | null>(null);
     const [chatMessageInput, setChatMessageInput] = useState('');
 
@@ -280,7 +281,9 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     useOnLogs({
         connection,
         account: chatFriendTable,
-        handler: handleDmLogs,
+        handler: () => {
+            void handleDmLogs();
+        },
         commitment: 'confirmed',
     });
 

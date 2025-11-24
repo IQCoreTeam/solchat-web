@@ -5,6 +5,7 @@ import { PublicKey } from '@solana/web3.js';
 import { useCloakSdk } from '@/lib/cloak/use-cloak-sdk';
 import type { PrivyAppWallet } from '@/lib/wallet/privy-app-wallet';
 import { usePrivyWalletAdapter } from '@/lib/wallet/privy-wallet-adapter';
+import { Window, WindowHeader, WindowContent, Panel, Button, Cutout } from 'react95';
 
 interface PrivateExitCardProps {
     privyWallet: PrivyAppWallet | null;
