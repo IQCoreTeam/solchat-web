@@ -7,6 +7,15 @@
  * - Signature caching
  * - Cache lifecycle management
  * - Error handling and fallbacks
+ *
+ * Goal (reference only, not implemented yet):
+ * 1) Each room owns `{ txs: string[]; messages: Record<signature, { id; text; sender; timestamp }> }`.
+ * 2) Entering a room fetches only the latest 100 tx signatures, shows cached messages immediately.
+ * 3) Only signatures missing from the cache are queued for decoding.
+ * 4) Queue drains via the existing RPC throttle (1 tx/sec default RPC, 8 tx/sec custom RPC).
+ * 5) Every decoded message updates the cache so UI fills in gradually.
+ * 6) No extra range math; comparing the 100 signatures against cache is enough, even if there are gaps.
+ * 7) This approach prioritizes UX/stability; “sync in progress” tells users when backfill is happening.
  */
 
 'use client';
@@ -32,6 +41,31 @@ import type { ConfirmedSignatureInfo } from '@solana/web3.js';
 class CacheManager {
   private initialized = false;
   private initPromise: Promise<void> | null = null;
+
+  /**
+   * TODO: Align room caches with the new architecture.
+   * - Each room keeps a tx/signature list plus a signature->message map.
+   *   Only store `{ id, text, sender, timestamp }` per entry to keep it lean, while leaving `expiresAt`
+   *   support in the storage layer for future TTL policies if needed.
+   * - Rename storage/manager pieces to make their role clearer (e.g. CacheDB -> CacheStore/RoomCacheStore and
+   *   move db.ts -> room-cache-store.ts or similar) once the new structure lands, so the IndexedDB layer
+   *   isn’t mistaken for an on-chain/database API.
+   * - Initial load should grab the latest ~100 txs, show cached messages instantly,
+   *   diff the signature list against cache to find misses, then feed only those
+   *   missing signatures into the queue, letting the existing rpc-throttle helpers
+   *   pace message decoding/fetching in the background.
+   * - Plan of attack:
+   *   1) Update the cache storage layer (DB schema + function names) to support tx lists + signature maps,
+   *      and document the lean per-message shape (`id`, `text`, `sender`, `timestamp`) so the UI knows
+   *      what data comes straight from cache.
+   *   2) Build a loader/queue module that fetches the latest 100 signatures, diffs with cache, and enqueues misses.
+   *   3) Wire CacheManager + cached-reader integration to consume that loader so ChatClient sees cache-first data.
+   *   4) Add the "sync in progress" signal/UI hook; later we can prioritize viewport-adjacent messages.
+   * - When users scroll past the cached range (i.e. no more cached messages but history exists),
+   *   trigger an additional fetch to extend the window so busy rooms don't lose older context.
+   * - Surface a lightweight "sync in progress" indicator while the queue drains; later we can
+   *   revisit prioritizing messages near the current viewport after the basic end-to-end flow lands.
+   */
 
   /**
    * Initialize the cache system
