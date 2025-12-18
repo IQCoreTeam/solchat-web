@@ -28,10 +28,10 @@ import { normalizeFileUrl } from '@/lib/utils/message-utils';
 import { GlobalStyles } from './theme';
 import { ROOT_ID, MESSAGE_COLUMNS } from '@/lib/onchainDB/constants';
 import { sendAndConfirmTx } from '@/lib/onchainDB/utils/transaction-helpers';
-import { rowToMessage, type MessageRow } from '@/lib/onchainDB/utils/message-helpers';
+import { rowToMessage } from '@/lib/onchainDB/utils/message-helpers';
 import { mergeMessages, type MessagePayload } from '@/lib/onchainDB/shared/message';
 import { usePendingMessages } from '@/lib/onchainDB/shared/use-pending-messages';
-import { useMessageLoader, type LoaderOptions } from '@/lib/onchainDB/shared/useMessageLoader';
+import { useMessageIndexLoader, type FetchConfig } from '@/lib/onchainDB/shared/useMessageIndexLoader';
 import { useOnAccountChange } from '@/lib/onchainDB/shared/useOnAccountChange';
 import { makeDmTimestampKey, setLastMessageTimestamp, getLastMessageTimestamp } from '@/lib/cache/message-timestamp-cache';
 import { NotificationToggle } from '@/components/ui/notification-toggle';
@@ -44,6 +44,10 @@ const FRIENDS_IDL = idl as ProgramIdl;
 type FriendsListProps = {
     dmQueryAddress?: string;
 };
+
+const makeDmChannelKey = (seedHex: string) => `dm:${seedHex}`;
+const dmChannelKeyToSeed = (channelKey: string) => channelKey.replace(/^dm:/, '');
+const dmRoomIdToChannelKey = (roomId: string) => `dm:${roomId.replace(/^dm:/, '')}`;
 
 export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     /* --------------------------------------------------------------------------
@@ -70,7 +74,6 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     // DM state
     const [chatFriend, setChatFriend] = useState<Friend | null>(null);
     const [chatOpen, setChatOpen] = useState(false);
-    const [chatMessages, setChatMessages] = useState<MessageRow[]>([]);
     const {
         pendingMessages: chatPendingMessages,
         addPendingMessage: addChatPendingMessage,
@@ -89,7 +92,6 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     const [friendTimestamps, setFriendTimestamps] = useState<Record<string, number>>({});
     const [dmAlerts, setDmAlerts] = useState<Record<string, boolean>>({});
     const [dmWsConnected, setDmWsConnected] = useState(false);
-    const dmFetchInFlightRef = useRef<Set<string>>(new Set());
     const DM_RATE_LIMIT = 3;
     const [chatSlowRpcMode, setChatSlowRpcMode] = useState(endpointSource === 'default');
     const dmWsBackoffRef = useRef<number>(0);
@@ -168,6 +170,11 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         return map;
     }, [friends]);
 
+    const selectedDmChannelKey = useMemo(
+        () => (chatFriend?.dmSeedHex ? makeDmChannelKey(chatFriend.dmSeedHex) : null),
+        [chatFriend?.dmSeedHex]
+    );
+
     useEffect(() => {
         setFriendTimestamps((prev) => {
             const next: Record<string, number> = { ...prev };
@@ -219,7 +226,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                 break;
             }
         }
-    }, [friends, friendTimestamps, showToast]);
+    }, [friends, friendTimestamps, showToast, chatOpen, chatFriend?.dmSeedHex]);
 
     useEffect(() => {
         setChatSlowRpcMode(endpointSource === 'default');
@@ -246,21 +253,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         return [...list].sort((a, b) => (b.lastTimestamp || 0) - (a.lastTimestamp || 0));
     }, [enrichedFriends, activeTab]);
 
-    const orderedChatMessages = useMemo(
-        () => mergeMessages(chatMessages, chatPendingMessages),
-        [chatMessages, chatPendingMessages]
-    );
-
-    const existingChatSignatures = useMemo(() => {
-        const sigs = new Set<string>();
-        chatMessages.forEach((msg) => {
-            if (msg.signature) sigs.add(msg.signature);
-        });
-        return sigs;
-    }, [chatMessages]);
-
     useEffect(() => {
-        setChatMessages([]);
         resetChatPendingMessages();
     }, [chatFriend?.dmSeedHex, resetChatPendingMessages]);
 
@@ -270,19 +263,6 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                 clearTimeout(toastTimeoutRef.current);
             }
         };
-    }, []);
-
-    const upsertChatMessages = useCallback((incoming: MessageRow[]) => {
-        if (!incoming.length) return;
-        setChatMessages((prev) => {
-            const map = new Map<string, MessageRow>();
-            [...prev, ...incoming].forEach((msg) => {
-                if (!msg) return;
-                const key = msg.signature || msg.id || `${msg.timestamp ?? 0}-${msg.sender ?? ''}`;
-                map.set(key, msg);
-            });
-            return Array.from(map.values()).sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
-        });
     }, []);
 
     const chatFriendTable = useMemo(() => {
@@ -296,43 +276,86 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     }, [chatFriend]);
 
     /* --------------------------------------------------------------------------
-     * Data Loading Helpers
+     * Data Loading Helpers (DM)
      * -------------------------------------------------------------------------- */
-    const fetcher = useCallback(async (friend: Friend) => {
+    const resolveChannelMeta = useCallback((channelKey: string) => {
+        const seedHex = dmChannelKeyToSeed(channelKey);
+        const friend = friendMapBySeedHex[seedHex];
+        if (!friend) return null;
+        return {
+            channelKey,
+            seedHex,
+            tableAddress: friend.tableAddress,
+        };
+    }, [friendMapBySeedHex]);
+
+    const fetcher = useCallback(async (channelKey: string, fetchConfig?: FetchConfig) => {
         if (!userAddress) return [];
-        const maxTx = endpointSource === 'default' ? 40 : 200;
+        const seedHex = dmChannelKeyToSeed(channelKey);
+        const friend = friendMapBySeedHex[seedHex];
+        if (!friend) return [];
+
+        const baseMaxTx = endpointSource === 'default' ? 40 : 200;
+        const maxTx = fetchConfig?.maxTx ?? baseMaxTx;
+        const targetSignatures = fetchConfig?.signatures;
+
         const rows = await readRowsByDmSeed({
             connection,
             rootId: ROOT_ID,
             userPublicKey: userAddress,
             idl: FRIENDS_IDL,
             dmSeed: friend.dmSeed,
-            maxTx,
+            maxTx: targetSignatures?.length || maxTx,
+            signatures: targetSignatures,
             onProgress: (partialRows) => {
-                if (chatFriend && chatFriend.dmSeedHex !== friend.dmSeedHex) return;
                 const partialMessages = partialRows
                     .map((row) => rowToMessage(row))
                     .filter((message) => message.text || message.file);
-                upsertChatMessages(partialMessages);
+                fetchConfig?.onProgress?.(partialMessages);
                 if (endpointSource === 'default') {
                     setChatSlowRpcMode(true);
                 }
             },
-            knownSignatures: existingChatSignatures,
+            knownSignatures: fetchConfig?.knownSignatures,
         });
+
         return rows
             .map((row) => rowToMessage(row))
             .filter((message) => message.text || message.file);
-    }, [connection, userAddress, endpointSource, chatFriend, upsertChatMessages, existingChatSignatures]);
+    }, [connection, userAddress, endpointSource, friendMapBySeedHex, setChatSlowRpcMode]);
 
     const {
-        loadMessages: loadDmMessages,
+        messages: dmMessages,
         messagesLoading: chatLoading,
         messagesError: chatLoaderError,
         showLoadingSpinner: showChatLoadingSpinner,
-    } = useMessageLoader<[Friend]>({
+        triggerLiveLatest,
+        targetedDecode,
+        applyLocalRows,
+        resetChannelState,
+    } = useMessageIndexLoader({
+        channelKey: selectedDmChannelKey,
+        resolveChannelMeta,
         fetcher,
+        connection,
+        endpointSource,
+        roomRateLimit: DM_RATE_LIMIT,
+        onRowsApplied: ({ channelKey, seedHex, rows }) => {
+            const latestTimestamp = rows.reduce((max, msg) => Math.max(max, msg.timestamp ?? 0), 0);
+            if (latestTimestamp) {
+                setLastMessageTimestamp(makeDmTimestampKey(seedHex), latestTimestamp);
+                setFriendTimestamps((prev) => ({ ...prev, [seedHex]: latestTimestamp }));
+                setDmAlerts((prev) => ({ ...prev, [channelKey]: false, [seedHex]: false }));
+            }
+        },
+        runWithRpcRateLimit,
     });
+
+    const orderedChatMessages = useMemo(
+        () => mergeMessages(dmMessages, chatPendingMessages),
+        [dmMessages, chatPendingMessages]
+    );
+
     const chatError = chatActionError ?? chatLoaderError;
 
     const scrollChatToBottom = useCallback(() => {
@@ -340,107 +363,21 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     }, []);
 
     const loadChatHistory = useCallback(
-        async (friend: Friend | null, options?: LoaderOptions) => {
-            if (!friend) return;
-            const dmKey = friend.dmSeedHex;
-            if (dmKey && dmFetchInFlightRef.current.has(dmKey)) {
-                console.log('[FriendsList] Skipping DM fetch, already in-flight for', dmKey.slice(0, 8));
-                return;
-            }
-            if (dmKey) dmFetchInFlightRef.current.add(dmKey);
-            try {
-                const rows = await runWithRpcRateLimit(
-                    () => loadDmMessages(friend, options),
-                    {
-                        enabled: endpointSource === 'default',
-                        maxPerSecond: DM_RATE_LIMIT,
-                    }
-                );
-                upsertChatMessages(rows);
-                const latestTimestamp = rows.reduce((max, msg) => {
-                    const ts = msg.timestamp ?? 0;
-                    return ts > max ? ts : max;
-                }, 0);
-                if (latestTimestamp && friend.dmSeedHex) {
-                    setLastMessageTimestamp(makeDmTimestampKey(friend.dmSeedHex), latestTimestamp);
-                    setFriendTimestamps((prev) => ({ ...prev, [friend.dmSeedHex]: latestTimestamp }));
-                    setDmAlerts((prev) => ({ ...prev, [friend.dmSeedHex]: false }));
-                }
-            } catch (err) {
-                console.error('[FriendsList] Failed to load DM conversation', err);
-            } finally {
-                if (dmKey) dmFetchInFlightRef.current.delete(dmKey);
-            }
-        },
-        [loadDmMessages, endpointSource, upsertChatMessages]
-    );
-
-    const appendLatestChatMessage = useCallback(
         async (friend: Friend | null) => {
-            if (!friend || !userAddress) return;
-            if (friend.dmSeedHex && dmFetchInFlightRef.current.has(friend.dmSeedHex)) {
-                return;
-            }
-            try {
-                if (friend.dmSeedHex) dmFetchInFlightRef.current.add(friend.dmSeedHex);
-                await invalidateDmCache(friend.dmSeed);
-                const rows = await runWithRpcRateLimit(
-                    () =>
-                        readRowsByDmSeed({
-                            connection,
-                            rootId: ROOT_ID,
-                            userPublicKey: userAddress,
-                            idl: FRIENDS_IDL,
-                            dmSeed: friend.dmSeed,
-                            maxTx: 5,
-                            perTableLimit: 1,
-                        }),
-                    {
-                        enabled: endpointSource === 'default',
-                        maxPerSecond: DM_RATE_LIMIT,
-                    }
-                );
-                const latest = rows
-                    .map((row) => rowToMessage(row))
-                    .find((message) => message.text || message.file);
-                if (!latest) return;
-
-                setChatMessages((prev) => {
-                    if (prev.some((msg) => msg.id === latest.id)) {
-                        return prev;
-                    }
-                    const next = [...prev, latest];
-                    next.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-                    return next;
-                });
-
-                if (friend.dmSeedHex) {
-                    setLastMessageTimestamp(
-                        makeDmTimestampKey(friend.dmSeedHex),
-                        latest.timestamp ?? Date.now()
-                    );
-                    setFriendTimestamps((prev) => ({
-                        ...prev,
-                        [friend.dmSeedHex]: latest.timestamp ?? Date.now(),
-                    }));
-                    setDmAlerts((prev) => ({ ...prev, [friend.dmSeedHex]: false }));
-                }
-            } catch (error) {
-                console.error('[FriendsList] Failed to append latest DM message', error);
-                throw error;
-            } finally {
-                if (friend.dmSeedHex) dmFetchInFlightRef.current.delete(friend.dmSeedHex);
-            }
+            if (!friend?.dmSeedHex) return;
+            const channelKey = makeDmChannelKey(friend.dmSeedHex);
+            await triggerLiveLatest(channelKey);
         },
-        [connection, userAddress, endpointSource]
+        [triggerLiveLatest]
     );
 
-    const handleDmSocketPayload = useCallback(async (payload: { type?: string; roomId?: string; lastTimestamp?: number; timestamp?: number }) => {
+    const handleDmSocketPayload = useCallback(async (payload: { type?: string; roomId?: string; lastTimestamp?: number; timestamp?: number; signature?: string }) => {
         const roomId = payload?.roomId;
         if (!roomId || !roomId.startsWith('dm:')) {
             return;
         }
-        const dmSeedHex = roomId.slice(3);
+        const channelKey = dmRoomIdToChannelKey(roomId);
+        const dmSeedHex = dmChannelKeyToSeed(channelKey);
         const incomingTimestamp = typeof payload.lastTimestamp === 'number'
             ? payload.lastTimestamp
             : typeof payload.timestamp === 'number'
@@ -466,19 +403,23 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
 
         if (chatFriend?.dmSeedHex === dmSeedHex && chatOpen) {
             try {
-                await appendLatestChatMessage(chatFriend);
+                if (payload?.signature) {
+                    await targetedDecode(channelKey, payload.signature);
+                } else {
+                    await triggerLiveLatest(channelKey, { skipLoadingState: true });
+                }
             } catch (error) {
                 console.error('[FriendsList] Failed to refresh DM after notification', error);
             }
         } else {
-            setDmAlerts((prev) => ({ ...prev, [dmSeedHex]: true }));
+            setDmAlerts((prev) => ({ ...prev, [dmSeedHex]: true, [channelKey]: true }));
             const targetFriend = friendMapBySeedHex[dmSeedHex];
             if (targetFriend) {
                 const label = targetFriend.displayName || shortenAddress(targetFriend.address, 6);
                 showToast(`New message from ${label}`);
             }
         }
-    }, [appendLatestChatMessage, chatFriend, chatOpen, friendMapBySeedHex, showToast, shortenAddress]);
+    }, [chatFriend, chatOpen, friendMapBySeedHex, showToast, targetedDecode, triggerLiveLatest]);
 
     const dmSocketHandlerRef = useRef<typeof handleDmSocketPayload | null>(null);
     useEffect(() => {
@@ -499,25 +440,17 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const handleDmLogs = useCallback(() => {
-        if (!chatFriend) return;
+        if (!chatFriend?.dmSeedHex) return;
 
         if (refreshTimeoutRef.current) {
             clearTimeout(refreshTimeoutRef.current);
         }
 
-        refreshTimeoutRef.current = setTimeout(async () => {
-            try {
-                await appendLatestChatMessage(chatFriend);
-            } catch (error) {
-                console.error('[FriendsList] Failed to append latest message, reloading history:', error);
-                try {
-                    await loadChatHistory(chatFriend, { skipLoadingState: true });
-                } catch (reloadError) {
-                    console.error('[FriendsList] Failed fallback reload after append error:', reloadError);
-                }
-            }
+        refreshTimeoutRef.current = setTimeout(() => {
+            const channelKey = makeDmChannelKey(chatFriend.dmSeedHex);
+            void triggerLiveLatest(channelKey, { skipLoadingState: true });
         }, 500);
-    }, [appendLatestChatMessage, chatFriend, loadChatHistory]);
+    }, [chatFriend, triggerLiveLatest]);
 
     // Cleanup timeout on unmount
     useEffect(() => {
@@ -544,12 +477,12 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         if (chatOpen) {
             scrollChatToBottom();
         }
-    }, [chatMessages, chatPendingMessages, chatOpen, scrollChatToBottom]);
+    }, [orderedChatMessages, chatPendingMessages, chatOpen, scrollChatToBottom]);
 
     useEffect(() => {
         if (!chatPendingMessages.length) return;
-        pruneChatPendingMessages(chatMessages);
-    }, [chatMessages, chatPendingMessages.length, pruneChatPendingMessages]);
+        pruneChatPendingMessages(dmMessages);
+    }, [dmMessages, chatPendingMessages.length, pruneChatPendingMessages]);
 
     useOnAccountChange({
         connection,
@@ -890,6 +823,15 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] DM sent:');
             if (chatFriend.dmSeedHex) {
                 notifyDmMessageSent(chatFriend.dmSeedHex, timestamp);
+                const channelKey = makeDmChannelKey(chatFriend.dmSeedHex);
+                applyLocalRows(channelKey, [
+                    {
+                        ...payload,
+                        status: 'confirmed',
+                        room: chatFriend.dmSeedHex,
+                    },
+                ]);
+                removeChatPendingMessage(messageId);
             }
         } catch (err) {
             removeChatPendingMessage(messageId);
@@ -901,7 +843,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     const closeChatModal = () => {
         setChatOpen(false);
         setChatFriend(null);
-        setChatMessages([]);
+        resetChannelState(null, { resetMessages: true });
         resetChatPendingMessages();
         setChatActionError(null);
         setChatMessageInput('');

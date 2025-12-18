@@ -103,7 +103,7 @@ export function RpcConfigPrompt({endpointSource, setCustomRpcEndpoint}: RpcConfi
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
+        <div className="fixed inset-0 z-9999 flex items-center justify-center px-4 py-6">
             <Frame className="w-full max-w-lg   text-sm text-white ">
 
                 <WindowHeader style={{display: 'flex', boxSizing: "border-box", justifyContent: 'space-between'}}>
