@@ -113,6 +113,15 @@ export function Nav({ onOpenDm }: NavProps) {
                 [FRIENDS]
               </StyledButton>
             </Link>
+            <Link href="/users" style={{ flex: 1 }}>
+              <StyledButton
+                style={{
+                  borderColor: isActive('/users') ? '#4ade80' : '#16a34a'
+                }}
+              >
+                [USERS]
+              </StyledButton>
+            </Link>
             <Link href="/account" style={{ flex: 1 }}>
               <StyledButton
                 style={{
@@ -164,6 +173,16 @@ export function Nav({ onOpenDm }: NavProps) {
                   }}
                 >
                   [FRIENDS]
+                </StyledButton>
+              </Link>
+
+              <Link href="/users">
+                <StyledButton
+                  style={{
+                    borderColor: isActive('/users') ? '#4ade80' : '#16a34a'
+                  }}
+                >
+                  [USERS]
                 </StyledButton>
               </Link>
 

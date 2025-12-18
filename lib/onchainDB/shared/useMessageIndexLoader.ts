@@ -191,8 +191,8 @@ export function useMessageIndexLoader({
     ) => {
       const mode = opts?.mode ?? (signatureIndexRef.current[targetChannelKey]?.length ? 'refreshLatest' : 'initial');
 
-      const baseLimit = endpointSource === 'default' ? 500 : 1000;
-      const latestLimit = endpointSource === 'default' ? 120 : 200;
+      const baseLimit = 1000;
+      const latestLimit = 1000;
       const limit =
         opts?.limit ??
         (mode === 'refreshLatest'

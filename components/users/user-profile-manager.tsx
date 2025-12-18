@@ -12,11 +12,11 @@ import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
 import { ProfileEditor } from './profile-editor';
 import { UserList } from './user-list';
-import { updateUserMetadataWeb, pdaUser, pdaRoot, pdaTable, createExtTableWeb, writeRowWeb, readRowsByTable } from '@/lib/onchainDB';
+import { updateUserMetadataWeb, pdaUser, pdaRoot, pdaTable, pdaDmTable, createExtTableWeb, writeRowWeb, readRowsByTable, requestDmWeb } from '@/lib/onchainDB';
 import { getAnchorProvider, getProgram, type WalletAdapterLike } from '@/lib/onchainDB/web/provider';
 import idl from '@/lib/onchainDB/idl.json';
 import type { Idl } from '@coral-xyz/anchor';
-import { ROOT_ID } from '@/lib/onchainDB/constants';
+import { ROOT_ID, MESSAGE_COLUMNS } from '@/lib/onchainDB/constants';
 import { PublicKey } from '@solana/web3.js';
 import { sendAndConfirmTx } from '@/lib/onchainDB/utils/transaction-helpers';
 import type { AccountInfo } from '@solana/web3.js';
@@ -24,6 +24,7 @@ import type { WriterCtx } from '@/lib/onchainDB/web/writer';
 import {codeInWithonlyTailTx, initializeUser, WalletExecutor} from '@/lib/iq/transaction';
 import { reconstructMessageFromChainForTailTx } from '@/lib/iq/reader';
 import {getDBPDA} from "@/lib/iq";
+import { deriveDmSeed } from '@/lib/friends/utils';
 
 export interface UserProfile {
   pubkey: string;
@@ -32,6 +33,8 @@ export interface UserProfile {
   profilePicture: string;
   timestamp?: number;
 }
+
+type ProgramIdl = Idl & { address?: string };
 
 export function UserProfileManager() {
   const { connection } = useAppConnection();
@@ -46,6 +49,15 @@ export function UserProfileManager() {
       signAllTransactions: wallet.signAllTransactions.bind(wallet),
     };
   }, [wallet]);
+  const writerCtx = useMemo<WriterCtx | null>(() => {
+    if (!writerWallet) return null;
+    return {
+      connection,
+      wallet: writerWallet,
+      idl: idl as ProgramIdl,
+      programId: (idl as ProgramIdl).address,
+    };
+  }, [connection, writerWallet]);
   const { ready, authenticated, login } = usePrivy();
   const userAddress = wallet?.publicKey?.toBase58();
 
@@ -393,6 +405,46 @@ export function UserProfileManager() {
     }
   }, [userAddress, connection, wallet, loadAllProfiles]);
 
+  const handleSendFriendRequest = useCallback(
+    async (targetPubkey: string) => {
+      if (!userAddress || !wallet?.publicKey) {
+        throw new Error('Wallet not connected');
+      }
+      if (targetPubkey === userAddress) {
+        throw new Error('Cannot add yourself as a friend');
+      }
+      if (!writerCtx) {
+        throw new Error('Wallet not ready');
+      }
+      const programId = (idl as ProgramIdl).address;
+      const rootPk = pdaRoot(ROOT_ID, programId);
+      const dmSeed = deriveDmSeed(userAddress, targetPubkey);
+      const dmPda = pdaDmTable(rootPk, dmSeed, programId);
+      const existing = await connection.getAccountInfo(dmPda);
+      if (existing) {
+        throw new Error('Connection already exists :3');
+      }
+      try {
+        const { tx } = await requestDmWeb(
+          writerCtx,
+          ROOT_ID,
+          dmSeed,
+          'dm',
+          [...MESSAGE_COLUMNS],
+          targetPubkey,
+          {},
+          { idColumn: 'id' }
+        );
+        await sendAndConfirmTx(connection, writerCtx.wallet, tx, '[UserList] Friend request sent:');
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to send friend request';
+        console.error('[UserProfileManager] requestDmWeb error', err);
+        throw new Error(message);
+      }
+    },
+    [connection, userAddress, wallet?.publicKey, writerCtx]
+  );
+
   useEffect(() => {
     if (userAddress) {
       loadMyProfile();
@@ -487,6 +539,7 @@ export function UserProfileManager() {
             profiles={allProfiles}
             loading={loading}
             currentUser={userAddress}
+            onSendFriendRequest={handleSendFriendRequest}
           />
         )}
       </div>
