@@ -74,7 +74,6 @@ type ToastState = {
 };
 
 const DEBUG_WS = true;
-const AUTO_BOTTOM_WHEN_UNDER = 5;
 
 const makeChannelKey = (seedHex: string) => `chat:${seedHex}`;
 const channelKeyToSeed = (channelKey: string) => channelKey.replace(/^chat:/, '');
@@ -141,6 +140,8 @@ export function ChatClient() {
     const [slowRpcMode, setSlowRpcMode] = useState(endpointSource === 'default');
     const [toast, setToast] = useState<ToastState | null>(null);
     const [hasNewMessages, setHasNewMessages] = useState(false);
+    const [newMarkerId, setNewMarkerId] = useState<string | null>(null);
+    const [uiIsAtBottom, setUiIsAtBottom] = useState(true);
 
     // Refs
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -153,6 +154,11 @@ export function ChatClient() {
     const roomWsBackoffRef = useRef<number>(0);
     const roomPingIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const newMarkerByChannelRef = useRef<Record<string, string | null>>({});
+    const prevMessageCountRef = useRef<number>(0);
+    const lastSeenTimestampRef = useRef<Record<string, number>>({});
+    const latestMessageTimestampRef = useRef<number>(0);
+    const markerClearTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     // Writer context
     const writerWallet = useMemo<WalletAdapterLike | null>(() => {
@@ -207,6 +213,32 @@ export function ChatClient() {
         setToast({ text, tone });
         toastTimeoutRef.current = setTimeout(() => setToast(null), 1000);
     }, []);
+
+    const setChannelMarker = useCallback((channelKey: string, markerId: string | null) => {
+        newMarkerByChannelRef.current[channelKey] = markerId;
+        if (selectedChannelKey === channelKey) {
+            setNewMarkerId(markerId);
+            setHasNewMessages(Boolean(markerId));
+        }
+    }, [selectedChannelKey]);
+
+    const clearChannelMarker = useCallback((channelKey: string | null) => {
+        if (!channelKey) return;
+        setChannelMarker(channelKey, null);
+    }, [setChannelMarker]);
+
+    const markMessagesRead = useCallback((channelKey?: string, timestamp?: number | null) => {
+        const channel = channelKey ?? selectedChannelKey;
+        const latestTimestamp = timestamp ?? latestMessageTimestampRef.current;
+        if (!channel || !latestTimestamp) return;
+        const prevSeen = lastSeenTimestampRef.current[channel] ?? 0;
+        if (latestTimestamp <= prevSeen) return;
+        lastSeenTimestampRef.current[channel] = latestTimestamp;
+        const seedHex = channelKeyToSeed(channel);
+        const timestampKey = makeRoomTimestampKey(seedHex);
+        setLastMessageTimestamp(timestampKey, latestTimestamp);
+        setRoomAlerts((prev) => ({ ...prev, [channel]: false, [seedHex]: false }));
+    }, [selectedChannelKey, setRoomAlerts]);
 
 
   const fetcher = useCallback(async (channelKey: string, fetchConfig?: FetchConfig) => {
@@ -279,6 +311,27 @@ export function ChatClient() {
     });
 
     const allMessages = useMemo(() => mergeMessages(messages, pendingMessages), [messages, pendingMessages]);
+    useEffect(() => {
+        const latestTimestamp = allMessages[allMessages.length - 1]?.timestamp ?? 0;
+        latestMessageTimestampRef.current = latestTimestamp || 0;
+    }, [allMessages]);
+    useEffect(() => {
+        if (!selectedChannelKey) {
+            setNewMarkerId(null);
+            return;
+        }
+        setNewMarkerId(newMarkerByChannelRef.current[selectedChannelKey] ?? null);
+        setHasNewMessages(Boolean(newMarkerByChannelRef.current[selectedChannelKey]));
+    }, [selectedChannelKey]);
+    useEffect(() => {
+        if (!selectedChannelKey) return;
+        const seedHex = channelKeyToSeed(selectedChannelKey);
+        const cached = getLastMessageTimestamp(makeRoomTimestampKey(seedHex)) ?? 0;
+        const currentSeen = lastSeenTimestampRef.current[selectedChannelKey] ?? 0;
+        if (cached > currentSeen) {
+            lastSeenTimestampRef.current[selectedChannelKey] = cached;
+        }
+    }, [selectedChannelKey]);
 
     const rootStatusText = useMemo(() => {
         if (rootStatus === 'checking') return 'Checking...';
@@ -702,11 +755,20 @@ export function ChatClient() {
     /* --------------------------------------------------------------------------
      * Effects: UI Sync
      * -------------------------------------------------------------------------- */
+    useEffect(() => {
+        if (!selectedChannelKey || !isAtBottomRef.current) return;
+        if (!latestMessageTimestampRef.current) return;
+        markMessagesRead(selectedChannelKey, latestMessageTimestampRef.current);
+    }, [allMessages, markMessagesRead, selectedChannelKey]);
     const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
         messagesEndRef.current?.scrollIntoView({ behavior });
         isAtBottomRef.current = true;
         setHasNewMessages(false);
-    }, []);
+        setUiIsAtBottom(true);
+        if (selectedChannelKey) {
+            markMessagesRead(selectedChannelKey);
+        }
+    }, [markMessagesRead, selectedChannelKey]);
 
     const updateIsAtBottom = useCallback(() => {
         const el = listRef.current;
@@ -715,8 +777,21 @@ export function ChatClient() {
         const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
         const atBottom = distance < threshold;
         isAtBottomRef.current = atBottom;
+        setUiIsAtBottom(atBottom);
         if (atBottom) {
             setHasNewMessages(false);
+            if (selectedChannelKey) {
+                markMessagesRead(selectedChannelKey);
+            }
+            if (markerClearTimeoutRef.current) {
+                clearTimeout(markerClearTimeoutRef.current);
+            }
+            markerClearTimeoutRef.current = setTimeout(() => {
+                if (selectedChannelKey) {
+                    clearChannelMarker(selectedChannelKey);
+                }
+                markerClearTimeoutRef.current = null;
+            }, 250);
         }
 
         // Trigger backfill when user scrolls near the top; runs independently of live path.
@@ -724,7 +799,7 @@ export function ChatClient() {
         if (nearTop && selectedChannelKey) {
             void triggerBackfill(selectedChannelKey);
         }
-    }, [selectedChannelKey, triggerBackfill]);
+    }, [clearChannelMarker, markMessagesRead, selectedChannelKey, triggerBackfill]);
 
     useEffect(() => {
         const el = listRef.current;
@@ -747,22 +822,38 @@ export function ChatClient() {
         const prevHeight = prevScrollHeightRef.current ?? 0;
         const prevTop = prevScrollTopRef.current ?? 0;
         const nextHeight = el.scrollHeight;
+        const prevCount = prevMessageCountRef.current ?? 0;
+        const nextCount = allMessages.length;
+        const latest = allMessages[allMessages.length - 1];
+        const latestTimestamp = latest?.timestamp ?? 0;
+        const lastSeenTimestamp = lastSeenTimestampRef.current[selectedChannelKey] ?? 0;
 
         if (mode === 'prepend') {
-            // Keep view anchored when older messages are prepended.
-            const delta = nextHeight - prevHeight;
-            el.scrollTop = prevTop + delta;
-            isAtBottomRef.current = false;
-            setHasNewMessages(false);
+            if (prevCount < 5) {
+                // Keep view anchored only when the list was short (<5 msgs) to avoid jumps on large backfills.
+                const delta = nextHeight - prevHeight;
+                el.scrollTop = prevTop + delta;
+                isAtBottomRef.current = false;
+                setHasNewMessages(false);
+            }
         } else if (mode === 'append') {
-            if (allMessages.length <= AUTO_BOTTOM_WHEN_UNDER) {
+            if (isAtBottomRef.current) {
                 scrollToBottom('auto');
                 setHasNewMessages(false);
                 isAtBottomRef.current = true;
-            } else if (isAtBottomRef.current) {
-                scrollToBottom('auto');
-            } else {
+                if (latestTimestamp) {
+                    markMessagesRead(selectedChannelKey, latestTimestamp);
+                }
+            } else if (latestTimestamp > lastSeenTimestamp) {
                 setHasNewMessages(true);
+                if (!newMarkerByChannelRef.current[selectedChannelKey]) {
+                    const latestSender = latest?.sender || latest?.senderAddress;
+                    const viewer = walletAddress;
+                    const isOwn = viewer && latestSender && viewer === latestSender;
+                    if (latest?.id && !isOwn) {
+                        setChannelMarker(selectedChannelKey, latest.id);
+                    }
+                }
             }
         }
 
@@ -770,14 +861,21 @@ export function ChatClient() {
         lastInsertModeRef.current[selectedChannelKey] = null;
         prevScrollHeightRef.current = nextHeight;
         prevScrollTopRef.current = el.scrollTop;
-    }, [allMessages, selectedChannelKey, scrollToBottom, lastInsertModeRef]);
+        prevMessageCountRef.current = nextCount;
+    }, [allMessages, markMessagesRead, selectedChannelKey, scrollToBottom, lastInsertModeRef, setChannelMarker, walletAddress]);
 
     // Reset scroll indicators when switching rooms
     useEffect(() => {
         isAtBottomRef.current = true;
-        setHasNewMessages(false);
+        setHasNewMessages(Boolean(newMarkerByChannelRef.current[selectedChannelKey ?? '']));
+        setNewMarkerId(newMarkerByChannelRef.current[selectedChannelKey ?? ''] ?? null);
         scrollToBottom('auto');
     }, [selectedChannelKey, scrollToBottom]);
+
+    const handleMarkerVisible = useCallback(() => {
+        if (!selectedChannelKey) return;
+        clearChannelMarker(selectedChannelKey);
+    }, [selectedChannelKey, clearChannelMarker]);
 
     /* --------------------------------------------------------------------------
      * Event Handlers
@@ -900,10 +998,9 @@ export function ChatClient() {
         }
         if (selectedRoom) {
             const channelKey = makeChannelKey(selectedRoom.seedHex);
-            setLastMessageTimestamp(makeRoomTimestampKey(selectedRoom.seedHex), timestamp);
-            setRoomAlerts((prev) => ({ ...prev, [channelKey]: false, [selectedRoom.seedHex]: false }));
+            markMessagesRead(channelKey, timestamp);
         }
-    }, [writerCtx, selectedRoom, messageInput, attachmentUrl, connection, addPendingMessage, removePendingMessage, notifyRoomMessageSent, showToast, applyLocalRows, scrollToBottom]);
+    }, [writerCtx, selectedRoom, messageInput, attachmentUrl, connection, addPendingMessage, removePendingMessage, notifyRoomMessageSent, showToast, applyLocalRows, scrollToBottom, markMessagesRead]);
 
     // Handle disconnect
     const handleDisconnectPrivy = useCallback(async () => {
@@ -992,17 +1089,26 @@ export function ChatClient() {
                                 viewerAddress={wallet.publicKey?.toBase58() || ''}
                                 messagesEndRef={messagesEndRef}
                                 listRef={listRef}
+                                newMarkerId={newMarkerId}
+                                onMarkerVisible={handleMarkerVisible}
                                 onCopyAddress={handleCopyAddress}
                                 onDownloadAttachment={handleDownloadAttachment}
                                 copiedMessageId={copiedMessageId}
                             />
-                            {hasNewMessages && allMessages.length > AUTO_BOTTOM_WHEN_UNDER && (
+                            {!uiIsAtBottom && allMessages.length > 0 && (
                                 <button
                                     type="button"
                                     onClick={() => scrollToBottom('smooth')}
-                                    className="absolute bottom-20 right-4 z-10 rounded bg-green-500 px-3 py-2 text-xs font-bold text-black shadow-lg hover:bg-green-400"
+                                    className={`absolute bottom-20 right-4 z-10 group flex items-center justify-center rounded-full w-11 h-11 border transition-all duration-200 backdrop-blur-sm shadow-[0_6px_18px_rgba(0,0,0,0.35)] ${
+                                        hasNewMessages
+                                            ? 'border-emerald-300/70 bg-emerald-500/15 text-emerald-100 ring-1 ring-emerald-400/50 hover:bg-emerald-500/25'
+                                            : 'border-slate-500/60 bg-slate-900/70 text-slate-200 hover:bg-slate-800/70'
+                                    }`}
                                 >
-                                    New messages • Tap to view
+                                    <span className="text-xl leading-none font-bold group-hover:translate-y-[1px] transition-transform duration-150">▾</span>
+                                    {hasNewMessages && (
+                                        <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.55)]" />
+                                    )}
                                 </button>
                             )}
                             <MessageInputForm
