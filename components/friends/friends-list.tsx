@@ -98,6 +98,12 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     const dmPingIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const [dmHasNewMessages, setDmHasNewMessages] = useState(false);
+    const [dmNewMarkerId, setDmNewMarkerId] = useState<string | null>(null);
+    const [dmUiIsAtBottom, setDmUiIsAtBottom] = useState(true);
+    const dmMarkerByChannelRef = useRef<Record<string, string | null>>({});
+    const prevDmCountRef = useRef<number>(0);
+    const dmInitialScrollRef = useRef<boolean>(false);
 
     // Modal/UI state
     const [addFriendModalOpen, setAddFriendModalOpen] = useState(false);
@@ -107,9 +113,13 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
 
     // Refs
     const chatMessagesEndRef = useRef<HTMLDivElement>(null);
+    const chatListRef = useRef<HTMLDivElement>(null);
     const chatInputRef = useRef<HTMLInputElement>(null);
     const dmSocketRef = useRef<WebSocket | null>(null);
     const dmSubscribedIdsRef = useRef<Set<string>>(new Set());
+    const dmIsAtBottomRef = useRef(true);
+    const dmMarkerElRef = useRef<HTMLDivElement | null>(null);
+    const dmMarkerClearTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     /* --------------------------------------------------------------------------
      * Writer Context
@@ -214,6 +224,19 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 1000);
     }, []);
 
+    const setDmMarker = useCallback((channelKey: string, markerId: string | null) => {
+        dmMarkerByChannelRef.current[channelKey] = markerId;
+        if (selectedDmChannelKey === channelKey) {
+            setDmNewMarkerId(markerId);
+            setDmHasNewMessages(Boolean(markerId));
+        }
+    }, [selectedDmChannelKey]);
+
+    const clearDmMarker = useCallback((channelKey: string | null) => {
+        if (!channelKey) return;
+        setDmMarker(channelKey, null);
+    }, [setDmMarker]);
+
     useEffect(() => {
         for (const friend of friends) {
             if (chatOpen && chatFriend?.dmSeedHex === friend.dmSeedHex) continue;
@@ -264,6 +287,42 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             }
         };
     }, []);
+
+    const updateDmIsAtBottom = useCallback(() => {
+        const el = chatListRef.current;
+        if (!el) return;
+        const threshold = 80;
+        const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+        const atBottom = distance < threshold;
+        dmIsAtBottomRef.current = atBottom;
+        setDmUiIsAtBottom(atBottom);
+        if (atBottom) {
+            setDmHasNewMessages(false);
+            if (dmMarkerClearTimeoutRef.current) {
+                clearTimeout(dmMarkerClearTimeoutRef.current);
+            }
+            dmMarkerClearTimeoutRef.current = setTimeout(() => {
+                if (selectedDmChannelKey) {
+                    clearDmMarker(selectedDmChannelKey);
+                }
+                dmMarkerClearTimeoutRef.current = null;
+            }, 250);
+        }
+
+        const markerEl = dmMarkerElRef.current;
+        if (markerEl) {
+            const markerRect = markerEl.getBoundingClientRect();
+            const listRect = el.getBoundingClientRect();
+            const markerVisible = markerRect.top >= listRect.top && markerRect.top <= listRect.bottom;
+            const markerAbove = markerRect.top < listRect.top;
+            if (markerVisible || markerAbove) {
+                if (selectedDmChannelKey) {
+                    clearDmMarker(selectedDmChannelKey);
+                }
+                dmMarkerElRef.current = null;
+            }
+        }
+    }, [clearDmMarker, selectedDmChannelKey]);
 
     const chatFriendTable = useMemo(() => {
         if (!chatFriend) return null;
@@ -333,6 +392,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         targetedDecode,
         applyLocalRows,
         resetChannelState,
+        lastInsertModeRef,
     } = useMessageIndexLoader({
         channelKey: selectedDmChannelKey,
         resolveChannelMeta,
@@ -351,15 +411,50 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         runWithRpcRateLimit,
     });
 
+    useEffect(() => {
+        if (!selectedDmChannelKey) {
+            setDmNewMarkerId(null);
+            setDmHasNewMessages(false);
+            return;
+        }
+        setDmNewMarkerId(dmMarkerByChannelRef.current[selectedDmChannelKey] ?? null);
+        setDmHasNewMessages(Boolean(dmMarkerByChannelRef.current[selectedDmChannelKey]));
+    }, [selectedDmChannelKey]);
+
     const orderedChatMessages = useMemo(
         () => mergeMessages(dmMessages, chatPendingMessages),
         [dmMessages, chatPendingMessages]
     );
 
+    useEffect(() => {
+        if (!selectedDmChannelKey) return;
+        const current = dmMessages.length;
+        const prev = prevDmCountRef.current;
+        const mode = lastInsertModeRef.current[selectedDmChannelKey] ?? null;
+        if (mode === 'prepend') {
+            lastInsertModeRef.current[selectedDmChannelKey] = null;
+            prevDmCountRef.current = current;
+            return;
+        }
+        if (current > prev && !dmIsAtBottomRef.current && mode !== 'prepend') {
+            const latest = dmMessages[dmMessages.length - 1];
+            const latestSender = latest?.sender || latest?.senderAddress;
+            const viewer = userAddress;
+            const isOwn = viewer && latestSender && viewer === latestSender;
+            if (latest?.id && !dmMarkerByChannelRef.current[selectedDmChannelKey] && !isOwn) {
+                setDmMarker(selectedDmChannelKey, latest.id);
+            }
+            setDmHasNewMessages(true);
+        }
+        lastInsertModeRef.current[selectedDmChannelKey] = null;
+        prevDmCountRef.current = current;
+    }, [dmMessages, lastInsertModeRef, selectedDmChannelKey, setDmMarker, userAddress]);
+
     const chatError = chatActionError ?? chatLoaderError;
 
     const scrollChatToBottom = useCallback(() => {
         chatMessagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+        setDmUiIsAtBottom(true);
     }, []);
 
     const loadChatHistory = useCallback(
@@ -432,6 +527,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         setChatMessageInput('');
         setChatOpen(true);
         await loadChatHistory(friend);
+        dmInitialScrollRef.current = true;
         setTimeout(() => {
             scrollChatToBottom();
         }, 0);
@@ -474,10 +570,19 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     }, [dmQueryAddress, friends, handleOpenChat, router]);
 
     useEffect(() => {
-        if (chatOpen) {
+        if (chatOpen && (dmIsAtBottomRef.current || dmInitialScrollRef.current)) {
             scrollChatToBottom();
+            dmIsAtBottomRef.current = true;
+            dmInitialScrollRef.current = false;
         }
-    }, [orderedChatMessages, chatPendingMessages, chatOpen, scrollChatToBottom]);
+        updateDmIsAtBottom();
+        const el = chatListRef.current;
+        if (!el) return;
+        el.addEventListener('scroll', updateDmIsAtBottom, { passive: true });
+        return () => {
+            el.removeEventListener('scroll', updateDmIsAtBottom);
+        };
+    }, [orderedChatMessages, chatPendingMessages, chatOpen, scrollChatToBottom, updateDmIsAtBottom]);
 
     useEffect(() => {
         if (!chatPendingMessages.length) return;
@@ -850,6 +955,8 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         setAttachmentUrl('');
         setAttachmentError(null);
         setShowAttachmentInput(false);
+        setDmHasNewMessages(false);
+        setDmNewMarkerId(null);
     };
 
     const handleCopyAddress = useCallback((address: string, messageId: string) => {
@@ -1020,7 +1127,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                         )}
 
                         {/* Messages */}
-                        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 min-h-0">
+                        <div className="relative flex-1 overflow-y-auto px-4 py-3 space-y-2 min-h-0" ref={chatListRef}>
                             {showChatLoadingSpinner && orderedChatMessages.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center h-full px-8">
                                     <p className="text-green-400 text-sm mb-4">Loading messages...</p>
@@ -1057,28 +1164,60 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                                 const displaySender = shortenAddress(senderAddress, 6);
                                 const key = message.id || `chat-row-${index}`;
                                 return (
-                                    <MessageBubble
-                                        key={key}
-                                        id={message.id || key}
-                                        text={message.text || ''}
-                                        sender={displaySender}
-                                        senderAddress={senderAddress}
-                                        displayName={message.displayName || displaySender}
-                                        timestamp={message.timestamp}
-                                        status={message.status}
-                                        signature={message.signature}
-                                        file={message.file}
-                                        isOwn={senderAddress === userAddress}
-                                        viewerAddress={userAddress || ''}
-                                        mode="friend"
-                                        onCopyAddress={handleCopyAddress}
-                                        onDownloadAttachment={handleDownloadAttachment}
-                                        copiedMessageId={copiedMessageId}
-                                    />
+                                    <div key={key} className="space-y-3">
+                                        {dmNewMarkerId && message.id === dmNewMarkerId && (
+                                            <div className="flex items-center gap-2 text-xs text-emerald-200/80">
+                                                <div className="flex-1 h-px bg-emerald-500/40" />
+                                                <div
+                                                    className="px-3 py-1 rounded-full bg-emerald-900/60 border border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.35)]"
+                                                    ref={dmMarkerElRef}
+                                                >
+                                                    New messages
+                                                </div>
+                                                <div className="flex-1 h-px bg-emerald-500/40" />
+                                            </div>
+                                        )}
+                                        <MessageBubble
+                                            id={message.id || key}
+                                            text={message.text || ''}
+                                            sender={displaySender}
+                                            senderAddress={senderAddress}
+                                            displayName={message.displayName || displaySender}
+                                            timestamp={message.timestamp}
+                                            status={message.status}
+                                            signature={message.signature}
+                                            file={message.file}
+                                            isOwn={senderAddress === userAddress}
+                                            viewerAddress={userAddress || ''}
+                                            mode="friend"
+                                            onCopyAddress={handleCopyAddress}
+                                            onDownloadAttachment={handleDownloadAttachment}
+                                            copiedMessageId={copiedMessageId}
+                                        />
+                                    </div>
                                 );
                             })}
                             <div ref={chatMessagesEndRef} />
                         </div>
+                        {!dmUiIsAtBottom && orderedChatMessages.length > 0 && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                                    dmIsAtBottomRef.current = true;
+                                    setDmUiIsAtBottom(true);
+                                    setDmHasNewMessages(false);
+                                    clearDmMarker(selectedDmChannelKey);
+                                }}
+                                className={`absolute bottom-24 right-6 z-10 flex items-center justify-center rounded-full text-black shadow-lg w-10 h-10 ${
+                                    dmHasNewMessages
+                                        ? 'bg-red-500 hover:bg-red-400'
+                                        : 'bg-emerald-500 hover:bg-emerald-400'
+                                }`}
+                            >
+                                <span className="text-2xl leading-none font-black">▼</span>
+                            </button>
+                        )}
 
                         {/* Input form */}
                         <div className="rounded-b-xl overflow-hidden">
