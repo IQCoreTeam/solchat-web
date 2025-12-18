@@ -29,7 +29,7 @@ export function getRpcThrottle(endpoint: string): RpcThrottle {
   // Placeholder: mirrors current defaults until the shared queue is implemented.
   const isDefault = endpoint.includes('solana.com');
   return {
-    batchSize: isDefault ? 1 : 8,
+    batchSize: isDefault ? 1 : 5,
     delayMs: 1000,
     isDefault,
   };

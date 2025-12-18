@@ -622,7 +622,12 @@ export async function readRowsByTable(
           }
         }
       }
-      if (throttle.delayMs > 0 && i + 1 < sigs.length) {
+      const shouldThrottle =
+        throttle.delayMs > 0 &&
+        throttle.batchSize > 0 &&
+        (i + 1) % throttle.batchSize === 0 &&
+        i + 1 < sigs.length
+      if (shouldThrottle) {
         await sleep(throttle.delayMs)
       }
     }
@@ -868,7 +873,12 @@ export async function readRowsByDmSeed(
           }
         }
       }
-      if (throttle.delayMs > 0 && i + 1 < sigs.length) {
+      const shouldThrottle =
+        throttle.delayMs > 0 &&
+        throttle.batchSize > 0 &&
+        (i + 1) % throttle.batchSize === 0 &&
+        i + 1 < sigs.length
+      if (shouldThrottle) {
         await sleep(throttle.delayMs)
       }
     }

@@ -14,9 +14,10 @@ interface UserListProps {
   profiles: UserProfile[];
   loading: boolean;
   currentUser: string;
+  onSendFriendRequest?: (targetPubkey: string) => Promise<void>;
 }
 
-export function UserList({ profiles, loading, currentUser }: UserListProps) {
+export function UserList({ profiles, loading, currentUser, onSendFriendRequest }: UserListProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredProfiles = profiles.filter((profile) => {
@@ -78,6 +79,7 @@ export function UserList({ profiles, loading, currentUser }: UserListProps) {
             key={profile.pubkey}
             profile={profile}
             isCurrentUser={profile.pubkey === currentUser}
+            onSendFriendRequest={onSendFriendRequest}
           />
         ))}
       </div>
@@ -88,11 +90,15 @@ export function UserList({ profiles, loading, currentUser }: UserListProps) {
 interface ProfileCardProps {
   profile: UserProfile;
   isCurrentUser: boolean;
+  onSendFriendRequest?: (targetPubkey: string) => Promise<void>;
 }
 
-function ProfileCard({ profile, isCurrentUser }: ProfileCardProps) {
+function ProfileCard({ profile, isCurrentUser, onSendFriendRequest }: ProfileCardProps) {
   const [imageError, setImageError] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const handleCopyWallet = async () => {
     try {
@@ -141,6 +147,38 @@ function ProfileCard({ profile, isCurrentUser }: ProfileCardProps) {
           {profile.bio}
         </div>
       )}
+
+      {/* Actions */}
+      <div className="flex flex-col gap-2 mb-3">
+        <button
+          onClick={async () => {
+            if (!onSendFriendRequest || isCurrentUser) return;
+            setSendError(null);
+            setSending(true);
+            try {
+              await onSendFriendRequest(profile.pubkey);
+              setSent(true);
+              setTimeout(() => setSent(false), 2500);
+            } catch (err) {
+              const message = err instanceof Error ? err.message : 'Failed to send request';
+              setSendError(message);
+            } finally {
+              setSending(false);
+            }
+          }}
+          disabled={!onSendFriendRequest || isCurrentUser || sending}
+          className={`text-xs font-bold px-3 py-2 rounded border transition ${
+            sent
+              ? 'border-emerald-400 text-emerald-200 bg-emerald-500/10'
+              : 'border-green-600 text-green-200 hover:text-green-100 hover:border-green-400 disabled:opacity-50 disabled:cursor-not-allowed'
+          }`}
+        >
+          {isCurrentUser ? 'THIS IS YOU' : sending ? 'SENDING...' : sent ? 'REQUEST SENT' : 'SEND FRIEND REQUEST'}
+        </button>
+        {sendError && (
+          <div className="text-xs text-red-300">{sendError}</div>
+        )}
+      </div>
 
       {/* Footer with timestamp and copy button */}
       <div className="flex items-center justify-between pt-3 border-t border-white/10">

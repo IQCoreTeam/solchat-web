@@ -59,7 +59,23 @@ export async function readRowsByTable(params: ReadTableParams): Promise<Row[]> {
   const roomId = `room:${tableName}`;
 
   try {
+    const forceNetwork = Boolean(
+      (Array.isArray(params.signatures) && params.signatures.length) ||
+      params.maxTx
+    );
     const manager = getCacheManager();
+
+    if (forceNetwork) {
+      const rows = await originalReadRowsByTable(params);
+      if (manager.isReady()) {
+        try {
+          await manager.updateRoomCache(roomId, rows);
+        } catch (error) {
+          console.warn('[CachedReader] Failed to update cache after network fetch:', error);
+        }
+      }
+      return rows;
+    }
 
     // If cache not ready, fallback to original
     if (!manager.isReady()) {
@@ -72,7 +88,7 @@ export async function readRowsByTable(params: ReadTableParams): Promise<Row[]> {
       roomId,
       () => originalReadRowsByTable(params),
       {
-        backgroundRefresh: false,
+        backgroundRefresh: true,
         maxRetries: 2,
         retryDelay: 500,
         onProgress: params.onProgress,

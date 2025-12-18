@@ -246,7 +246,7 @@ export function ChatClient() {
     const seedHex = channelKeyToSeed(channelKey);
     const room = rooms.find((r) => r.seedHex === seedHex);
     if (!room) return [];
-    const baseMaxTx = endpointSource === 'default' ? 40 : 200;
+    const baseMaxTx = endpointSource === 'default' ? 20 : 40;
     const maxTx = fetchConfig?.maxTx ?? baseMaxTx;
     const targetSignatures = fetchConfig?.signatures;
     const rows = await readRowsByTable({
@@ -307,6 +307,7 @@ export function ChatClient() {
                 setRoomAlerts((prev) => ({ ...prev, [channelKey]: false, [seedHex]: false }));
             }
         },
+        decodeWindow: endpointSource === 'default' ? 20 : 40,
         runWithRpcRateLimit,
     });
 
