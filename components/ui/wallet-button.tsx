@@ -3,6 +3,8 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePrivy } from '@privy-io/react-auth';
+import { useWallet } from '@solana/wallet-adapter-react';
+import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { Window, WindowHeader, WindowContent } from 'react95';
 import styled from 'styled-components';
 import { useAppWallet } from '@/lib/wallet/use-app-wallet';
@@ -116,10 +118,13 @@ export function WalletButton() {
   const [mounted, setMounted] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [fundingCopied, setFundingCopied] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { ready, authenticated, login, logout } = usePrivy();
   const { publicKey: privyPublicKey } = useAppWallet();
+  const { publicKey: fundingPublicKey, connected: fundingConnected } = useWallet();
+  const { setVisible: setWalletModalVisible } = useWalletModal();
   const [connectingPrivy, setConnectingPrivy] = useState(false);
 
   useEffect(() => {
@@ -153,6 +158,17 @@ export function WalletButton() {
     }
   };
 
+  const handleCopyFundingAddress = async () => {
+    if (!fundingPublicKey) return;
+    try {
+      await navigator.clipboard.writeText(fundingPublicKey.toBase58());
+      setFundingCopied(true);
+      setTimeout(() => setFundingCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy funding address:', error);
+    }
+  };
+
   const handleDisconnect = async () => {
     try {
       await logout();
@@ -180,6 +196,11 @@ export function WalletButton() {
     router.push('/account');
   };
 
+  const handleManageFundingWallet = () => {
+    setDropdownOpen(false);
+    setWalletModalVisible(true);
+  };
+
   if (!mounted || !ready) {
     return (
       <StyledButton disabled>
@@ -205,6 +226,7 @@ export function WalletButton() {
   }
 
   const shortAddress = formatShortAddress(privyPublicKey);
+  const fundingShortAddress = fundingPublicKey ? formatShortAddress(fundingPublicKey) : null;
 
   return (
     <div style={{ position: 'relative', display: 'inline-block' }} ref={dropdownRef}>
@@ -227,18 +249,33 @@ export function WalletButton() {
 
       {dropdownOpen && (
         <DropdownWindow>
-          <StyledWindowHeader>[PRIVY WALLET]</StyledWindowHeader>
+          <StyledWindowHeader>[WALLETS]</StyledWindowHeader>
           <StyledWindowContent>
-            <AddressBox>
-              <AddressLabel>[ADDRESS]</AddressLabel>
-              <AddressText>{shortAddress}</AddressText>
-            </AddressBox>
-            <StyledButton95 onClick={handleCopyAddress}>
-              {copied ? '[✓ COPIED]' : '[COPY ADDRESS]'}
-            </StyledButton95>
-            <StyledButton95 onClick={handleOpenAccount}>
-              [MANAGE PRIVY WALLET]
-            </StyledButton95>
+            <div className="space-y-2">
+              <AddressLabel>[PRIVY WALLET]</AddressLabel>
+              <AddressBox>
+                <AddressLabel>[ADDRESS]</AddressLabel>
+                <AddressText>{shortAddress}</AddressText>
+              </AddressBox>
+              <StyledButton95 onClick={handleCopyAddress}>
+                {copied ? '[✓ COPIED]' : '[COPY PRIVY ADDRESS]'}
+              </StyledButton95>
+              <StyledButton95 onClick={handleOpenAccount}>
+                [MANAGE PRIVY WALLET]
+              </StyledButton95>
+              <div style={{ height: '1px', background: '#6b7280', margin: '0.35rem 0' }} />
+              <AddressLabel>[FUNDING WALLET]</AddressLabel>
+              <AddressBox>
+                <AddressLabel>[ADDRESS]</AddressLabel>
+                <AddressText>{fundingShortAddress || 'Connect funding wallet'}</AddressText>
+              </AddressBox>
+              <StyledButton95 onClick={handleCopyFundingAddress} disabled={!fundingConnected}>
+                {fundingConnected ? (fundingCopied ? '[✓ COPIED]' : '[COPY FUNDING ADDRESS]') : '[COPY FUNDING ADDRESS]'}
+              </StyledButton95>
+              <StyledButton95 onClick={handleManageFundingWallet}>
+                {fundingConnected ? '[MANAGE FUNDING WALLET]' : '[CONNECT FUNDING WALLET]'}
+              </StyledButton95>
+            </div>
             <StyledButton95 $variant="danger" onClick={handleDisconnect}>
               [DISCONNECT]
             </StyledButton95>
