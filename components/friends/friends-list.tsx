@@ -435,7 +435,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         [connection, userAddress, endpointSource]
     );
 
-    const handleDmSocketPayload = useCallback(async (payload: { type?: string; roomId?: string; lastTimestamp?: number }) => {
+    const handleDmSocketPayload = useCallback(async (payload: { type?: string; roomId?: string; lastTimestamp?: number; timestamp?: number }) => {
         const roomId = payload?.roomId;
         if (!roomId || !roomId.startsWith('dm:')) {
             return;
@@ -443,7 +443,9 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         const dmSeedHex = roomId.slice(3);
         const incomingTimestamp = typeof payload.lastTimestamp === 'number'
             ? payload.lastTimestamp
-            : Number(payload.lastTimestamp || 0);
+            : typeof payload.timestamp === 'number'
+                ? payload.timestamp
+                : Number(payload.lastTimestamp || payload.timestamp || 0);
 
         const targetFriend = friendMapBySeedHex[dmSeedHex];
         if (targetFriend) {
@@ -477,6 +479,11 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             }
         }
     }, [appendLatestChatMessage, chatFriend, chatOpen, friendMapBySeedHex, showToast, shortenAddress]);
+
+    const dmSocketHandlerRef = useRef<typeof handleDmSocketPayload | null>(null);
+    useEffect(() => {
+        dmSocketHandlerRef.current = handleDmSocketPayload;
+    }, [handleDmSocketPayload]);
 
     const handleOpenChat = useCallback(async (friend: Friend) => {
         setChatFriend(friend);
@@ -598,18 +605,23 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                     }, 20000);
                 });
 
-                socket.addEventListener('message', (event) => {
+                const handleMessage = (event: MessageEvent) => {
                     try {
                         const data = JSON.parse(event.data);
                         if (data?.type === 'pong') return;
                         console.log('[FriendsList] DM WS message:', data);
-                        if (data && (data.type === 'roomUpdated' || data.type === 'roomSnapshot')) {
-                            void handleDmSocketPayload(data);
+                        if (data && (data.type === 'roomUpdated' || data.type === 'roomSnapshot' || data.type === 'messageSent')) {
+                            const handler = dmSocketHandlerRef.current;
+                            if (handler) {
+                                void handler(data);
+                            }
                         }
                     } catch (error) {
                         console.warn('[FriendsList] Failed to parse DM notification payload', error);
                     }
-                });
+                };
+
+                socket.addEventListener('message', handleMessage);
 
                 socket.addEventListener('close', () => {
                     console.log('[FriendsList] DM WS closed');
@@ -634,7 +646,8 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             dmSocketRef.current?.close();
             dmSocketRef.current = null;
         };
-    }, [handleDmSocketPayload]);
+        // Keep socket alive; handler is updated via ref.
+    }, []);
 
     useEffect(() => {
         if (!dmWsConnected || !dmSocketRef.current) return;

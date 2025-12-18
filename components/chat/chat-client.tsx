@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { AccountInfo } from '@solana/web3.js';
 import { PublicKey } from '@solana/web3.js';
@@ -67,6 +67,21 @@ type RoomMeta = {
     lastTimestamp: number;
 };
 
+type ToastTone = 'info' | 'error';
+type ToastState = {
+    text: string;
+    tone: ToastTone;
+};
+
+const DEBUG_WS = true;
+const AUTO_BOTTOM_WHEN_UNDER = 5;
+
+type FetchConfig = {
+    maxTx?: number;
+    knownSignatures?: Set<string> | string[];
+    signatures?: string[];
+};
+
 export function ChatClient() {
     /* --------------------------------------------------------------------------
      * Context & External Hooks
@@ -106,7 +121,6 @@ export function ChatClient() {
         pruneConfirmedMessages,
         removePendingMessage,
     } = usePendingMessages();
-    const [messageActionError, setMessageActionError] = useState<string | null>(null);
 
     // Room creation state
     const [newRoomName, setNewRoomName] = useState('');
@@ -127,20 +141,34 @@ export function ChatClient() {
     const [roomAlerts, setRoomAlerts] = useState<Record<string, boolean>>({});
     const [roomWsConnected, setRoomWsConnected] = useState(false);
     const [slowRpcMode, setSlowRpcMode] = useState(endpointSource === 'default');
-    const [toastMessage, setToastMessage] = useState<string | null>(null);
+    const [toast, setToast] = useState<ToastState | null>(null);
+    const [hasNewMessages, setHasNewMessages] = useState(false);
 
     // Refs
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const listRef = useRef<HTMLDivElement>(null);
+    const isAtBottomRef = useRef(true);
     const roomSocketRef = useRef<WebSocket | null>(null);
     const roomSubscribedIdsRef = useRef<Set<string>>(new Set());
-    const roomFetchInFlightRef = useRef<Set<string>>(new Set());
+    const backfillTaskRef = useRef<Record<string, Promise<void> | null>>({});
+    const liveTaskRef = useRef<Record<string, Promise<void> | null>>({});
+    const liveDirtyRef = useRef<Record<string, boolean>>({});
+    const signatureIndexRef = useRef<Record<string, string[]>>({});
+    const signatureCursorRef = useRef<Record<string, string | null>>({});
+    const signatureExhaustedRef = useRef<Record<string, boolean>>({});
+    const decodeCursorRef = useRef<Record<string, number>>({});
+    const lastInsertModeRef = useRef<Record<string, 'prepend' | 'append' | null>>({});
     const lastFetchedTimestampRef = useRef<Record<string, number>>({});
     const lastAccountRefreshRef = useRef<number>(0);
+    const lastMessageCountRef = useRef<number>(0);
+    const lastMessageTimestampRef = useRef<number>(0);
     const roomWsBackoffRef = useRef<number>(0);
     const roomPingIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const ROOM_RATE_LIMIT = 3;
+    const DECODE_WINDOW = 40;
+    const MAX_SIG_INDEX = 5000;
 
     // Writer context
     const writerWallet = useMemo<WalletAdapterLike | null>(() => {
@@ -186,21 +214,22 @@ export function ChatClient() {
 
     const allMessages = useMemo(() => mergeMessages(messages, pendingMessages), [messages, pendingMessages]);
     const walletAddress = useMemo(() => wallet.publicKey?.toBase58() || '', [wallet.publicKey]);
-    const existingSignatures = useMemo(() => {
+    const existingSignaturesRef = useRef<Set<string>>(new Set());
+    useEffect(() => {
         const sigs = new Set<string>();
         messages.forEach((msg) => {
             if (msg.signature) sigs.add(msg.signature);
         });
-        return sigs;
+        existingSignaturesRef.current = sigs;
     }, [messages]);
     const canWrite = Boolean(writerCtx && isUserInitialized);
 
-    const showToast = useCallback((text: string) => {
+    const showToast = useCallback((text: string, tone: ToastTone = 'info') => {
         if (toastTimeoutRef.current) {
             clearTimeout(toastTimeoutRef.current);
         }
-        setToastMessage(text);
-        toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 1000);
+        setToast({ text, tone });
+        toastTimeoutRef.current = setTimeout(() => setToast(null), 1000);
     }, []);
 
     const upsertMessages = useCallback((incoming: MessageRow[]) => {
@@ -209,46 +238,50 @@ export function ChatClient() {
             const map = new Map<string, MessageRow>();
             [...prev, ...incoming].forEach((msg) => {
                 if (!msg) return;
-                const key = msg.signature || msg.id || `${msg.timestamp ?? 0}-${msg.sender ?? ''}`;
+                const key = msg.id || msg.signature || `${msg.timestamp ?? 0}-${msg.sender ?? ''}`;
                 map.set(key, msg);
             });
             return Array.from(map.values()).sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
         });
     }, []);
 
-    const fetcher = useCallback(async (room: RoomMeta) => {
-        if (!walletAddress) return [];
-        const maxTx = endpointSource === 'default' ? 40 : 200;
-        const rows = await readRowsByTable({
-            connection,
-            rootId: ROOT_ID,
-            userPublicKey: walletAddress,
-            tableName: room.seedHex,
-            idl: PROGRAM_IDL,
-            maxTx,
-            onProgress: (partialRows) => {
-                if (selectedSeed && selectedSeed !== room.seedHex) return;
-                const partialMessages = partialRows
-                    .map((row: Row) => rowToMessage(row))
-                    .filter((message: MessageRow) => message.text || message.file);
+  const fetcher = useCallback(async (room: RoomMeta, fetchConfig?: FetchConfig) => {
+    if (!walletAddress) return [];
+    const baseMaxTx = endpointSource === 'default' ? 40 : 200;
+    const maxTx = fetchConfig?.maxTx ?? baseMaxTx;
+    const knownSignatures = fetchConfig?.knownSignatures ?? existingSignaturesRef.current;
+    const targetSignatures = fetchConfig?.signatures;
+    const rows = await readRowsByTable({
+      connection,
+      rootId: ROOT_ID,
+      userPublicKey: walletAddress,
+      tableName: room.seedHex,
+      idl: PROGRAM_IDL,
+      maxTx: targetSignatures?.length || maxTx,
+      signatures: targetSignatures,
+      onProgress: (partialRows) => {
+        if (selectedSeed && selectedSeed !== room.seedHex) return;
+        const partialMessages = partialRows
+          .map((row: Row) => rowToMessage(row))
+          .filter((message: MessageRow) => message.text || message.file);
                 upsertMessages(partialMessages);
                 if (endpointSource === 'default') {
                     setSlowRpcMode(true);
                 }
             },
-            knownSignatures: existingSignatures,
-        });
+      knownSignatures,
+    });
         return rows
             .map((row: Row) => rowToMessage(row))
             .filter((message: MessageRow) => message.text || message.file);
-    }, [walletAddress, connection, endpointSource, selectedSeed, upsertMessages, existingSignatures]);
+    }, [walletAddress, connection, endpointSource, selectedSeed, upsertMessages]);
 
     const {
         loadMessages: loadRoomMessages,
         messagesLoading,
         messagesError,
         showLoadingSpinner,
-    } = useMessageLoader<[RoomMeta]>({
+    } = useMessageLoader<[RoomMeta, FetchConfig?]>({
         fetcher,
     });
 
@@ -440,54 +473,304 @@ export function ChatClient() {
         }
 
         roomSubscribedIdsRef.current = desired;
-    }, [rooms, roomWsConnected]);
+  }, [rooms, roomWsConnected]);
 
-    // Load messages for selected room (stable version for subscriptions)
-    const loadMessagesForRoom = useCallback(async (room: RoomMeta, options?: LoaderOptions) => {
-        if (roomFetchInFlightRef.current.has(room.seedHex)) {
-            console.log('[ChatClient] Skipping fetch, already in-flight for', room.seedHex.slice(0, 8));
-            return;
-        }
-        roomFetchInFlightRef.current.add(room.seedHex);
-        const rows = await runWithRpcRateLimit(
-            () => loadRoomMessages(room, options),
-            {
-                enabled: endpointSource === 'default',
-                maxPerSecond: ROOM_RATE_LIMIT,
-            }
+  const dedupeKeepOrder = useCallback((list: string[]) => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const sig of list) {
+      if (!sig || seen.has(sig)) continue;
+      seen.add(sig);
+      out.push(sig);
+    }
+    return out;
+  }, []);
+
+  const ensureSignatureIndex = useCallback(
+    async (
+      room: RoomMeta,
+      opts?: { mode?: 'initial' | 'older' | 'refreshLatest'; limit?: number }
+    ) => {
+      const key = room.seedHex;
+      const mode = opts?.mode ?? (signatureIndexRef.current[key]?.length ? 'refreshLatest' : 'initial');
+
+      const baseLimit = endpointSource === 'default' ? 500 : 1000;
+      const latestLimit = endpointSource === 'default' ? 120 : 200;
+      const limit =
+        opts?.limit ??
+        (mode === 'refreshLatest'
+          ? latestLimit
+          : baseLimit);
+
+      const existing = signatureIndexRef.current[key] || [];
+      let before: string | undefined;
+
+      if (mode === 'initial') {
+        signatureExhaustedRef.current[key] = false;
+        signatureCursorRef.current[key] = null;
+        decodeCursorRef.current[key] = 0;
+      } else if (mode === 'older') {
+        before = signatureCursorRef.current[key] || undefined;
+      }
+
+      try {
+        const sigInfos = await connection.getSignaturesForAddress(
+          new PublicKey(room.tableAddress),
+          { limit, before }
         );
-        upsertMessages(rows);
-        const latestTimestamp = rows.reduce((max, msg) => {
-            const ts = msg.timestamp ?? 0;
-            return ts > max ? ts : max;
-        }, 0);
-        if (latestTimestamp) {
-            setLastMessageTimestamp(makeRoomTimestampKey(room.seedHex), latestTimestamp);
-            setRoomAlerts((prev) => ({ ...prev, [room.seedHex]: false }));
-            lastFetchedTimestampRef.current[room.seedHex] = Math.max(
-                latestTimestamp,
-                lastFetchedTimestampRef.current[room.seedHex] ?? 0
-            );
-        }
-        roomFetchInFlightRef.current.delete(room.seedHex);
-    }, [loadRoomMessages, endpointSource, upsertMessages]);
+        const fetched = sigInfos.map((s) => s.signature).filter(Boolean);
+        let nextIndex: string[] = existing;
 
-    const handleRoomSocketPayload = useCallback(async (payload: { type?: string; roomId?: string; lastTimestamp?: number }) => {
+        if (mode === 'initial') {
+          nextIndex = dedupeKeepOrder(fetched);
+        } else if (mode === 'refreshLatest') {
+          nextIndex = dedupeKeepOrder([...fetched, ...existing]);
+        } else if (mode === 'older') {
+          if (!fetched.length) {
+            signatureExhaustedRef.current[key] = true;
+          }
+          nextIndex = dedupeKeepOrder([...existing, ...fetched]);
+        }
+
+        if (nextIndex.length > MAX_SIG_INDEX) {
+          nextIndex = nextIndex.slice(0, MAX_SIG_INDEX);
+        }
+
+      signatureIndexRef.current[key] = nextIndex;
+      signatureCursorRef.current[key] = nextIndex[nextIndex.length - 1] ?? null;
+      decodeCursorRef.current[key] = Math.min(
+        decodeCursorRef.current[key] ?? 0,
+        nextIndex.length
+      );
+      lastInsertModeRef.current[key] = null;
+
+        return nextIndex;
+      } catch (error) {
+        console.error('[ChatClient] Failed to load signature index for', key.slice(0, 8), error);
+        return signatureIndexRef.current[key] || [];
+      }
+    },
+    [connection, endpointSource, dedupeKeepOrder]
+  );
+
+  const applyLoadedRows = useCallback(
+    (key: string, rows: MessageRow[], mode: 'prepend' | 'append') => {
+      if (!rows.length) return;
+      lastInsertModeRef.current[key] = mode;
+      upsertMessages(rows);
+      const latestTimestamp = rows.reduce((max, msg) => {
+        const ts = msg.timestamp ?? 0;
+        return ts > max ? ts : max;
+      }, 0);
+      if (latestTimestamp) {
+        setLastMessageTimestamp(makeRoomTimestampKey(key), latestTimestamp);
+        setRoomAlerts((prev) => ({ ...prev, [key]: false }));
+        lastFetchedTimestampRef.current[key] = Math.max(
+          latestTimestamp,
+          lastFetchedTimestampRef.current[key] ?? 0
+        );
+        if (mode === 'append' && (decodeCursorRef.current[key] ?? 0) < rows.length) {
+          decodeCursorRef.current[key] = rows.length;
+        }
+      }
+    },
+    [upsertMessages]
+  );
+
+  const loadBackfillPage = useCallback(
+    async (room: RoomMeta, _options?: LoaderOptions) => {
+      const key = room.seedHex;
+      const existingTask = backfillTaskRef.current[key];
+      if (existingTask) return existingTask;
+
+      const task = (async () => {
+        if (!signatureIndexRef.current[key]?.length) {
+          await ensureSignatureIndex(room, { mode: 'initial' });
+        }
+        const index = signatureIndexRef.current[key] || [];
+        const knownSet = new Set(existingSignaturesRef.current);
+        const start = decodeCursorRef.current[key] ?? 0;
+        let targetCount = Math.min(index.length, start + DECODE_WINDOW);
+
+        if (index.length < start + DECODE_WINDOW && !signatureExhaustedRef.current[key]) {
+          const prevLen = index.length;
+          let attempts = 0;
+          while (attempts < 2 && index.length < start + DECODE_WINDOW && !signatureExhaustedRef.current[key]) {
+            await ensureSignatureIndex(room, { mode: 'older' });
+            const refreshed = signatureIndexRef.current[key] || [];
+            if (refreshed.length === prevLen) {
+              signatureExhaustedRef.current[key] = true;
+              break;
+            }
+            targetCount = Math.min(refreshed.length, start + DECODE_WINDOW);
+            attempts += 1;
+          }
+        }
+
+        const finalIndex = signatureIndexRef.current[key] || index;
+        targetCount = Math.min(finalIndex.length, start + DECODE_WINDOW);
+
+        if (!finalIndex.length || targetCount <= start) {
+          return;
+        }
+
+        try {
+        const rows = await runWithRpcRateLimit(
+          () => loadRoomMessages(room, {
+            maxTx: targetCount,
+            knownSignatures: knownSet,
+            signatures: finalIndex.slice(start, targetCount),
+          }),
+          {
+            enabled: endpointSource === 'default',
+            maxPerSecond: 1,
+            queueKey: 'backfill',
+          }
+        );
+        applyLoadedRows(key, rows, 'prepend');
+        decodeCursorRef.current[key] = targetCount;
+      } catch (error) {
+        console.error('[ChatClient] Failed to load backfill for', key.slice(0, 8), error);
+      }
+      })().finally(() => {
+        if (backfillTaskRef.current[key] === task) {
+          backfillTaskRef.current[key] = null;
+        }
+      });
+
+      backfillTaskRef.current[key] = task;
+      return task;
+    },
+    [ensureSignatureIndex, loadRoomMessages, endpointSource, applyLoadedRows]
+  );
+
+  const loadLiveLatest = useCallback(
+    async (room: RoomMeta, _options?: LoaderOptions) => {
+      const key = room.seedHex;
+      const existingTask = liveTaskRef.current[key];
+      if (existingTask) {
+        liveDirtyRef.current[key] = true;
+        if (DEBUG_WS) {
+          console.log('[Live] skip (already running)', { room: key });
+        }
+        return existingTask;
+      }
+
+      const task = (async () => {
+        const index = await ensureSignatureIndex(room, {
+          mode: 'refreshLatest',
+        });
+        if (!index.length) {
+          return;
+        }
+        const knownSet = new Set(existingSignaturesRef.current);
+        const targetCount = Math.min(index.length, DECODE_WINDOW);
+        if (targetCount === 0) {
+          return;
+        }
+
+        try {
+          const rows = await runWithRpcRateLimit(
+            () =>
+              loadRoomMessages(
+                room,
+                {
+                  maxTx: targetCount,
+                  knownSignatures: knownSet,
+                  signatures: index.slice(0, targetCount),
+                }
+              ),
+            {
+              enabled: endpointSource === 'default',
+              maxPerSecond: ROOM_RATE_LIMIT,
+              queueKey: 'live',
+            }
+          );
+          applyLoadedRows(key, rows, 'append');
+          if ((decodeCursorRef.current[key] ?? 0) < targetCount) {
+            decodeCursorRef.current[key] = targetCount;
+          }
+        } catch (error) {
+          console.error('[ChatClient] Failed to load live messages for', key.slice(0, 8), error);
+        }
+      })().finally(() => {
+        if (liveTaskRef.current[key] === task) {
+          liveTaskRef.current[key] = null;
+        }
+        if (liveDirtyRef.current[key]) {
+          liveDirtyRef.current[key] = false;
+          const latestSelected = latestSelectedRoomRef.current;
+          if (latestSelected && latestSelected.seedHex === key) {
+            if (DEBUG_WS) {
+              console.log('[Live] dirty rerun (selected)', { room: key });
+            }
+            void loadLiveLatest(latestSelected, { skipLoadingState: true });
+          } else {
+            const latestRoom = latestRoomsRef.current.find((r) => r.seedHex === key);
+            if (latestRoom) {
+              if (DEBUG_WS) {
+                console.log('[Live] dirty rerun (room list)', { room: key });
+              }
+              void loadLiveLatest(latestRoom, { skipLoadingState: true });
+            }
+          }
+        }
+      });
+
+      liveTaskRef.current[key] = task;
+      return task;
+    },
+    [ensureSignatureIndex, loadRoomMessages, endpointSource, applyLoadedRows]
+  );
+
+    const handleRoomSocketPayload = useCallback(async (payload: { type?: string; roomId?: string; lastTimestamp?: number; timestamp?: number; signature?: string }) => {
         const roomId = payload?.roomId;
         if (!roomId || !roomId.startsWith('room:')) {
             return;
         }
         const seedHex = roomId.slice(5);
+        const signature = payload.signature;
         const incomingTimestamp = typeof payload.lastTimestamp === 'number'
             ? payload.lastTimestamp
-            : Number(payload.lastTimestamp || 0);
+            : typeof payload.timestamp === 'number'
+                ? payload.timestamp
+                : Number(payload.lastTimestamp || payload.timestamp || 0);
 
-        const lastFetched = lastFetchedTimestampRef.current[seedHex] ?? 0;
-        if (incomingTimestamp && incomingTimestamp <= lastFetched) {
-            return;
+        if (DEBUG_WS) {
+            console.log('[WS] roomUpdated payload', {
+                roomId,
+                seedHex,
+                signature,
+                incomingTimestamp,
+            });
         }
 
         await invalidateRoomCache(seedHex);
+
+        // Signature-targeted refresh path
+        if (signature) {
+            const room = latestRoomsRef.current.find((r) => r.seedHex === seedHex);
+            if (room) {
+                try {
+                    const rows = await loadRoomMessages(room, {
+                        maxTx: 1,
+                        signatures: [signature],
+                        knownSignatures: new Set(existingSignaturesRef.current),
+                    });
+                    if (DEBUG_WS) {
+                        console.log('[WS] signature-targeted append', {
+                            seedHex,
+                            signature,
+                            rows: rows?.length ?? 0,
+                        });
+                    }
+                    applyLoadedRows(seedHex, rows, 'append');
+                    return;
+                } catch (error) {
+                    console.error('[ChatClient] Failed to load targeted signature', signature.slice(0, 8), error);
+                }
+            }
+        }
 
         setRooms((prev) => {
             let changed = false;
@@ -506,16 +789,21 @@ export function ChatClient() {
         });
 
         const currentRoom = latestSelectedRoomRef.current;
-        if (currentRoom?.seedHex === seedHex && incomingTimestamp > lastFetched) {
+        if (currentRoom?.seedHex === seedHex) {
             try {
-                await loadMessagesForRoom({ ...currentRoom, lastTimestamp: incomingTimestamp }, { skipLoadingState: true });
+                await loadLiveLatest({ ...currentRoom, lastTimestamp: incomingTimestamp }, { skipLoadingState: true });
             } catch (error) {
                 console.error('[ChatClient] Failed to refresh room after notification', error);
             }
         } else {
             setRoomAlerts((prev) => ({ ...prev, [seedHex]: true }));
         }
-    }, [loadMessagesForRoom, sortRoomsByTimestamp, invalidateRoomCache]);
+    }, [loadLiveLatest, sortRoomsByTimestamp, invalidateRoomCache]);
+
+    const roomSocketHandlerRef = useRef<typeof handleRoomSocketPayload | null>(null);
+    useEffect(() => {
+        roomSocketHandlerRef.current = handleRoomSocketPayload;
+    }, [handleRoomSocketPayload]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -561,18 +849,23 @@ export function ChatClient() {
                     }, 20000);
                 });
 
-                socket.addEventListener('message', (event) => {
+                const handleMessage = (event: MessageEvent) => {
                     try {
                         const data = JSON.parse(event.data);
                         if (data?.type === 'pong') return;
                         console.log('[ChatClient] WS message:', data);
-                        if (data && (data.type === 'roomUpdated' || data.type === 'roomSnapshot')) {
-                            void handleRoomSocketPayload(data);
+                        if (data && (data.type === 'roomUpdated' || data.type === 'roomSnapshot' || data.type === 'messageSent')) {
+                            const handler = roomSocketHandlerRef.current;
+                            if (handler) {
+                                void handler(data);
+                            }
                         }
                     } catch (error) {
                         console.warn('[ChatClient] Failed to parse notification payload', error);
                     }
-                });
+                };
+
+                socket.addEventListener('message', handleMessage);
 
                 socket.addEventListener('close', () => {
                     console.log('[ChatClient] WS connection closed');
@@ -597,7 +890,8 @@ export function ChatClient() {
             roomSocketRef.current?.close();
             roomSocketRef.current = null;
         };
-    }, [handleRoomSocketPayload]);
+        // We intentionally avoid including handleRoomSocketPayload in deps to keep the socket alive.
+    }, []);
 
     // Wrapper for current room
     const loadMessages = useCallback(async (options?: LoaderOptions) => {
@@ -606,24 +900,26 @@ export function ChatClient() {
         const room = rooms.find((r) => r.seedHex === selectedSeed);
         if (!room) return;
 
-        await loadMessagesForRoom(room, options);
-    }, [selectedSeed, rooms, loadMessagesForRoom]);
+        await loadLiveLatest(room, options);
+    }, [selectedSeed, rooms, loadLiveLatest]);
 
     useEffect(() => {
         if (!walletAddress || !selectedSeed) return;
         const room = rooms.find((r) => r.seedHex === selectedSeed);
         if (!room) return;
-        const lastFetched = lastFetchedTimestampRef.current[selectedSeed] ?? 0;
-        const targetTimestamp = room.lastTimestamp ?? 0;
-        if (targetTimestamp && targetTimestamp <= lastFetched) {
-            return;
-        }
         loadMessages();
     }, [walletAddress, selectedSeed, rooms, loadMessages]);
 
-    useEffect(() => {
-        setMessages([]);
-    }, [selectedSeed]);
+  useEffect(() => {
+    setMessages([]);
+    if (selectedSeed) {
+      signatureIndexRef.current[selectedSeed] = [];
+      signatureCursorRef.current[selectedSeed] = null;
+      signatureExhaustedRef.current[selectedSeed] = false;
+      decodeCursorRef.current[selectedSeed] = 0;
+      lastInsertModeRef.current[selectedSeed] = null;
+    }
+  }, [selectedSeed]);
 
     useEffect(() => {
         if (!pendingMessages.length) return;
@@ -657,9 +953,9 @@ export function ChatClient() {
         lastAccountRefreshRef.current = now;
 
         refreshTimeoutRef.current = setTimeout(() => {
-            void loadMessagesForRoom(selectedRoom, { skipLoadingState: true });
+            void loadLiveLatest(selectedRoom, { skipLoadingState: true });
         }, 150);
-    }, [loadMessagesForRoom, selectedRoom]);
+    }, [loadLiveLatest, selectedRoom]);
 
     useOnAccountChange({
         connection,
@@ -674,10 +970,87 @@ export function ChatClient() {
     /* --------------------------------------------------------------------------
      * Effects: UI Sync
      * -------------------------------------------------------------------------- */
-    // Scroll to bottom
+    const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+        messagesEndRef.current?.scrollIntoView({ behavior });
+        isAtBottomRef.current = true;
+        setHasNewMessages(false);
+    }, []);
+
+    const updateIsAtBottom = useCallback(() => {
+        const el = listRef.current;
+        if (!el) return;
+        const threshold = 80;
+        const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+        const atBottom = distance < threshold;
+        isAtBottomRef.current = atBottom;
+        if (atBottom) {
+            setHasNewMessages(false);
+        }
+
+        // Trigger backfill when user scrolls near the top; runs independently of live path.
+        const nearTop = el.scrollTop < 120;
+        if (nearTop && selectedRoom) {
+            void loadBackfillPage(selectedRoom, { skipLoadingState: true });
+        }
+    }, [selectedRoom, loadBackfillPage]);
+
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
-    }, [allMessages]);
+        const el = listRef.current;
+        if (!el) return;
+        updateIsAtBottom();
+        el.addEventListener('scroll', updateIsAtBottom, { passive: true });
+        return () => {
+            el.removeEventListener('scroll', updateIsAtBottom);
+        };
+    }, [updateIsAtBottom, selectedSeed]);
+
+    // Auto-scroll/indicators based on structural insert mode
+    const prevScrollHeightRef = useRef<number>(0);
+    const prevScrollTopRef = useRef<number>(0);
+    useLayoutEffect(() => {
+        const el = listRef.current;
+        if (!el || !selectedSeed) return;
+
+        const mode = lastInsertModeRef.current[selectedSeed] ?? null;
+        const prevHeight = prevScrollHeightRef.current ?? 0;
+        const prevTop = prevScrollTopRef.current ?? 0;
+        const nextHeight = el.scrollHeight;
+
+        if (mode === 'prepend') {
+            // Keep view anchored when older messages are prepended.
+            const delta = nextHeight - prevHeight;
+            el.scrollTop = prevTop + delta;
+            isAtBottomRef.current = false;
+            setHasNewMessages(false);
+        } else if (mode === 'append') {
+            if (allMessages.length <= AUTO_BOTTOM_WHEN_UNDER) {
+                scrollToBottom('auto');
+                setHasNewMessages(false);
+                isAtBottomRef.current = true;
+            } else if (isAtBottomRef.current) {
+                scrollToBottom('auto');
+            } else {
+                setHasNewMessages(true);
+            }
+        }
+
+        // Reset mode for next change
+        lastInsertModeRef.current[selectedSeed] = null;
+        prevScrollHeightRef.current = nextHeight;
+        prevScrollTopRef.current = el.scrollTop;
+    }, [allMessages, selectedSeed, scrollToBottom]);
+
+    // Reset scroll indicators when switching rooms
+    useEffect(() => {
+        lastMessageCountRef.current = allMessages.length;
+        lastMessageTimestampRef.current = allMessages.length
+            ? allMessages[allMessages.length - 1].timestamp ?? 0
+            : 0;
+        isAtBottomRef.current = true;
+        setHasNewMessages(false);
+        scrollToBottom('auto');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedSeed]);
 
     /* --------------------------------------------------------------------------
      * Event Handlers
@@ -716,7 +1089,7 @@ export function ChatClient() {
         }
     }, [writerCtx, newRoomName, newRoomGateMint, connection, loadRooms]);
 
-    const notifyRoomMessageSent = useCallback((seedHex: string, ts: number) => {
+    const notifyRoomMessageSent = useCallback((seedHex: string, ts: number, signature?: string) => {
         const socket = roomSocketRef.current;
         if (!socket || socket.readyState !== WebSocket.OPEN) {
             console.warn('[ChatClient] Room notify skipped, state =', socket?.readyState ?? 'no socket');
@@ -728,6 +1101,7 @@ export function ChatClient() {
                     type: 'messageSent',
                     roomId: makeRoomTimestampKey(seedHex),
                     timestamp: ts,
+                    signature,
                 })
             );
             console.log('[ChatClient] Room notify sent for', seedHex.slice(0, 8), 'ts', ts);
@@ -766,26 +1140,41 @@ export function ChatClient() {
         setAttachmentError(null);
         setShowAttachmentInput(false);
 
-        setMessageActionError(null);
         addPendingMessage(payload);
 
         try {
             const { tx } = await writeRowWeb(writerCtx, ROOT_ID, selectedRoom.seedHex, JSON.stringify(payload));
-            await sendAndConfirmTx(connection, writerCtx.wallet, tx, '[ChatClient] Message submitted:');
+            const signature = await sendAndConfirmTx(connection, writerCtx.wallet, tx, '[ChatClient] Message submitted:');
+            // Optimistically mark this message as confirmed locally so we don't stay in "processing"
+            upsertMessages([
+                {
+                    id: payload.id,
+                    text: payload.text,
+                    sender: payload.sender,
+                    timestamp: payload.timestamp,
+                    file: payload.file,
+                    status: 'confirmed',
+                    room: selectedRoom.seedHex,
+                },
+            ]);
+            removePendingMessage(messageId);
             // Invalidate cache so WebSocket listeners get fresh data
             await invalidateRoomCache(selectedRoom.seedHex);
             console.log('[handleSendMessage] Cache invalidated for room:', selectedRoom.seedHex.slice(0, 8));
-            notifyRoomMessageSent(selectedRoom.seedHex, timestamp);
+            notifyRoomMessageSent(selectedRoom.seedHex, timestamp, signature);
+            // Scroll after DOM updates on next frame
+            requestAnimationFrame(() => scrollToBottom('smooth'));
         } catch (err) {
             console.error('[ChatClient] Send message error:', err);
-            setMessageActionError(err instanceof Error ? err.message : 'Failed to send message');
+            const errorMessage = err instanceof Error ? err.message : 'Failed to send message';
+            showToast(errorMessage, 'error');
             removePendingMessage(messageId);
         }
         if (selectedRoom) {
             setLastMessageTimestamp(makeRoomTimestampKey(selectedRoom.seedHex), timestamp);
             setRoomAlerts((prev) => ({ ...prev, [selectedRoom.seedHex]: false }));
         }
-    }, [writerCtx, selectedRoom, messageInput, attachmentUrl, connection, addPendingMessage, removePendingMessage, notifyRoomMessageSent]);
+    }, [writerCtx, selectedRoom, messageInput, attachmentUrl, connection, addPendingMessage, removePendingMessage, notifyRoomMessageSent, showToast]);
 
     // Handle disconnect
     const handleDisconnectPrivy = useCallback(async () => {
@@ -858,7 +1247,7 @@ export function ChatClient() {
                     onCloseSidebar={() => setIsSidebarOpen(false)}
                 />
 
-                <div className="flex flex-1 flex-col overflow-hidden">
+                <div className="flex flex-1 flex-col overflow-hidden relative">
                     {selectedRoom ? (
                         <>
                             {slowRpcMode && (
@@ -870,13 +1259,23 @@ export function ChatClient() {
                                 messages={allMessages}
                                 isLoading={messagesLoading}
                                 showLoadingSpinner={showLoadingSpinner}
-                                error={messageActionError ?? messagesError}
+                                error={messagesError}
                                 viewerAddress={wallet.publicKey?.toBase58() || ''}
                                 messagesEndRef={messagesEndRef}
+                                listRef={listRef}
                                 onCopyAddress={handleCopyAddress}
                                 onDownloadAttachment={handleDownloadAttachment}
                                 copiedMessageId={copiedMessageId}
                             />
+                            {hasNewMessages && allMessages.length > AUTO_BOTTOM_WHEN_UNDER && (
+                                <button
+                                    type="button"
+                                    onClick={() => scrollToBottom('smooth')}
+                                    className="absolute bottom-20 right-4 z-10 rounded bg-green-500 px-3 py-2 text-xs font-bold text-black shadow-lg hover:bg-green-400"
+                                >
+                                    New messages • Tap to view
+                                </button>
+                            )}
                             <MessageInputForm
                                 messageInput={messageInput}
                                 setMessageInput={setMessageInput}
@@ -919,9 +1318,15 @@ export function ChatClient() {
                     )}
                 </div>
             </div>
-            {toastMessage && (
-                <div className="fixed bottom-4 right-4 z-50 rounded bg-black/80 px-4 py-2 text-xs text-amber-200 border border-amber-400/60 shadow-lg">
-                    {toastMessage}
+            {toast && (
+                <div
+                    className={`fixed bottom-4 right-4 z-50 rounded px-4 py-2 text-xs shadow-lg ${
+                        toast.tone === 'error'
+                            ? 'border border-red-500/60 bg-red-950/80 text-red-200 shadow-red-900/40'
+                            : 'border border-amber-400/60 bg-black/80 text-amber-200 shadow-green-900/40'
+                    }`}
+                >
+                    {toast.text}
                 </div>
             )}
         </div>

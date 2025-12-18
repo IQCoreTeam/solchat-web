@@ -1,25 +1,31 @@
 'use client';
 
-import { useWallet } from '@solana/wallet-adapter-react';
-import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { useEffect, useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import { usePrivy } from '@privy-io/react-auth';
 import { Window, WindowHeader, WindowContent } from 'react95';
 import styled from 'styled-components';
+import { useAppWallet } from '@/lib/wallet/use-app-wallet';
+
+const formatShortAddress = (key: { toBase58(): string }) => {
+  const address = key.toBase58();
+  return `${address.slice(0, 4)}...${address.slice(-4)}`;
+};
 
 const StyledButton = styled.button.attrs({ type: 'button' })`
   font-family: inherit;
   cursor: pointer;
   appearance: none;
-justify-content: space-between;
   background-color: black;
   color: #4ade80;
   border: 2px solid #16a34a;
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   width: auto;
-  min-width: 140px;
+  min-width: 180px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
   &:hover:not(:disabled) {
     border-color: #4ade80;
@@ -31,6 +37,7 @@ justify-content: space-between;
 
   &:disabled {
     cursor: not-allowed;
+    opacity: 0.6;
   }
 `;
 
@@ -46,7 +53,6 @@ const DropdownWindow = styled(Window)`
 const StyledWindowHeader = styled(WindowHeader)`
   background: linear-gradient(to right, #16a34a, #4ade80);
   color: black;
-
   font-size: 0.75rem;
   font-weight: bold;
 `;
@@ -61,7 +67,6 @@ const AddressBox = styled.div`
   border: 2px inset #808080;
   padding: 0.5rem;
   margin-bottom: 0.75rem;
- 
 `;
 
 const AddressLabel = styled.div`
@@ -108,12 +113,14 @@ const StyledButton95 = styled.button.attrs({ type: 'button' })<{ $variant?: 'dan
 `;
 
 export function WalletButton() {
-  const { wallet, publicKey, disconnect, connecting } = useWallet();
-  const { setVisible } = useWalletModal();
   const [mounted, setMounted] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const { ready, authenticated, login, logout } = usePrivy();
+  const { publicKey: privyPublicKey } = useAppWallet();
+  const [connectingPrivy, setConnectingPrivy] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -136,9 +143,9 @@ export function WalletButton() {
   }, [dropdownOpen]);
 
   const handleCopyAddress = async () => {
-    if (!publicKey) return;
+    if (!privyPublicKey) return;
     try {
-      await navigator.clipboard.writeText(publicKey.toBase58());
+      await navigator.clipboard.writeText(privyPublicKey.toBase58());
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
@@ -146,34 +153,58 @@ export function WalletButton() {
     }
   };
 
-  const handleDisconnect = () => {
-    disconnect();
-    setDropdownOpen(false);
+  const handleDisconnect = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error('Failed to logout from Privy:', error);
+    } finally {
+      setDropdownOpen(false);
+    }
   };
 
-  if (!mounted) {
+  const handleConnectPrivy = async () => {
+    if (!ready || connectingPrivy) return;
+    try {
+      setConnectingPrivy(true);
+      await login();
+    } catch (error) {
+      console.error('Failed to start Privy login:', error);
+    } finally {
+      setConnectingPrivy(false);
+    }
+  };
+
+  const handleOpenAccount = () => {
+    setDropdownOpen(false);
+    router.push('/account');
+  };
+
+  if (!mounted || !ready) {
     return (
-      <StyledButton disabled style={{ opacity: 0.5 }}>
+      <StyledButton disabled>
         [LOADING...]
       </StyledButton>
     );
   }
 
-  // Not connected - show connect button
-  if (!publicKey || !wallet) {
+  if (!authenticated) {
     return (
-      <StyledButton
-        onClick={() => setVisible(true)}
-        disabled={connecting}
-        style={{ opacity: connecting ? 0.5 : 1 }}
-      >
-        {connecting ? '[CONNECTING...]' : '[CONNECT WALLET]'}
+      <StyledButton onClick={handleConnectPrivy} disabled={connectingPrivy}>
+        {connectingPrivy ? '[CONNECTING...]' : '[CONNECT PRIVY WALLET]'}
       </StyledButton>
     );
   }
 
-  // Connected - show dropdown
-  const shortAddress = `${publicKey.toBase58().slice(0, 4)}...${publicKey.toBase58().slice(-4)}`;
+  if (!privyPublicKey) {
+    return (
+      <StyledButton onClick={handleOpenAccount}>
+        [CREATE PRIVY WALLET TO START]
+      </StyledButton>
+    );
+  }
+
+  const shortAddress = formatShortAddress(privyPublicKey);
 
   return (
     <div style={{ position: 'relative', display: 'inline-block' }} ref={dropdownRef}>
@@ -196,7 +227,7 @@ export function WalletButton() {
 
       {dropdownOpen && (
         <DropdownWindow>
-          <StyledWindowHeader>[WALLET]</StyledWindowHeader>
+          <StyledWindowHeader>[PRIVY WALLET]</StyledWindowHeader>
           <StyledWindowContent>
             <AddressBox>
               <AddressLabel>[ADDRESS]</AddressLabel>
@@ -204,6 +235,9 @@ export function WalletButton() {
             </AddressBox>
             <StyledButton95 onClick={handleCopyAddress}>
               {copied ? '[✓ COPIED]' : '[COPY ADDRESS]'}
+            </StyledButton95>
+            <StyledButton95 onClick={handleOpenAccount}>
+              [MANAGE PRIVY WALLET]
             </StyledButton95>
             <StyledButton95 $variant="danger" onClick={handleDisconnect}>
               [DISCONNECT]

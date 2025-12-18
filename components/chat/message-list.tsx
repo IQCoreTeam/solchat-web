@@ -31,6 +31,7 @@ interface MessageListProps {
     error: string | null;
     viewerAddress: string;
     messagesEndRef: RefObject<HTMLDivElement | null>;
+    listRef?: RefObject<HTMLDivElement | null>;
     onCopyAddress: (address: string, messageId: string) => void;
     onDownloadAttachment: (url: string) => void;
     copiedMessageId: string | null;
@@ -43,12 +44,13 @@ export function MessageList({
     error,
     viewerAddress,
     messagesEndRef,
+    listRef,
     onCopyAddress,
     onDownloadAttachment,
     copiedMessageId,
 }: MessageListProps) {
     return (
-        <div className="flex-1 overflow-y-auto px-3 py-3 md:px-6 md:py-4">
+        <div ref={(listRef as RefObject<HTMLDivElement>) ?? undefined} className="flex-1 overflow-y-auto px-3 py-3 md:px-6 md:py-4">
             {showLoadingSpinner && messages.length === 0 && (
                 <LoadingSpinner message="Loading" />
             )}

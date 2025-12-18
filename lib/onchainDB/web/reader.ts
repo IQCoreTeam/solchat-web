@@ -9,7 +9,6 @@ import { Buffer } from 'buffer'
 import { configs } from '../configs'
 import { deriveSeedHex, rootIdToBytes, toBytes, type BytesLike } from '../core/seed'
 import { pdaRoot, pdaTable, pdaTxRef, pdaInstructionTable, pdaDmTable, pdaDmInstructionTable } from '../provider/pda.provider'
-import { fetchWithRetry } from '@/lib/utils/fetch-with-retry'
 import { getRpcThrottle } from './rpc-throttle'
 
 export type Row = Record<string, any>
@@ -32,6 +31,8 @@ export type ReaderParams = {
   // Optional limits for scanning
   maxTx?: number
   perTableLimit?: number
+  // Allow loose JSON recovery when payloads are malformed
+  looseJson?: boolean
 }
 
 export type ReaderResult = {
@@ -148,82 +149,6 @@ async function getSignaturesFor(address: PublicKey, connection: Connection, limi
   return out
 }
 
-async function getTransactionsForAddress(
-  connection: Connection,
-  address: PublicKey,
-  limit: number
-): Promise<ParsedTransactionWithMeta[]> {
-  try {
-    const endpoint = (connection as any)._rpcEndpoint
-    if (!endpoint || !endpoint.includes('helius')) {
-      return await getFallbackTransactions(connection, address, limit)
-    }
-
-    const response = await fetchWithRetry(
-      () =>
-        fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 'helius-gtfa',
-            method: 'getTransactionsForAddress',
-            params: [
-              address.toBase58(),
-              {
-                limit,
-                commitment: 'confirmed',
-              },
-            ],
-          }),
-        }),
-      3,
-      500
-    )
-
-    const data = await response.json()
-    if (data.result) {
-      return data.result as ParsedTransactionWithMeta[]
-    }
-    return await getFallbackTransactions(connection, address, limit)
-  } catch (error) {
-    console.warn('Helius getTransactionsForAddress failed, falling back:', error)
-    return await getFallbackTransactions(connection, address, limit)
-  }
-}
-
-async function getFallbackTransactions(
-  connection: Connection,
-  address: PublicKey,
-  limit: number
-): Promise<ParsedTransactionWithMeta[]> {
-  const sigs = await getSignaturesFor(address, connection, limit)
-  const endpoint = (connection as any)?._rpcEndpoint || ''
-  const throttle = getRpcThrottle(endpoint)
-  console.log(
-    `[reader] ${throttle.isDefault ? 'Basic' : 'Custom'} RPC detected; batching ${
-      throttle.batchSize
-    } tx(s) with ${throttle.delayMs}ms delay`
-  )
-
-  const transactions: any[] = []
-
-  for (let i = 0; i < sigs.length; i += throttle.batchSize) {
-    const batch = sigs.slice(i, i + throttle.batchSize)
-    const txs = await Promise.all(
-      batch.map((s) =>
-        connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 })
-      )
-    )
-    transactions.push(...txs.filter((tx) => tx !== null))
-    if (throttle.delayMs > 0 && i + throttle.batchSize < sigs.length) {
-      await sleep(throttle.delayMs)
-    }
-  }
-
-  return transactions as ParsedTransactionWithMeta[]
-}
-
 function decodeAllIxsFromTx(
   tx: ParsedTransactionWithMeta,
   programIdB58: string,
@@ -234,40 +159,44 @@ function decodeAllIxsFromTx(
 
   const outer = tx.transaction?.message?.instructions ?? []
   const innerGroups = tx.meta?.innerInstructions ?? []
-  const inner = innerGroups.flatMap((g) => g.instructions ?? [])
-  const all = [...outer, ...inner]
 
-  for (const ix of all) {
-    const pidIndex = (ix as any).programIdIndex
-    const pid = pidIndex != null ? (accKeys[pidIndex]?.pubkey || accKeys[pidIndex]) : (ix as any).programId
-    const pidB58 = typeof (pid as any)?.toBase58 === 'function' ? (pid as any).toBase58() : String(pid)
-    if (pidB58 !== programIdB58) continue
-    const data = (ix as any).data
-    if (!data) continue
-    try {
-      const decoded = ixCoder.decode(typeof data === 'string' ? data : bs58.encode(toU8(data)), 'base58')
-      if (decoded) out.push(decoded)
-    } catch {
-      // skip
+  const decodeList = (list: any[]) => {
+    for (const ix of list) {
+      const pidIndex = (ix as any).programIdIndex
+      const pid = pidIndex != null ? (accKeys[pidIndex]?.pubkey || accKeys[pidIndex]) : (ix as any).programId
+      const pidB58 = typeof (pid as any)?.toBase58 === 'function' ? (pid as any).toBase58() : String(pid)
+      if (pidB58 !== programIdB58) continue
+      const data = (ix as any).data
+      if (!data) continue
+      try {
+        const decoded = ixCoder.decode(typeof data === 'string' ? data : bs58.encode(toU8(data)), 'base58')
+        if (decoded) out.push(decoded)
+      } catch {
+        // skip
+      }
     }
   }
+
+  decodeList(outer)
+  if (out.length === 0 && innerGroups.length) {
+    decodeList(innerGroups.flatMap((g) => g.instructions ?? []))
+  }
+
   return out
 }
 
-function tryParseJsonLoose(s: string): Row {
-  if (!s) return {}
-  let normalized = s.trim()
-  if (normalized) {
-    try {
-      return JSON.parse(normalized) as Row
-    } catch {
-      // continue with loose parsing
+function parsePayloadJson(raw: string, allowLoose = false): Row {
+  const trimmed = (raw ?? '').trim()
+  if (!trimmed) return {}
+  try {
+    return JSON.parse(trimmed) as Row
+  } catch {
+    if (!allowLoose) {
+      return { value: raw }
     }
   }
-  if (!/^\s*\{/.test(normalized)) {
-    return { value: normalized }
-  }
-  normalized = normalized.replace(/'([^']*)'/g, (_m, g1) => `"${g1}"`).replace(/(\w+)\s*:/g, `"$1":`)
+  // loose fallback: basic replace of single quotes/keys for legacy data
+  let normalized = trimmed.replace(/'([^']*)'/g, (_m, g1) => `"${g1}"`).replace(/(\w+)\s*:/g, `"$1":`)
   try {
     return JSON.parse(normalized)
   } catch {
@@ -275,52 +204,61 @@ function tryParseJsonLoose(s: string): Row {
       const fixed = normalized.replace(/(\{|,)\s*([A-Za-z0-9_]+)\s*:/g, `$1 "$2":`)
       return JSON.parse(fixed)
     } catch {
-      return { raw: s }
+      return { value: raw }
     }
   }
 }
 
-function pushRow(byTable: Record<string, Row[]>, tableName: string, row: Row) {
-  if (!byTable[tableName]) byTable[tableName] = []
-  byTable[tableName].push(row)
+function entriesToRow(entries: any[]): Row {
+  const out: Row = {}
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue
+    const column =
+      (entry as any).column ??
+      (entry as any).col ??
+      (entry as any).key ??
+      (entry as any).name ??
+      null
+    if (!column) continue
+    const data =
+      (entry as any).data ??
+      (entry as any).value ??
+      (entry as any).val ??
+      (entry as any).dataJson ??
+      (entry as any).data_json ??
+      null
+    out[String(column)] = data
+  }
+  return out
 }
 
-async function collectRowsFromTxRef(
-  connection: Connection,
-  programId: PublicKey,
-  ixCoder: anchor.BorshInstructionCoder,
-  txRefPda: PublicKey,
-  maxCount: number
-): Promise<Record<string, Row[]>> {
-  const programIdB58 = programId.toBase58()
-  const sigs = await getSignaturesFor(txRefPda, connection, maxCount)
-  const byTable: Record<string, Row[]> = {}
-
-  for (const s of sigs) {
-    const tx = await connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0, commitment: 'confirmed' })
-    if (!tx) continue
-    const decoded = decodeAllIxsFromTx(tx as any, programIdB58, ixCoder)
-    for (const d of decoded) {
-      try {
-        if (d.name === 'write_data') {
-          const seedHex = toHex(d.data.table_seed ?? d.data[0])
-          const payloadStr = toStr(d.data.row_json_tx ?? d.data[2])
-          pushRow(byTable, seedHex, tryParseJsonLoose(payloadStr))
-        } else if (d.name === 'write_dm_data') {
-          const seedHex = toHex(d.data.dm_seed ?? d.data._dm_seed ?? d.data[1])
-          const payloadStr = toStr(d.data.row_json_tx ?? d.data.rowJsonTx ?? d.data[2])
-          pushRow(byTable, seedHex, tryParseJsonLoose(payloadStr))
-        } else if (d.name === 'database_instruction') {
-          const seedHex = toHex(d.data.table_seed ?? d.data[0])
-          const contentStr = toStr(d.data.content_json_tx ?? d.data[3])
-          pushRow(byTable, seedHex, tryParseJsonLoose(contentStr))
-        }
-      } catch {
-        // ignore malformed
+function parseInstructionContent(raw: string, allowLoose = false): Row {
+  const input = raw ?? ''
+  const trimmed = input.trim()
+  if (!trimmed) return { __delete: true }
+  if (/^\s*\[/.test(trimmed)) {
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (Array.isArray(parsed)) {
+        return entriesToRow(parsed)
       }
+    } catch {
+      // ignore, fall through
     }
   }
-  return byTable
+  const loose = parsePayloadJson(input, allowLoose)
+  if (loose && typeof loose === 'object') {
+    if (Array.isArray((loose as any).updates)) {
+      return entriesToRow((loose as any).updates)
+    }
+    if (Array.isArray((loose as any).rows)) {
+      return entriesToRow((loose as any).rows)
+    }
+    if (Array.isArray((loose as any).data)) {
+      return entriesToRow((loose as any).data)
+    }
+  }
+  return loose
 }
 
 /**
@@ -331,7 +269,6 @@ export async function readRecentRows(params: ReaderParams): Promise<ReaderResult
   const endpoint = params.endpoint || configs.network
   const connection = params.connection || new Connection(endpoint, 'confirmed')
   const programIdStr = params.programId || configs.programId
-  const user = new PublicKey(params.userPublicKey)
   const rootIdBytes = rootIdToBytes(params.rootId)
   const idl = params.idl
 
@@ -441,7 +378,12 @@ export async function readRecentRows(params: ReaderParams): Promise<ReaderResult
  * - 지정한 테이블 이름의 로우만 스캔/디코딩해서 반환
  */
 export async function readRowsByTable(
-  params: ReaderParams & { tableName: string; onProgress?: (rows: Row[]) => void; knownSignatures?: Set<string> | string[] }
+  params: ReaderParams & {
+    tableName: string
+    onProgress?: (rows: Row[]) => void
+    knownSignatures?: Set<string> | string[]
+    signatures?: string[]
+  }
 ): Promise<Row[]> {
   const endpoint = params.endpoint || configs.network
   const connection = params.connection || new Connection(endpoint, 'confirmed')
@@ -450,6 +392,7 @@ export async function readRowsByTable(
   const idl = params.idl
   const tableName = params.tableName
   const maxTx = params.maxTx || 100
+  const requestedSignatures = params.signatures || []
   const perTableLimit = params.perTableLimit
 
   if (!idl) return []
@@ -492,7 +435,6 @@ export async function readRowsByTable(
   // Derive PDAs (pure computation, no network read)
   const rootPda = pdaRoot(rootIdBytes)
   const tablePda = pdaTable(rootPda, tableName)
-  const instPda = null // instruction PDA not used in this lite reader path
   const targetSeedHex = deriveSeedHex(tableName)
 
   // Scan signatures touching both table PDA and instruction PDA (if present)
@@ -501,7 +443,6 @@ export async function readRowsByTable(
   const programIdB58 = programId.toBase58()
 
   const rpcEndpoint = (connection as any)?._rpcEndpoint || endpoint
-  const isDefaultRpc = rpcEndpoint.includes('solana.com')
   const knownSigSet = params.knownSignatures
     ? new Set(Array.from(params.knownSignatures))
     : new Set<string>()
@@ -512,12 +453,16 @@ export async function readRowsByTable(
     params.onProgress(limited)
   }
 
-  if (isDefaultRpc) {
-    const sigsAll = await getSignaturesFor(tablePda, connection, maxTx)
+  {
+    const sigsAll =
+      requestedSignatures.length > 0
+        ? requestedSignatures.map((s) => ({ signature: s } as ConfirmedSignatureInfo))
+        : await getSignaturesFor(tablePda, connection, maxTx)
     const sigs = sigsAll.filter((s) => !knownSigSet.has(s.signature))
     const instructionMap = new Map<string, Row>()
     const writeRowBase = new Map<string, Row>()
     const rowMap = new Map<string, Row>()
+    const throttle = getRpcThrottle(rpcEndpoint)
 
     const shouldDeleteLocal = (override: Row | undefined): boolean => {
       if (!override || typeof override !== 'object') return false
@@ -649,8 +594,6 @@ export async function readRowsByTable(
     }
 
 
-    const throttle = getRpcThrottle(rpcEndpoint)
-
     for (let i = 0; i < sigs.length; i++) {
       const sig = sigs[i]
       const tx = await connection.getTransaction(sig.signature, { maxSupportedTransactionVersion: 0, commitment: 'confirmed' })
@@ -662,7 +605,7 @@ export async function readRowsByTable(
               const seedHex = toHex(d.data.table_seed ?? d.data[0])
               if (seedHex !== targetSeedHex) continue
               const payloadStr = toStr(d.data.row_json_tx ?? d.data.rowJsonTx ?? d.data[1])
-              const normalized = normalizeRow(tryParseJsonLoose(payloadStr))
+              const normalized = normalizeRow(parsePayloadJson(payloadStr, params.looseJson))
               writeRowBase.set(sig.signature, normalized)
               applyAndEmit(sig.signature)
             } else if (d.name === 'database_instruction') {
@@ -671,7 +614,7 @@ export async function readRowsByTable(
               const targetSig = toStr(d.data.target_tx ?? d.data[1])
               if (!targetSig) continue
               const contentStr = toStr(d.data.contentJsonTx ?? d.data.content_json_tx ?? d.data[3])
-              instructionMap.set(targetSig, parseInstructionContent(contentStr))
+              instructionMap.set(targetSig, parseInstructionContent(contentStr, params.looseJson))
               applyAndEmit(targetSig)
             }
           } catch {
@@ -687,216 +630,6 @@ export async function readRowsByTable(
     const finalRows = Array.from(rowMap.values())
     return perTableLimit ? finalRows.slice(0, perTableLimit) : finalRows
   }
-
-  // Execute sequentially to avoid rate limiting
-  const txsTable = await getTransactionsForAddress(connection, tablePda, maxTx)
-  const allTxs = [txsTable]
-
-  const txMap = new Map<string, ParsedTransactionWithMeta>()
-  for (const txList of allTxs) {
-    for (const tx of txList) {
-      if (tx?.transaction?.signatures?.[0]) {
-        txMap.set(tx.transaction.signatures[0], tx)
-      }
-    }
-  }
-
-  type WriteRow = { signature: string; row: Row }
-  const writeRows: WriteRow[] = []
-  const instructionMap = new Map<string, Row>()
-
-  const entriesToRow = (entries: any[]): Row => {
-    const out: Row = {}
-    for (const entry of entries) {
-      if (!entry || typeof entry !== 'object') continue
-      const column =
-        (entry as any).column ??
-        (entry as any).col ??
-        (entry as any).key ??
-        (entry as any).name ??
-        null
-      if (!column) continue
-      const data =
-        (entry as any).data ??
-        (entry as any).value ??
-        (entry as any).val ??
-        (entry as any).dataJson ??
-        (entry as any).data_json ??
-        null
-      out[String(column)] = data
-    }
-    return out
-  }
-
-  const parseInstructionContent = (raw: string): Row => {
-    const input = raw ?? ''
-    const trimmed = input.trim()
-    if (!trimmed) return { __delete: true }
-    if (/^\s*\[/.test(trimmed)) {
-      try {
-        const parsed = JSON.parse(trimmed)
-        if (Array.isArray(parsed)) {
-          return entriesToRow(parsed)
-        }
-      } catch {
-        // ignore, fall back to loose parser
-      }
-    }
-    const loose = tryParseJsonLoose(input)
-    if (loose && typeof loose === 'object') {
-      if (Array.isArray((loose as any).updates)) {
-        return entriesToRow((loose as any).updates)
-      }
-      if (Array.isArray((loose as any).rows)) {
-        return entriesToRow((loose as any).rows)
-      }
-      if (Array.isArray((loose as any).data)) {
-        return entriesToRow((loose as any).data)
-      }
-    }
-    return loose
-  }
-
-  for (const [signature, tx] of txMap) {
-    const decoded = decodeAllIxsFromTx(tx as any, programIdB58, ixCoder)
-    for (const d of decoded) {
-      try {
-        if (d.name === 'write_data') {
-          const seedHex = toHex(d.data.table_seed ?? d.data[0])
-          if (seedHex !== targetSeedHex) continue
-          const payloadStr = toStr(d.data.row_json_tx ?? d.data.rowJsonTx ?? d.data[1])
-          const normalized = normalizeRow(tryParseJsonLoose(payloadStr))
-          writeRows.push({ signature, row: normalized })
-        } else if (d.name === 'database_instruction') {
-          const seedHex = toHex(d.data.table_seed ?? d.data[0])
-          if (seedHex !== targetSeedHex) continue
-          const targetSig = toStr(d.data.target_tx ?? d.data[1])
-          if (!targetSig) continue
-          if (instructionMap.has(targetSig)) continue
-          const contentStr = toStr(d.data.contentJsonTx ?? d.data.content_json_tx ?? d.data[3])
-          instructionMap.set(targetSig, parseInstructionContent(contentStr))
-        }
-      } catch {
-        // skip decode errors
-      }
-    }
-  }
-
-  const shouldDelete = (override: Row | undefined): boolean => {
-    if (!override || typeof override !== 'object') return false
-    const lower = (val: any) => (typeof val === 'string' ? val.toLowerCase() : '')
-    if (
-      override.delete === true ||
-      override.deleted === true ||
-      (override as any).__delete === true ||
-      lower((override as any).action) === 'delete' ||
-      lower((override as any).mode) === 'delete' ||
-      lower((override as any).op) === 'delete' ||
-      lower((override as any).type) === 'delete' ||
-      lower((override as any).status) === 'deleted'
-    ) {
-      return true
-    }
-    return false
-  }
-
-  const attachHiddenMeta = (row: Row, signature: string): Row => {
-    if (!row || typeof row !== 'object') return row
-    const clone: Row = { ...row }
-    const defineHidden = (key: string, value: string) => {
-      try {
-        Object.defineProperty(clone, key, {
-          value,
-          enumerable: false,
-          configurable: false,
-          writable: false,
-        })
-      } catch {
-        ; (clone as any)[key] = value
-      }
-    }
-    defineHidden('__txSignature', signature)
-    defineHidden('__tableSeed', targetSeedHex)
-    return clone
-  }
-
-  const applyInstruction = (baseRow: Row, override: Row | undefined): Row | null => {
-    if (!override) return baseRow
-    if (shouldDelete(override as Row)) return null
-
-    const baseClone: Row = baseRow && typeof baseRow === 'object' ? { ...baseRow } : {}
-    const baseRowId = (baseRow as any)?.__rowId
-    if (baseRowId !== undefined) {
-      try {
-        Object.defineProperty(baseClone, '__rowId', {
-          value: baseRowId,
-          enumerable: false,
-          configurable: true,
-          writable: true,
-        })
-      } catch {
-        ; (baseClone as any).__rowId = baseRowId
-      }
-    }
-
-    if (typeof override !== 'object') {
-      if (override == null) {
-        return normalizeRow(baseClone)
-      }
-      baseClone.value = override
-      return normalizeRow(baseClone)
-    }
-
-    for (const [key, value] of Object.entries(override)) {
-      if (value === undefined) {
-        delete (baseClone as any)[key]
-      } else {
-        baseClone[key] = value
-      }
-    }
-
-    if (idColumnName) {
-      const overrideId = Object.prototype.hasOwnProperty.call(override, idColumnName)
-        ? (override as any)[idColumnName]
-        : undefined
-      if (overrideId !== undefined && overrideId !== null) {
-        baseClone[idColumnName] = overrideId
-      } else if ((baseClone as any)[idColumnName] == null && (baseRow as any)?.[idColumnName] != null) {
-        baseClone[idColumnName] = (baseRow as any)[idColumnName]
-      }
-      const refreshedId = (baseClone as any)[idColumnName]
-      if (refreshedId !== undefined) {
-        try {
-          Object.defineProperty(baseClone, '__rowId', {
-            value: refreshedId,
-            enumerable: false,
-            configurable: true,
-            writable: true,
-          })
-        } catch {
-          ; (baseClone as any).__rowId = refreshedId
-        }
-      }
-    }
-    return normalizeRow(baseClone)
-  }
-
-  const filteredRows: Row[] = []
-  for (const { signature, row } of writeRows) {
-    const override = instructionMap.get(signature)
-    const applied = applyInstruction(row, override)
-    if (applied) {
-      const withMeta = attachHiddenMeta(applied, signature)
-      filteredRows.push(withMeta)
-      if (params.onProgress) {
-        const current = perTableLimit ? filteredRows.slice(0, perTableLimit) : [...filteredRows]
-        params.onProgress(current)
-      }
-    }
-  }
-
-  const finalRows = perTableLimit ? filteredRows.slice(0, perTableLimit) : filteredRows
-  return finalRows
 }
 
 /**
@@ -953,8 +686,6 @@ export async function readRowsByDmSeed(
 
   const rootPda = pdaRoot(rootIdBytes)
   const dmTablePda = pdaDmTable(rootPda, dmSeedBytes)
-  const instPda = pdaDmInstructionTable(rootPda, dmSeedBytes)
-  const txRefPda = pdaTxRef(rootIdBytes)
   const targetSeedHex = Buffer.from(dmSeedBytes).toString('hex')
 
   const ixCoder = makeIxCoder(idl)
@@ -962,7 +693,6 @@ export async function readRowsByDmSeed(
   const programIdB58 = programId.toBase58()
 
   const rpcEndpoint = (connection as any)?._rpcEndpoint || endpoint
-  const isDefaultRpc = rpcEndpoint.includes('solana.com')
   const knownSigSet = params.knownSignatures
     ? new Set(Array.from(params.knownSignatures))
     : new Set<string>()
@@ -973,12 +703,13 @@ export async function readRowsByDmSeed(
     params.onProgress(limited)
   }
 
-  if (isDefaultRpc) {
+  {
     const sigsAll = await getSignaturesFor(dmTablePda, connection, maxTx)
     const sigs = sigsAll.filter((s) => !knownSigSet.has(s.signature))
     const instructionMap = new Map<string, Row>()
     const writeRowBase = new Map<string, Row>()
     const rowMap = new Map<string, Row>()
+    const throttle = getRpcThrottle(rpcEndpoint)
 
     const shouldDeleteLocal = (override: Row | undefined): boolean => {
       if (!override || typeof override !== 'object') return false
@@ -1120,7 +851,7 @@ export async function readRowsByDmSeed(
               const seedHex = toHex(d.data.dm_seed ?? d.data._dm_seed ?? d.data[1])
               if (seedHex !== targetSeedHex) continue
               const payloadStr = toStr(d.data.row_json_tx ?? d.data.rowJsonTx ?? d.data[2])
-              const normalized = normalizeRow(tryParseJsonLoose(payloadStr))
+              const normalized = normalizeRow(parsePayloadJson(payloadStr, params.looseJson))
               writeRowBase.set(sig.signature, normalized)
               applyAndEmit(sig.signature)
             } else if (d.name === 'database_instruction') {
@@ -1129,7 +860,7 @@ export async function readRowsByDmSeed(
               const targetSig = toStr(d.data.target_tx ?? d.data[1])
               if (!targetSig) continue
               const contentStr = toStr(d.data.contentJsonTx ?? d.data.content_json_tx ?? d.data[3])
-              instructionMap.set(targetSig, parseInstructionContent(contentStr))
+              instructionMap.set(targetSig, parseInstructionContent(contentStr, params.looseJson))
               applyAndEmit(targetSig)
             }
           } catch {
@@ -1145,74 +876,6 @@ export async function readRowsByDmSeed(
     const finalRows = Array.from(rowMap.values())
     return perTableLimit ? finalRows.slice(0, perTableLimit) : finalRows
   }
-
-  // Execute sequentially to avoid rate limiting
-  const txsTable = await getTransactionsForAddress(connection, dmTablePda, maxTx)
-  const txsInst = await getTransactionsForAddress(connection, instPda, maxTx)
-  // txRefPda scan removed as it is inefficient and likely redundant for DM lookups
-
-  const allTxs = [txsTable, txsInst]
-
-  const txMap = new Map<string, ParsedTransactionWithMeta>()
-  for (const txList of allTxs) {
-    for (const tx of txList) {
-      if (tx?.transaction?.signatures?.[0]) {
-        txMap.set(tx.transaction.signatures[0], tx)
-      }
-    }
-  }
-
-  const writeRows: { signature: string; row: Row }[] = []
-
-  for (const [signature, tx] of txMap) {
-    const decoded = decodeAllIxsFromTx(tx as any, programIdB58, ixCoder)
-    for (const d of decoded) {
-      try {
-        if (d.name === 'write_dm_data' || d.name === 'use_dm_table') {
-          const seedHex = toHex(d.data.dm_seed ?? d.data._dm_seed ?? d.data[1])
-          if (seedHex !== targetSeedHex) continue
-          const payloadStr = toStr(d.data.row_json_tx ?? d.data.rowJsonTx ?? d.data[2])
-          const normalized = normalizeRow(tryParseJsonLoose(payloadStr))
-          writeRows.push({ signature, row: normalized })
-        }
-      } catch {
-        // skip decode errors
-      }
-    }
-  }
-
-  const attachHiddenMeta = (row: Row, signature: string): Row => {
-    if (!row || typeof row !== 'object') return row
-    const clone: Row = { ...row }
-    const defineHidden = (key: string, value: string) => {
-      try {
-        Object.defineProperty(clone, key, {
-          value,
-          enumerable: false,
-          configurable: false,
-          writable: false,
-        })
-      } catch {
-        ; (clone as any)[key] = value
-      }
-    }
-    defineHidden('__txSignature', signature)
-    defineHidden('__tableSeed', targetSeedHex)
-    return clone
-  }
-
-  const filteredRows: Row[] = []
-  for (const { signature, row } of writeRows) {
-    const withMeta = attachHiddenMeta(row, signature)
-    filteredRows.push(withMeta)
-    if (params.onProgress) {
-      const current = perTableLimit ? filteredRows.slice(0, perTableLimit) : [...filteredRows]
-      params.onProgress(current)
-    }
-  }
-
-  const finalRows = perTableLimit ? filteredRows.slice(0, perTableLimit) : filteredRows
-  return finalRows
 }
 
 
