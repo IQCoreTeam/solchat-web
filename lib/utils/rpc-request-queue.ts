@@ -11,22 +11,26 @@ type RateLimitOptions = {
   enabled?: boolean;
   maxPerSecond?: number;
   windowMs?: number;
+  queueKey?: string;
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-let queue: Promise<unknown> = Promise.resolve();
-let timestamps: number[] = [];
+const queues: Record<string, Promise<unknown>> = {};
+const timestampsMap: Record<string, number[]> = {};
 
-async function waitForSlot(maxPerSecond: number, windowMs: number) {
+async function waitForSlot(key: string, maxPerSecond: number, windowMs: number) {
+  const bucket = timestampsMap[key] || [];
   while (true) {
     const now = Date.now();
-    timestamps = timestamps.filter((ts) => now - ts < windowMs);
-    if (timestamps.length < maxPerSecond) {
-      timestamps.push(now);
+    const filtered = bucket.filter((ts) => now - ts < windowMs);
+    timestampsMap[key] = filtered;
+    if (filtered.length < maxPerSecond) {
+      filtered.push(now);
+      timestampsMap[key] = filtered;
       return;
     }
-    const waitTime = Math.max(50, windowMs - (now - timestamps[0]));
+    const waitTime = Math.max(50, windowMs - (now - filtered[0]));
     await sleep(waitTime);
   }
 }
@@ -42,17 +46,19 @@ export async function runWithRpcRateLimit<T>(
   const enabled = options?.enabled ?? true;
   const maxPerSecond = options?.maxPerSecond ?? DEFAULT_MAX_PER_SECOND;
   const windowMs = options?.windowMs ?? WINDOW_MS;
+  const queueKey = options?.queueKey ?? 'default';
 
   if (!enabled) {
     return Promise.resolve().then(fn);
   }
 
-  const task = queue.then(async () => {
-    await waitForSlot(maxPerSecond, windowMs);
+  const currentQueue = queues[queueKey] ?? Promise.resolve();
+  const task = currentQueue.then(async () => {
+    await waitForSlot(queueKey, maxPerSecond, windowMs);
     return fn();
   });
 
-  queue = task.then(
+  queues[queueKey] = task.then(
     () => undefined,
     () => undefined
   );

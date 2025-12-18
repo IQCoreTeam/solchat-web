@@ -128,7 +128,7 @@ export function ChatHeader({
                 ) : (
                     <div className="flex items-center gap-2 bg-black/60 border border-green-600/50 rounded px-3 py-1.5 shadow-lg shadow-green-600/10">
                         <span className="text-xs text-green-400">
-                            [CONNECT WALLET TO START]
+                            [CONNECT PRIVY WALLET TO START VISIT ACCOUNT TAB]
                         </span>
                     </div>
                 )}
