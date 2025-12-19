@@ -1,4 +1,4 @@
-import { keccak_256 } from '@noble/hashes/sha3'
+import { keccak_256 } from '@noble/hashes/sha3.js'
 import { Buffer } from 'buffer'
 
 export type BytesLike = string | Uint8Array | Buffer | number[]
