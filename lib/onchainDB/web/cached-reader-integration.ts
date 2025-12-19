@@ -47,6 +47,8 @@ interface ReadDmParams {
   userPublicKey: string;
   idl: Idl;
   maxTx?: number;
+  signatures?: string[];
+  knownSignatures?: Set<string> | string[];
   perTableLimit?: number;
   onProgress?: (rows: Row[]) => void;
 }
