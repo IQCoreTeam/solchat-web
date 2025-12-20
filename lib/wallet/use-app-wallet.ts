@@ -45,12 +45,21 @@ export function useAppWallet(): AppWallet {
   }, [user]);
 
   // Get the connected wallet from useWallets (for signing capabilities)
+  // ONLY use Privy embedded wallet - never fall back to external wallets like Phantom
   const connectedWallet = useMemo(() => {
-    if (!wallets || wallets.length === 0) return null;
+    if (!wallets || wallets.length === 0 || !embeddedWallet?.address) return null;
 
-    // Find the embedded wallet in connected wallets
-    // If user has linked account, it should be in wallets array when ready
-    return wallets.find((w) => w.address === embeddedWallet?.address) || wallets[0] || null;
+    // Find ONLY the Privy embedded wallet - do NOT fall back to wallets[0]
+    // which could be an external wallet like Phantom
+    const privy = wallets.find((w) => w.address === embeddedWallet.address);
+
+    if (!privy) {
+      console.warn('[useAppWallet] Embedded wallet not found in wallets array. Available:',
+        wallets.map(w => ({ address: w.address?.slice(0, 8), type: (w as any).walletClientType }))
+      );
+    }
+
+    return privy || null;
   }, [wallets, embeddedWallet]);
 
   const publicKey = useMemo(() => {

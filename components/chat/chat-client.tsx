@@ -466,6 +466,9 @@ export function ChatClient() {
             const tablePdas = seedsWithPdas.map((s) => s.tablePda);
             const tableAccounts = await connection.getMultipleAccountsInfo(tablePdas);
 
+            // Tables to hide from room list (used for voice signaling, not chat)
+            const hiddenTables = ['voice-calls', 'voice-channel'];
+
             const roomList: RoomMeta[] = [];
             for (let i = 0; i < seedsWithPdas.length; i++) {
                 const { seed, seedHex, tablePda, instrPda } = seedsWithPdas[i];
@@ -474,6 +477,9 @@ export function ChatClient() {
                 const tableDecoded = coder.decode('Table', tableAcc.data) as TableAccountData | null;
                 if (!tableDecoded) continue;
                 const name = decodeBytes(tableDecoded.name);
+
+                // Skip hidden tables (voice signaling tables, etc.)
+                if (hiddenTables.includes(name)) continue;
                 const columnSource = tableDecoded.columnNames ?? tableDecoded.column_names ?? [];
                 const columns = columnSource.map((value) => decodeBytes(value));
                 const decodedRecord = tableDecoded as Record<string, unknown>;
@@ -1065,6 +1071,8 @@ export function ChatClient() {
                 selectedRoom={selectedRoom}
                 notificationsEnabled={roomNotificationsEnabled}
                 onToggleNotifications={() => setRoomNotificationsEnabled((prev) => !prev)}
+                connection={connection}
+                writerCtx={writerCtx}
             />
 
             <div className="flex flex-1 overflow-hidden">

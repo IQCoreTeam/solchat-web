@@ -1,0 +1,435 @@
+/**
+ * WebRTC Manager
+ *
+ * Handles WebRTC peer connection for voice calls.
+ * Signaling is done on-chain, audio is peer-to-peer.
+ */
+
+import { ICE_SERVERS } from './types';
+
+export type WebRTCState =
+  | 'new'
+  | 'connecting'
+  | 'connected'
+  | 'disconnected'
+  | 'failed'
+  | 'closed';
+
+export interface WebRTCManagerConfig {
+  // Called with BATCHED candidates after gathering completes (or after timeout)
+  onIceCandidates: (candidates: RTCIceCandidate[]) => void;
+  onConnectionStateChange: (state: WebRTCState) => void;
+  onRemoteStream: (stream: MediaStream) => void;
+  onError: (error: string) => void;
+  debug?: boolean;
+}
+
+export class WebRTCManager {
+  private pc: RTCPeerConnection | null = null;
+  private localStream: MediaStream | null = null;
+  private remoteAudio: HTMLAudioElement | null = null;
+  private config: WebRTCManagerConfig;
+  private pendingCandidates: RTCIceCandidateInit[] = [];
+
+  // ICE candidate batching - collect for 1 second then send all at once
+  private iceCandidateBuffer: RTCIceCandidate[] = [];
+  private iceBatchTimeout: NodeJS.Timeout | null = null;
+  private iceGatheringComplete = false;
+
+  constructor(config: WebRTCManagerConfig) {
+    this.config = config;
+  }
+
+  private log(...args: unknown[]) {
+    if (this.config.debug !== false) {
+      console.log('[WebRTCManager]', ...args);
+    }
+  }
+
+  /**
+   * Filter ICE candidates to only essential ones
+   * We need to be very aggressive to fit in a single Solana transaction (~1KB limit)
+   * Each candidate is ~150-200 bytes serialized, so max 2-3 candidates
+   */
+  private filterIceCandidates(candidates: RTCIceCandidate[]): RTCIceCandidate[] {
+    // Prioritize: srflx (STUN) > relay (TURN) > host
+    // srflx is the public IP from STUN - most important for NAT traversal
+    const srflx = candidates.filter(c => c.candidate.includes('srflx'));
+    const relay = candidates.filter(c => c.candidate.includes('relay'));
+    const host = candidates.filter(c => c.candidate.includes('host'));
+
+    // Take only the minimum needed - max 2 total to fit in transaction
+    // Prefer: 1 srflx (best for NAT), 1 host (fallback for local network)
+    const filtered: RTCIceCandidate[] = [];
+
+    if (srflx.length > 0) {
+      filtered.push(srflx[0]); // One STUN candidate
+    }
+    if (relay.length > 0 && filtered.length < 2) {
+      filtered.push(relay[0]); // One TURN candidate if we have room
+    }
+    if (host.length > 0 && filtered.length < 2) {
+      filtered.push(host[0]); // One host candidate if we have room
+    }
+
+    this.log(`Filtered ${candidates.length} candidates down to ${filtered.length} (picked: ${filtered.map(c => c.candidate.includes('srflx') ? 'srflx' : c.candidate.includes('relay') ? 'relay' : 'host').join(', ')})`);
+    return filtered;
+  }
+
+  /**
+   * Flush buffered ICE candidates - filter and send in batch
+   */
+  private flushIceCandidates(): void {
+    if (this.iceBatchTimeout) {
+      clearTimeout(this.iceBatchTimeout);
+      this.iceBatchTimeout = null;
+    }
+
+    if (this.iceCandidateBuffer.length === 0) {
+      return;
+    }
+
+    const allCandidates = [...this.iceCandidateBuffer];
+    this.iceCandidateBuffer = [];
+
+    // Filter to essential candidates only
+    const filtered = this.filterIceCandidates(allCandidates);
+
+    if (filtered.length > 0) {
+      this.log('Sending', filtered.length, 'ICE candidates (filtered from', allCandidates.length, ')');
+      this.config.onIceCandidates(filtered);
+    }
+  }
+
+  /**
+   * Initialize the peer connection
+   */
+  async initialize(): Promise<void> {
+    this.log('Initializing peer connection...');
+
+    this.pc = new RTCPeerConnection({
+      iceServers: ICE_SERVERS,
+      iceCandidatePoolSize: 10,
+    });
+
+    // Handle ICE candidates - batch them instead of sending individually
+    this.pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        this.log('ICE candidate buffered:', event.candidate.candidate.slice(0, 40));
+        this.iceCandidateBuffer.push(event.candidate);
+
+        // Reset the batch timeout - wait for more candidates
+        if (this.iceBatchTimeout) {
+          clearTimeout(this.iceBatchTimeout);
+        }
+
+        // Send batch after 1 second of no new candidates
+        this.iceBatchTimeout = setTimeout(() => {
+          this.flushIceCandidates();
+        }, 1000);
+      }
+    };
+
+    // Handle ICE gathering state change
+    this.pc.onicegatheringstatechange = () => {
+      this.log('ICE gathering state:', this.pc?.iceGatheringState);
+      if (this.pc?.iceGatheringState === 'complete') {
+        this.iceGatheringComplete = true;
+        // Flush any remaining candidates
+        this.flushIceCandidates();
+      }
+    };
+
+    // Handle connection state changes
+    this.pc.onconnectionstatechange = () => {
+      const state = this.pc?.connectionState as WebRTCState;
+      this.log('Connection state:', state);
+      this.config.onConnectionStateChange(state);
+    };
+
+    // Handle ICE connection state
+    // IMPORTANT: Sometimes connectionState stays "connecting" even when ICE is connected
+    // So we also check iceConnectionState and report "connected" when ICE connects
+    this.pc.oniceconnectionstatechange = () => {
+      const iceState = this.pc?.iceConnectionState;
+      this.log('ICE connection state:', iceState);
+
+      // If ICE is connected/completed but connectionState hasn't updated, force the callback
+      if (iceState === 'connected' || iceState === 'completed') {
+        const connState = this.pc?.connectionState;
+        if (connState !== 'connected') {
+          this.log('ICE connected but connectionState is:', connState, '- forcing connected state');
+          this.config.onConnectionStateChange('connected');
+        }
+      } else if (iceState === 'failed') {
+        this.config.onConnectionStateChange('failed');
+      } else if (iceState === 'disconnected') {
+        this.config.onConnectionStateChange('disconnected');
+      }
+    };
+
+    // Handle remote stream
+    this.pc.ontrack = (event) => {
+      this.log('Remote track received:', event.track.kind, 'id:', event.track.id);
+      this.log('Track readyState:', event.track.readyState, 'muted:', event.track.muted);
+      this.log('Streams count:', event.streams.length);
+
+      // Track when audio starts flowing (unmutes)
+      event.track.onunmute = () => {
+        this.log('Remote track unmuted - audio should be flowing now');
+      };
+      event.track.onmute = () => {
+        this.log('Remote track muted');
+      };
+      event.track.onended = () => {
+        this.log('Remote track ended');
+      };
+
+      if (event.streams[0]) {
+        const stream = event.streams[0];
+        this.log('Received stream id:', stream.id);
+        this.log('Local stream id:', this.localStream?.id || 'none');
+        this.log('Track IDs - received:', event.track.id, 'local:', this.localStream?.getAudioTracks()[0]?.id || 'none');
+
+        // Verify this is NOT our local stream (check both stream and track IDs)
+        if (this.localStream) {
+          if (stream.id === this.localStream.id) {
+            this.log('WARNING: Received local stream as remote (stream ID match)! Ignoring.');
+            return;
+          }
+          const localTrackId = this.localStream.getAudioTracks()[0]?.id;
+          if (localTrackId && event.track.id === localTrackId) {
+            this.log('WARNING: Received local track as remote (track ID match)! Ignoring.');
+            return;
+          }
+        }
+
+        this.config.onRemoteStream(stream);
+        this.playRemoteStream(stream);
+      }
+    };
+
+    // Get local audio stream
+    try {
+      this.localStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: false,
+      });
+
+      // Add local tracks to peer connection
+      this.localStream.getTracks().forEach((track) => {
+        if (this.pc && this.localStream) {
+          this.pc.addTrack(track, this.localStream);
+        }
+      });
+
+      this.log('Local stream acquired, tracks added');
+    } catch (error) {
+      this.config.onError('Failed to access microphone');
+      throw error;
+    }
+  }
+
+  /**
+   * Create an SDP offer (caller side)
+   */
+  async createOffer(): Promise<string> {
+    if (!this.pc) {
+      throw new Error('Peer connection not initialized');
+    }
+
+    const offer = await this.pc.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: false,
+    });
+
+    await this.pc.setLocalDescription(offer);
+    this.log('Created offer, SDP length:', offer.sdp?.length);
+
+    return offer.sdp || '';
+  }
+
+  /**
+   * Handle incoming SDP offer (callee side)
+   */
+  async handleOffer(sdp: string): Promise<string> {
+    if (!this.pc) {
+      throw new Error('Peer connection not initialized');
+    }
+
+    const offer: RTCSessionDescriptionInit = {
+      type: 'offer',
+      sdp,
+    };
+
+    await this.pc.setRemoteDescription(offer);
+    this.log('Set remote offer');
+
+    // Process any pending ICE candidates
+    await this.processPendingCandidates();
+
+    // Create answer
+    const answer = await this.pc.createAnswer();
+    await this.pc.setLocalDescription(answer);
+    this.log('Created answer, SDP length:', answer.sdp?.length);
+
+    return answer.sdp || '';
+  }
+
+  /**
+   * Handle incoming SDP answer (caller side)
+   */
+  async handleAnswer(sdp: string): Promise<void> {
+    if (!this.pc) {
+      throw new Error('Peer connection not initialized');
+    }
+
+    const answer: RTCSessionDescriptionInit = {
+      type: 'answer',
+      sdp,
+    };
+
+    await this.pc.setRemoteDescription(answer);
+    this.log('Set remote answer');
+
+    // Process any pending ICE candidates
+    await this.processPendingCandidates();
+  }
+
+  /**
+   * Add an ICE candidate from remote peer
+   */
+  async addIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
+    if (!this.pc) {
+      this.log('Queuing ICE candidate (PC not ready)');
+      this.pendingCandidates.push(candidate);
+      return;
+    }
+
+    if (!this.pc.remoteDescription) {
+      this.log('Queuing ICE candidate (no remote description)');
+      this.pendingCandidates.push(candidate);
+      return;
+    }
+
+    try {
+      await this.pc.addIceCandidate(candidate);
+      this.log('Added ICE candidate');
+    } catch (error) {
+      this.log('Failed to add ICE candidate:', error);
+    }
+  }
+
+  /**
+   * Process queued ICE candidates
+   */
+  private async processPendingCandidates(): Promise<void> {
+    if (!this.pc || !this.pc.remoteDescription) return;
+
+    this.log('Processing', this.pendingCandidates.length, 'pending candidates');
+
+    for (const candidate of this.pendingCandidates) {
+      try {
+        await this.pc.addIceCandidate(candidate);
+      } catch (error) {
+        this.log('Failed to add pending candidate:', error);
+      }
+    }
+
+    this.pendingCandidates = [];
+  }
+
+  /**
+   * Play remote audio stream
+   */
+  private playRemoteStream(stream: MediaStream): void {
+    this.log('playRemoteStream called, stream id:', stream.id);
+
+    if (this.remoteAudio) {
+      this.log('Cleaning up previous audio element');
+      this.remoteAudio.pause();
+      this.remoteAudio.srcObject = null;
+    }
+
+    this.remoteAudio = new Audio();
+    this.remoteAudio.srcObject = stream;
+    this.remoteAudio.autoplay = true;
+
+    // Add event listeners to debug audio playback
+    this.remoteAudio.onplay = () => this.log('Audio element started playing');
+    this.remoteAudio.onpause = () => this.log('Audio element paused');
+    this.remoteAudio.onerror = (e) => this.log('Audio element error:', e);
+
+    this.remoteAudio.play().then(() => {
+      this.log('Remote audio play() succeeded');
+    }).catch((error) => {
+      this.log('Failed to play remote audio:', error);
+    });
+
+    this.log('Playing remote stream, audio element created');
+  }
+
+  /**
+   * Mute/unmute local audio
+   */
+  setMuted(muted: boolean): void {
+    if (this.localStream) {
+      this.localStream.getAudioTracks().forEach((track) => {
+        track.enabled = !muted;
+      });
+      this.log('Muted:', muted);
+    }
+  }
+
+  /**
+   * Check if currently muted
+   */
+  get isMuted(): boolean {
+    if (!this.localStream) return true;
+    const track = this.localStream.getAudioTracks()[0];
+    return track ? !track.enabled : true;
+  }
+
+  /**
+   * Get connection state
+   */
+  get state(): WebRTCState {
+    return (this.pc?.connectionState as WebRTCState) || 'closed';
+  }
+
+  /**
+   * Close the connection and release resources
+   */
+  close(): void {
+    this.log('Closing...');
+
+    // Clear ICE batch timeout
+    if (this.iceBatchTimeout) {
+      clearTimeout(this.iceBatchTimeout);
+      this.iceBatchTimeout = null;
+    }
+    this.iceCandidateBuffer = [];
+    this.iceGatheringComplete = false;
+
+    // Stop local stream
+    if (this.localStream) {
+      this.localStream.getTracks().forEach((track) => track.stop());
+      this.localStream = null;
+    }
+
+    // Stop remote audio
+    if (this.remoteAudio) {
+      this.remoteAudio.srcObject = null;
+      this.remoteAudio = null;
+    }
+
+    // Close peer connection
+    if (this.pc) {
+      this.pc.close();
+      this.pc = null;
+    }
+
+    this.pendingCandidates = [];
+    this.log('Closed');
+  }
+}
