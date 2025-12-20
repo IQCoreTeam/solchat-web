@@ -142,9 +142,18 @@ export function useMessageIndexLoader({
   const upsertMessages = useCallback((incoming: MessageRow[], targetChannelKey?: string) => {
     if (!incoming.length) return;
     const activeKey = activeChannelKeyRef.current;
-    if (!activeKey || (targetChannelKey && targetChannelKey !== activeKey)) {
+
+    // Determine the effective channel key
+    const effectiveKey = targetChannelKey || activeKey;
+
+    // Only update if we have a channel and it matches the active one
+    // OR if no active channel but we have a target (explicit update)
+    if (!effectiveKey) return;
+    if (activeKey && targetChannelKey && targetChannelKey !== activeKey) {
+      // Target specified but doesn't match active - skip
       return;
     }
+
     setMessages((prev) => {
       const map = new Map<string, MessageRow>();
       [...prev, ...incoming].forEach((msg) => {
@@ -162,13 +171,14 @@ export function useMessageIndexLoader({
       const activeKey = activeChannelKeyRef.current;
       lastInsertModeRef.current[targetChannelKey] = mode;
       upsertMessages(rows, targetChannelKey);
-      if (!activeKey || activeKey !== targetChannelKey) return;
 
       const latestTimestamp = rows.reduce((max, msg) => {
         const ts = msg.timestamp ?? 0;
         return ts > max ? ts : max;
       }, 0);
 
+      // Always call onRowsApplied if we have new messages with timestamps
+      // This ensures friend timestamps are updated even for non-active DMs
       if (latestTimestamp) {
         onRowsApplied?.({
           channelKey: targetChannelKey,
@@ -176,6 +186,10 @@ export function useMessageIndexLoader({
           rows,
           mode,
         });
+      }
+
+      // Only update decode cursor for active channel
+      if (activeKey && activeKey === targetChannelKey) {
         if (mode === 'append' && (decodeCursorRef.current[targetChannelKey] ?? 0) < rows.length) {
           decodeCursorRef.current[targetChannelKey] = rows.length;
         }
