@@ -5,11 +5,8 @@
 
 'use client';
 
-import { Connection } from '@solana/web3.js';
 import { MobileMenuButton } from '@/components/ui/mobile-menu-button';
 import { NotificationToggle } from '@/components/ui/notification-toggle';
-import { VoiceCallUI } from '@/components/voice/VoiceCallUI';
-import type { WriterCtx } from '@/lib/onchainDB';
 
 interface RoomMeta {
     seedHex: string;
@@ -42,10 +39,6 @@ interface ChatHeaderProps {
     selectedRoom: RoomMeta | null;
     notificationsEnabled: boolean;
     onToggleNotifications: () => void;
-
-    // Voice call
-    connection?: Connection | null;
-    writerCtx?: WriterCtx | null;
 }
 
 export function ChatHeader({
@@ -63,8 +56,6 @@ export function ChatHeader({
                                selectedRoom,
                                notificationsEnabled,
                                onToggleNotifications,
-                               connection,
-                               writerCtx,
                            }: ChatHeaderProps) {
     return (
         <header className="border-b-2 border-green-600 bg-black px-3 py-3 md:px-6">
@@ -84,11 +75,6 @@ export function ChatHeader({
                             onToggle={onToggleNotifications}
                             label="NOTI"
                             size="sm"
-                        />
-                        <VoiceCallUI
-                            userPubkey={walletAddress}
-                            connection={connection}
-                            writerCtx={writerCtx}
                         />
                     </div>
                 </div>

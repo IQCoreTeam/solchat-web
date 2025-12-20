@@ -37,6 +37,7 @@ import { makeDmTimestampKey, setLastMessageTimestamp, getLastMessageTimestamp } 
 import { NotificationToggle } from '@/components/ui/notification-toggle';
 import { RpcConfigPrompt } from '@/components/ui/rpc-config-prompt';
 import { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
+import { DMCallButton } from '@/components/voice/DMCallButton';
 type Tab = 'all' | 'pending' | 'blocked';
 type ProgramIdl = Idl & { address?: string };
 const FRIENDS_IDL = idl as ProgramIdl;
@@ -1088,6 +1089,9 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                                 DM with {shortenAddress(chatFriend.address)}
                             </h3>
                             <div className="flex items-center gap-3">
+                                {chatFriend.status === 'approved' && (
+                                    <DMCallButton targetPubkey={chatFriend.address} />
+                                )}
                                 <NotificationToggle
                                     enabled={dmNotificationsEnabled}
                                     onToggle={() => setDmNotificationsEnabled((prev) => !prev)}

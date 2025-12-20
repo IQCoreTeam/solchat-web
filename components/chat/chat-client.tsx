@@ -1071,8 +1071,6 @@ export function ChatClient() {
                 selectedRoom={selectedRoom}
                 notificationsEnabled={roomNotificationsEnabled}
                 onToggleNotifications={() => setRoomNotificationsEnabled((prev) => !prev)}
-                connection={connection}
-                writerCtx={writerCtx}
             />
 
             <div className="flex flex-1 overflow-hidden">

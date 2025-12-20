@@ -7,6 +7,7 @@ import { PrivyProvider } from './privy-provider';
 import { SolanaWalletProvider } from './wallet-provider';
 import { CacheProvider } from './cache-provider';
 import { StyledComponentsRegistry } from './styled-components-registry';
+import { VoiceCallProviderWrapper } from '../voice/VoiceCallProviderWrapper';
 import solchatTheme from '../styles/solchatTheme'
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
@@ -16,7 +17,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
           <SolanaWalletProvider>
             <PrivyProvider>
               <ReactQueryProvider>
-                {children}
+                <VoiceCallProviderWrapper>
+                  {children}
+                </VoiceCallProviderWrapper>
               </ReactQueryProvider>
             </PrivyProvider>
           </SolanaWalletProvider>
