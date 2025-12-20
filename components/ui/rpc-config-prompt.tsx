@@ -36,7 +36,7 @@ export function RpcConfigPrompt({endpointSource, setCustomRpcEndpoint}: RpcConfi
         if (shouldShow) {
             setOpen(true);
         } else {
-            setOpen(true);
+            setOpen(false);
         }
     }, [shouldShow]);
 
