@@ -415,7 +415,10 @@ export function ChatClient() {
         try {
             const { tx } = await initializeRootWeb(writerCtx, ROOT_ID);
             await sendAndConfirmTx(connection, writerCtx.wallet, tx, '[ChatClient] Root initialized:');
-            const acc = await connection.getAccountInfo(rootPubkey);
+            const acc = await runWithRpcRateLimit(
+                () => connection.getAccountInfo(rootPubkey),
+                { endpoint: connection.rpcEndpoint }
+            );
             setRootAccount(acc);
             setRootStatus('ready');
         } catch (err) {
@@ -464,7 +467,10 @@ export function ChatClient() {
 
             // Batch fetch all table accounts using getMultipleAccountsInfo
             const tablePdas = seedsWithPdas.map((s) => s.tablePda);
-            const tableAccounts = await connection.getMultipleAccountsInfo(tablePdas);
+            const tableAccounts = await runWithRpcRateLimit(
+                () => connection.getMultipleAccountsInfo(tablePdas),
+                { endpoint: connection.rpcEndpoint }
+            );
 
             const roomList: RoomMeta[] = [];
             for (let i = 0; i < seedsWithPdas.length; i++) {
@@ -707,12 +713,25 @@ export function ChatClient() {
 
         connect();
 
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                const socket = roomSocketRef.current;
+                if (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) {
+                    console.log('[ChatClient] Tab visible, reconnecting WS...');
+                    scheduleReconnect();
+                }
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
         return () => {
             active = false;
             clearPing();
             roomSubscribedIdsRef.current.clear();
             roomSocketRef.current?.close();
             roomSocketRef.current = null;
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
         // We intentionally avoid including handleRoomSocketPayload in deps to keep the socket alive.
     }, []);
