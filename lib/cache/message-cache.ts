@@ -229,8 +229,12 @@ async function fetchAndUpdateCache(
   ttl: number
 ): Promise<void> {
   try {
+    console.log(`[MessageCache] Background refresh fetching for: ${roomId.slice(0, 20)}...`);
     const messages = await fetchFn();
-    await updateCache(roomId, messages, ttl);
+    console.log(`[MessageCache] Background refresh fetchFn returned: ${messages.length} messages`);
+    if (messages.length > 0) {
+      await updateCache(roomId, messages, ttl);
+    }
     console.log(`[MessageCache] Background refresh completed: ${messages.length} messages`);
   } catch (error) {
     console.error('[MessageCache] Background refresh failed:', error);

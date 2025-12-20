@@ -59,33 +59,17 @@ interface ReadDmParams {
 export async function readRowsByTable(params: ReadTableParams): Promise<Row[]> {
   const { tableName } = params;
   const roomId = `room:${tableName}`;
+  const manager = getCacheManager();
 
   try {
-    const forceNetwork = Boolean(
-      (Array.isArray(params.signatures) && params.signatures.length) ||
-      params.maxTx
-    );
-    const manager = getCacheManager();
-
-    if (forceNetwork) {
-      const rows = await originalReadRowsByTable(params);
-      if (manager.isReady()) {
-        try {
-          await manager.updateRoomCache(roomId, rows);
-        } catch (error) {
-          console.warn('[CachedReader] Failed to update cache after network fetch:', error);
-        }
-      }
-      return rows;
-    }
-
     // If cache not ready, fallback to original
     if (!manager.isReady()) {
       console.log('[CachedReader] Cache not ready, using direct fetch');
-      return await originalReadRowsByTable(params);
+      const rows = await originalReadRowsByTable(params);
+      return rows;
     }
 
-    // Load with cache
+    // Always try to serve from cache first
     const result = await manager.loadRoomMessages(
       roomId,
       () => originalReadRowsByTable(params),
@@ -98,7 +82,9 @@ export async function readRowsByTable(params: ReadTableParams): Promise<Row[]> {
     );
 
     if (result.fromCache) {
-      console.log(`[CachedReader] Loaded ${result.messages.length} messages from cache for ${tableName}`);
+      console.log(`[CachedReader] CACHE HIT: ${result.messages.length} messages for ${tableName}`);
+    } else {
+      console.log(`[CachedReader] CACHE MISS: fetched ${result.messages.length} messages for ${tableName}`);
     }
 
     return result.messages;

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {initializeRootWeb, pdaRoot} from '../index';
 import { pdaTxRef } from '../provider/pda.provider';
 import idl from '@/lib/onchainDB/idl.json';
+import { getCachedAccountInfo } from '@/lib/rpc/cache';
 
 import type { Idl } from '@coral-xyz/anchor';
 import type { BytesLike } from '../core/seed';
@@ -56,7 +57,7 @@ export function useUserInit(rootIdOverride?: BytesLike) {
       const txRefPda = pdaTxRef(derivedRootId);
       console.log('useUserInit: Checking TxRef PDA:', txRefPda.toBase58());
       const rootPda = pdaRoot(derivedRootId);
-      const rootInfo = await connection.getAccountInfo(rootPda);
+      const rootInfo = await getCachedAccountInfo(connection, rootPda);
       if (rootInfo) {
         console.log('useUserInit: ✓ root exists, user is initialized');
         setIsInitialized(true);

@@ -10,6 +10,7 @@ import { PublicKey } from '@solana/web3.js';
 import { pdaUser, pdaRoot } from '@/lib/onchainDB';
 import { ROOT_ID } from '@/lib/onchainDB/constants';
 import { reconstructMessageFromChainForTailTx } from '@/lib/iq/reader';
+import { getCachedAccountInfo } from '@/lib/rpc/cache';
 import type { UserProfile } from './user-profile-manager';
 
 // Global cache to prevent redundant fetches across components
@@ -78,8 +79,8 @@ export function useUserProfile(walletAddress: string | undefined) {
           const rootPk = pdaRoot(ROOT_ID);
           const userAccount = pdaUser(rootPk, userPk);
 
-          // Fetch the User account
-          const accountInfo = await connection.getAccountInfo(userAccount);
+          // Fetch the User account (cached)
+          const accountInfo = await getCachedAccountInfo(connection, userAccount);
 
           if (!accountInfo || !accountInfo.data) {
             return {

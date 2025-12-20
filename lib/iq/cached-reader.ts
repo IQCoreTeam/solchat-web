@@ -8,6 +8,7 @@
 
 import { getCacheManager } from '@/lib/cache/cache-manager';
 import { reconstructMessageFromChain } from './reader';
+import { getCachedSignatures } from '@/lib/rpc/cache';
 import type { Connection, ConfirmedSignatureInfo, PublicKey } from '@solana/web3.js';
 
 export interface ChatMessage {
@@ -71,14 +72,14 @@ export async function fetchDataSignaturesCached(
     const manager = getCacheManager();
 
     if (!manager.isReady()) {
-      console.log('[fetchDataSignaturesCached] Cache not ready, falling back to direct fetch');
-      return await connection.getSignaturesForAddress(accountPubkey, { limit }, 'confirmed');
+      console.log('[fetchDataSignaturesCached] Cache not ready, falling back to RPC cache');
+      return await getCachedSignatures(connection, accountPubkey, limit);
     }
 
     // Try to load from cache with network fallback
     const result = await manager.loadSignatures(
       accountAddress,
-      () => connection.getSignaturesForAddress(accountPubkey, { limit }, 'confirmed'),
+      () => getCachedSignatures(connection, accountPubkey, limit),
       limit
     );
 
@@ -91,8 +92,8 @@ export async function fetchDataSignaturesCached(
     return result.signatures;
   } catch (error) {
     console.error('[fetchDataSignaturesCached] Failed to fetch signatures:', error);
-    // Fallback to direct fetch
-    return await connection.getSignaturesForAddress(accountPubkey, { limit }, 'confirmed');
+    // Fallback to RPC cache
+    return await getCachedSignatures(connection, accountPubkey, limit);
   }
 }
 
