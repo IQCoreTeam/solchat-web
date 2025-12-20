@@ -191,11 +191,15 @@ class CacheDB {
         const request = index.getAll(IDBKeyRange.only(roomId));
 
         request.onsuccess = () => {
-          const messages = (request.result as CachedMessage[])
+          const allMessages = request.result as CachedMessage[];
+          const messages = allMessages
             .filter((msg) => !msg.expiresAt || msg.expiresAt > now)
             .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
 
-          console.log(`[CacheDB] Retrieved ${messages.length} cached messages for room: ${roomId.slice(0, 8)}...`);
+          console.log(`[CacheDB] Retrieved ${messages.length}/${allMessages.length} cached messages for room: ${roomId}`);
+          if (allMessages.length > 0 && messages.length === 0) {
+            console.log(`[CacheDB] All ${allMessages.length} messages expired! First expires:`, allMessages[0]?.expiresAt, 'now:', now);
+          }
           resolve(messages);
         };
 
@@ -219,13 +223,32 @@ class CacheDB {
       const now = Date.now();
       const expiresAt = ttl ? now + ttl : undefined;
 
+      // Handle empty array case
+      if (messages.length === 0) {
+        return;
+      }
+
       return new Promise((resolve, reject) => {
         const transaction = db.transaction(STORE_MESSAGES, 'readwrite');
         const store = transaction.objectStore(STORE_MESSAGES);
 
-        let completed = 0;
-        const total = messages.length;
+        // Wait for transaction to complete (data committed to disk)
+        transaction.oncomplete = () => {
+          console.log(`[CacheDB] Committed ${messages.length} messages for room: ${roomId}`);
+          resolve();
+        };
 
+        transaction.onerror = () => {
+          console.error('[CacheDB] Transaction failed:', transaction.error);
+          reject(transaction.error);
+        };
+
+        transaction.onabort = () => {
+          console.error('[CacheDB] Transaction aborted:', transaction.error);
+          reject(transaction.error);
+        };
+
+        // Put all messages
         for (const msg of messages) {
           const cachedMsg: CachedMessage = {
             ...msg,
@@ -233,30 +256,7 @@ class CacheDB {
             cachedAt: now,
             expiresAt,
           };
-
-          const request = store.put(cachedMsg);
-
-          request.onsuccess = () => {
-            completed++;
-            if (completed === total) {
-              console.log(`[CacheDB] Cached ${total} messages for room: ${roomId.slice(0, 8)}...`);
-              resolve();
-            }
-          };
-
-          request.onerror = () => {
-            console.error('[CacheDB] Failed to cache message:', request.error);
-            // Continue with other messages
-            completed++;
-            if (completed === total) {
-              resolve();
-            }
-          };
-        }
-
-        // Handle empty array case
-        if (total === 0) {
-          resolve();
+          store.put(cachedMsg);
         }
       });
     } catch (error) {

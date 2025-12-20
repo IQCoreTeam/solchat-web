@@ -3,17 +3,27 @@
 'use client'
 import * as anchor from '@coral-xyz/anchor'
 import type { Idl } from '@coral-xyz/anchor'
-import { Connection, PublicKey, ParsedTransactionWithMeta, ConfirmedSignatureInfo } from '@solana/web3.js'
+import { Connection, PublicKey, ParsedTransactionWithMeta, ConfirmedSignatureInfo, VersionedTransactionResponse } from '@solana/web3.js'
 import bs58 from 'bs58'
 import { Buffer } from 'buffer'
 import { configs } from '../configs'
 import { deriveSeedHex, rootIdToBytes, toBytes, type BytesLike } from '../core/seed'
 import { pdaRoot, pdaTable, pdaTxRef, pdaInstructionTable, pdaDmTable, pdaDmInstructionTable } from '../provider/pda.provider'
 import { getRpcThrottle } from './rpc-throttle'
+import {
+  getCachedSignaturesPaginated as getCachedSignatures,
+  getCachedTransaction,
+  getCachedAccountInfo,
+  clearTransactionCache,
+  invalidateSignatureCache,
+} from '@/lib/rpc/cache'
 
 export type Row = Record<string, any>
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Re-export cache utilities
+export { clearTransactionCache, invalidateSignatureCache }
 
 export type ReaderParams = {
   // Optional externally-provided connection; falls back to configs.network
@@ -108,7 +118,7 @@ async function fetchAndDecode<T = any>(
   pubkey: PublicKey,
   accountName: 'Root' | 'Table' | 'TxRef' | 'InstructionTable' | 'DMTable'
 ): Promise<T | null> {
-  const info = await connection.getAccountInfo(pubkey)
+  const info = await getCachedAccountInfo(connection, pubkey)
   if (!info) return null
   return coder.decode(accountName, info.data) as T
 }
@@ -137,27 +147,20 @@ async function readTableListFromRoot(
   return { rootPda, creator, tableSeeds, globalTableSeeds }
 }
 
-async function getSignaturesFor(address: PublicKey, connection: Connection, limit: number) {
-  const out: ConfirmedSignatureInfo[] = []
-  let before: string | undefined = undefined
-  while (out.length < limit) {
-    const chunk = await connection.getSignaturesForAddress(address, { limit: Math.min(1000, limit - out.length), before }, 'confirmed')
-    if (chunk.length === 0) break
-    out.push(...chunk)
-    before = chunk[chunk.length - 1].signature
-  }
-  return out
-}
+// getSignaturesFor replaced by getCachedSignatures above
 
 function decodeAllIxsFromTx(
-  tx: ParsedTransactionWithMeta,
+  tx: ParsedTransactionWithMeta | VersionedTransactionResponse,
   programIdB58: string,
   ixCoder: anchor.BorshInstructionCoder
 ) {
-  const accKeys = tx.transaction?.message?.accountKeys ?? []
+  const msg = tx.transaction?.message as any
+  // Handle both ParsedTransactionWithMeta (accountKeys) and VersionedTransactionResponse (staticAccountKeys)
+  const accKeys = msg?.accountKeys ?? msg?.staticAccountKeys ?? []
   const out: { name: string; data: any }[] = []
 
-  const outer = tx.transaction?.message?.instructions ?? []
+  // Handle both instruction formats: instructions (parsed) and compiledInstructions (versioned)
+  const outer = msg?.instructions ?? msg?.compiledInstructions ?? []
   const innerGroups = tx.meta?.innerInstructions ?? []
 
   const decodeList = (list: any[]) => {
@@ -179,7 +182,7 @@ function decodeAllIxsFromTx(
 
   decodeList(outer)
   if (out.length === 0 && innerGroups.length) {
-    decodeList(innerGroups.flatMap((g) => g.instructions ?? []))
+    decodeList(innerGroups.flatMap((g: any) => g.instructions ?? []))
   }
 
   return out
@@ -298,9 +301,34 @@ export async function readRecentRows(params: ReaderParams): Promise<ReaderResult
   const tables: ReaderResult['tables'] = {}
   const tableDisplayNames: Record<string, string> = {}
 
-  for (const seedHex of tableSeeds) {
-    const tablePda = pdaTable(root, seedHex)
-    const instPda = pdaInstructionTable(root, seedHex)
+  if (tableSeeds.length === 0) {
+    return {
+      meta: {
+        rootPda: root.toBase58(),
+        txRefPda: txRef.toBase58(),
+        programId: programIdStr,
+        endpoint,
+      },
+      tableNames: [],
+      tableDisplayNames: {},
+      tables: {},
+      rowsByTable: {},
+    }
+  }
+
+  // Pre-compute all PDAs and batch fetch table accounts
+  const seedsWithPdas = tableSeeds.map((seedHex) => ({
+    seedHex,
+    tablePda: pdaTable(root, seedHex),
+    instPda: pdaInstructionTable(root, seedHex),
+  }))
+
+  const tablePdas = seedsWithPdas.map((s) => s.tablePda)
+  const tableAccountInfos = await connection.getMultipleAccountsInfo(tablePdas)
+
+  for (let i = 0; i < seedsWithPdas.length; i++) {
+    const { seedHex, tablePda, instPda } = seedsWithPdas[i]
+    const tableInfo = tableAccountInfos[i]
     let columns: string[] = []
     let idColumn: string | number | null | undefined = undefined
     let extTableName: string | null | undefined = undefined
@@ -308,7 +336,7 @@ export async function readRecentRows(params: ReaderParams): Promise<ReaderResult
     let displayName = seedHex
 
     try {
-      const tableAcc = await fetchAndDecode<any>(connection, accCoder, tablePda, 'Table')
+      const tableAcc = tableInfo ? accCoder.decode('Table', tableInfo.data) as any : null
       if (tableAcc) {
         displayName = toStr(tableAcc.name ?? tableAcc.table_name ?? seedHex)
         columns = (tableAcc.column_names ?? tableAcc.columns ?? []).map((v: any) => toStr(v))
@@ -436,6 +464,7 @@ export async function readRowsByTable(
   const rootPda = pdaRoot(rootIdBytes)
   const tablePda = pdaTable(rootPda, tableName)
   const targetSeedHex = deriveSeedHex(tableName)
+  console.log(`[Reader] readRowsByTable: tableName=${tableName.slice(0,8)}..., targetSeedHex=${targetSeedHex.slice(0,8)}...`)
 
   // Scan signatures touching both table PDA and instruction PDA (if present)
   const ixCoder = makeIxCoder(idl)
@@ -457,8 +486,10 @@ export async function readRowsByTable(
     const sigsAll =
       requestedSignatures.length > 0
         ? requestedSignatures.map((s) => ({ signature: s } as ConfirmedSignatureInfo))
-        : await getSignaturesFor(tablePda, connection, maxTx)
+        : await getCachedSignatures(connection, tablePda, maxTx)
+    console.log(`[Reader] readRowsByTable: ${tableName.slice(0,8)}... got ${sigsAll.length} signatures, knownSigSet size: ${knownSigSet.size}`)
     const sigs = sigsAll.filter((s) => !knownSigSet.has(s.signature))
+    console.log(`[Reader] readRowsByTable: after filter, ${sigs.length} signatures to process`)
     const instructionMap = new Map<string, Row>()
     const writeRowBase = new Map<string, Row>()
     const rowMap = new Map<string, Row>()
@@ -593,46 +624,56 @@ export async function readRowsByTable(
       emitProgress(sorted)
     }
 
-
-    for (let i = 0; i < sigs.length; i++) {
-      const sig = sigs[i]
-      const tx = await connection.getTransaction(sig.signature, { maxSupportedTransactionVersion: 0, commitment: 'confirmed' })
-      if (tx) {
-        const decoded = decodeAllIxsFromTx(tx as any, programIdB58, ixCoder)
-        for (const d of decoded) {
-          try {
-            if (d.name === 'write_data') {
-              const seedHex = toHex(d.data.table_seed ?? d.data[0])
-              if (seedHex !== targetSeedHex) continue
-              const payloadStr = toStr(d.data.row_json_tx ?? d.data.rowJsonTx ?? d.data[1])
-              const normalized = normalizeRow(parsePayloadJson(payloadStr, params.looseJson))
-              writeRowBase.set(sig.signature, normalized)
-              applyAndEmit(sig.signature)
-            } else if (d.name === 'database_instruction') {
-              const seedHex = toHex(d.data.table_seed ?? d.data[0])
-              if (seedHex !== targetSeedHex) continue
-              const targetSig = toStr(d.data.target_tx ?? d.data[1])
-              if (!targetSig) continue
-              const contentStr = toStr(d.data.contentJsonTx ?? d.data.content_json_tx ?? d.data[3])
-              instructionMap.set(targetSig, parseInstructionContent(contentStr, params.looseJson))
-              applyAndEmit(targetSig)
-            }
-          } catch {
-            // skip decode errors
+    const processTx = (tx: ParsedTransactionWithMeta | null, signature: string) => {
+      if (!tx) return
+      const decoded = decodeAllIxsFromTx(tx as any, programIdB58, ixCoder)
+      for (const d of decoded) {
+        try {
+          if (d.name === 'write_data') {
+            const seedHex = toHex(d.data.table_seed ?? d.data[0])
+            if (seedHex !== targetSeedHex) continue
+            const payloadStr = toStr(d.data.row_json_tx ?? d.data.rowJsonTx ?? d.data[1])
+            const normalized = normalizeRow(parsePayloadJson(payloadStr, params.looseJson))
+            writeRowBase.set(signature, normalized)
+            applyAndEmit(signature)
+          } else if (d.name === 'database_instruction') {
+            const seedHex = toHex(d.data.table_seed ?? d.data[0])
+            if (seedHex !== targetSeedHex) continue
+            const targetSig = toStr(d.data.target_tx ?? d.data[1])
+            if (!targetSig) continue
+            const contentStr = toStr(d.data.contentJsonTx ?? d.data.content_json_tx ?? d.data[3])
+            instructionMap.set(targetSig, parseInstructionContent(contentStr, params.looseJson))
+            applyAndEmit(targetSig)
           }
+        } catch {
+          // skip decode errors
         }
       }
-      const shouldThrottle =
-        throttle.delayMs > 0 &&
-        throttle.batchSize > 0 &&
-        (i + 1) % throttle.batchSize === 0 &&
-        i + 1 < sigs.length
-      if (shouldThrottle) {
+    }
+
+    // Batch fetch transactions in groups with caching to reduce RPC calls
+    const batchSize = throttle.batchSize > 0 ? throttle.batchSize : 10
+    for (let i = 0; i < sigs.length; i += batchSize) {
+      const batch = sigs.slice(i, i + batchSize)
+      const txPromises = batch.map((sig) => getCachedTransaction(connection, sig.signature))
+      const txResults = await Promise.all(txPromises)
+
+      let hadNetworkRequest = false
+      for (let j = 0; j < batch.length; j++) {
+        const result = txResults[j]
+        if (!result.fromCache) hadNetworkRequest = true
+        processTx(result.tx as ParsedTransactionWithMeta | null, batch[j].signature)
+      }
+
+      // Only throttle between batches if we made network requests
+      const hasMore = i + batchSize < sigs.length
+      if (hasMore && hadNetworkRequest && throttle.delayMs > 0) {
         await sleep(throttle.delayMs)
       }
     }
 
     const finalRows = Array.from(rowMap.values())
+    console.log(`[Reader] readRowsByTable: ${tableName.slice(0,8)}... returning ${finalRows.length} rows (writeRowBase: ${writeRowBase.size}, rowMap: ${rowMap.size})`)
     return perTableLimit ? finalRows.slice(0, perTableLimit) : finalRows
   }
 }
@@ -709,7 +750,7 @@ export async function readRowsByDmSeed(
   }
 
   {
-    const sigsAll = await getSignaturesFor(dmTablePda, connection, maxTx)
+    const sigsAll = await getCachedSignatures(connection, dmTablePda, maxTx)
     const sigs = sigsAll.filter((s) => !knownSigSet.has(s.signature))
     const instructionMap = new Map<string, Row>()
     const writeRowBase = new Map<string, Row>()
@@ -845,40 +886,50 @@ export async function readRowsByDmSeed(
       emitProgress(sorted)
     }
 
-    for (let i = 0; i < sigs.length; i++) {
-      const sig = sigs[i]
-      const tx = await connection.getTransaction(sig.signature, { maxSupportedTransactionVersion: 0, commitment: 'confirmed' })
-      if (tx) {
-        const decoded = decodeAllIxsFromTx(tx as any, programIdB58, ixCoder)
-        for (const d of decoded) {
-          try {
-            if (d.name === 'write_dm_data' || d.name === 'use_dm_table') {
-              const seedHex = toHex(d.data.dm_seed ?? d.data._dm_seed ?? d.data[1])
-              if (seedHex !== targetSeedHex) continue
-              const payloadStr = toStr(d.data.row_json_tx ?? d.data.rowJsonTx ?? d.data[2])
-              const normalized = normalizeRow(parsePayloadJson(payloadStr, params.looseJson))
-              writeRowBase.set(sig.signature, normalized)
-              applyAndEmit(sig.signature)
-            } else if (d.name === 'database_instruction') {
-              const seedHex = toHex(d.data.table_seed ?? d.data[0])
-              if (seedHex !== targetSeedHex) continue
-              const targetSig = toStr(d.data.target_tx ?? d.data[1])
-              if (!targetSig) continue
-              const contentStr = toStr(d.data.contentJsonTx ?? d.data.content_json_tx ?? d.data[3])
-              instructionMap.set(targetSig, parseInstructionContent(contentStr, params.looseJson))
-              applyAndEmit(targetSig)
-            }
-          } catch {
-            // skip decode errors
+    const processTx = (tx: ParsedTransactionWithMeta | null, signature: string) => {
+      if (!tx) return
+      const decoded = decodeAllIxsFromTx(tx as any, programIdB58, ixCoder)
+      for (const d of decoded) {
+        try {
+          if (d.name === 'write_dm_data' || d.name === 'use_dm_table') {
+            const seedHex = toHex(d.data.dm_seed ?? d.data._dm_seed ?? d.data[1])
+            if (seedHex !== targetSeedHex) continue
+            const payloadStr = toStr(d.data.row_json_tx ?? d.data.rowJsonTx ?? d.data[2])
+            const normalized = normalizeRow(parsePayloadJson(payloadStr, params.looseJson))
+            writeRowBase.set(signature, normalized)
+            applyAndEmit(signature)
+          } else if (d.name === 'database_instruction') {
+            const seedHex = toHex(d.data.table_seed ?? d.data[0])
+            if (seedHex !== targetSeedHex) continue
+            const targetSig = toStr(d.data.target_tx ?? d.data[1])
+            if (!targetSig) continue
+            const contentStr = toStr(d.data.contentJsonTx ?? d.data.content_json_tx ?? d.data[3])
+            instructionMap.set(targetSig, parseInstructionContent(contentStr, params.looseJson))
+            applyAndEmit(targetSig)
           }
+        } catch {
+          // skip decode errors
         }
       }
-      const shouldThrottle =
-        throttle.delayMs > 0 &&
-        throttle.batchSize > 0 &&
-        (i + 1) % throttle.batchSize === 0 &&
-        i + 1 < sigs.length
-      if (shouldThrottle) {
+    }
+
+    // Batch fetch transactions in groups with caching to reduce RPC calls
+    const batchSize = throttle.batchSize > 0 ? throttle.batchSize : 10
+    for (let i = 0; i < sigs.length; i += batchSize) {
+      const batch = sigs.slice(i, i + batchSize)
+      const txPromises = batch.map((sig) => getCachedTransaction(connection, sig.signature))
+      const txResults = await Promise.all(txPromises)
+
+      let hadNetworkRequest = false
+      for (let j = 0; j < batch.length; j++) {
+        const result = txResults[j]
+        if (!result.fromCache) hadNetworkRequest = true
+        processTx(result.tx as ParsedTransactionWithMeta | null, batch[j].signature)
+      }
+
+      // Only throttle between batches if we made network requests
+      const hasMore = i + batchSize < sigs.length
+      if (hasMore && hadNetworkRequest && throttle.delayMs > 0) {
         await sleep(throttle.delayMs)
       }
     }

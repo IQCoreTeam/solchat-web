@@ -3,6 +3,7 @@ import { PublicKey, type Connection } from '@solana/web3.js';
 import type { LoaderOptions } from './useMessageLoader';
 import { useMessageLoader } from './useMessageLoader';
 import type { MessageRow } from '../utils/message-helpers';
+import { getCachedSignatures } from '@/lib/rpc/cache';
 
 export type FetchConfig = {
   maxTx?: number;
@@ -211,9 +212,11 @@ export function useMessageIndexLoader({
       }
 
       try {
-        const sigInfos = await connection.getSignaturesForAddress(
+        const sigInfos = await getCachedSignatures(
+          connection,
           new PublicKey(meta.tableAddress),
-          { limit, before }
+          limit,
+          before
         );
         const fetched = sigInfos.map((s) => s.signature).filter(Boolean);
         let nextIndex: string[] = existing;

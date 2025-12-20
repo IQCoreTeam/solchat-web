@@ -9,6 +9,7 @@ import { ROOT_ID } from '@/lib/onchainDB/constants';
 import { pdaRoot, pdaDmTable } from '@/lib/onchainDB';
 import { deriveDmSeed } from '@/lib/friends/utils';
 import { STATUS_LABELS, type FriendStatus } from '@/lib/friends/types';
+import { getCachedAccountInfo } from '@/lib/rpc/cache';
 
 type RelationshipStatus = FriendStatus | 'none';
 
@@ -80,7 +81,7 @@ export function useDmRelationship(
       }));
 
       try {
-        const info = await connection.getAccountInfo(dmTablePk);
+        const info = await getCachedAccountInfo(connection, dmTablePk);
         if (!info) {
           if (!cancelled) {
             setState({

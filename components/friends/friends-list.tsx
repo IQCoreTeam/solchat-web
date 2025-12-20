@@ -595,8 +595,8 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         handler: () => {
             void handleDmLogs();
         },
-        commitment: 'processed',
-        enabled: !dmWsConnected,
+        commitment: 'confirmed',
+        enabled: true,
     });
 
     useEffect(() => {

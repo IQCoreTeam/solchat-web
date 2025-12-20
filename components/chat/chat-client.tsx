@@ -15,6 +15,7 @@ import {
     type WriterCtx,
 } from '@/lib/onchainDB/web/writer';
 import { readRowsByTable, invalidateRoomCache, type Row } from '@/lib/onchainDB/web/cached-reader-integration';
+import { getCachedAccountInfo } from '@/lib/rpc/cache';
 import { pdaInstructionTable, pdaRoot, pdaTable } from '@/lib/onchainDB';
 import { useUserInit } from '@/lib/onchainDB/hooks/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
@@ -387,7 +388,7 @@ export function ChatClient() {
         let mounted = true;
         (async () => {
             try {
-                const acc = await connection.getAccountInfo(rootPubkey);
+                const acc = await getCachedAccountInfo(connection, rootPubkey);
                 if (!mounted) return;
                 if (acc) {
                     setRootStatus('ready');
@@ -448,11 +449,27 @@ export function ChatClient() {
                 ).values()
             );
 
+            if (uniqueSeeds.length === 0) {
+                setRooms([]);
+                return;
+            }
+
+            // Pre-compute all PDAs
+            const seedsWithPdas = uniqueSeeds.map((seed) => ({
+                seed,
+                seedHex: bytesToHex(seed),
+                tablePda: pdaTable(rootPubkey, seed),
+                instrPda: pdaInstructionTable(rootPubkey, seed),
+            }));
+
+            // Batch fetch all table accounts using getMultipleAccountsInfo
+            const tablePdas = seedsWithPdas.map((s) => s.tablePda);
+            const tableAccounts = await connection.getMultipleAccountsInfo(tablePdas);
+
             const roomList: RoomMeta[] = [];
-            for (const seed of uniqueSeeds) {
-                const tablePda = pdaTable(rootPubkey, seed);
-                const instrPda = pdaInstructionTable(rootPubkey, seed);
-                const tableAcc = await connection.getAccountInfo(tablePda);
+            for (let i = 0; i < seedsWithPdas.length; i++) {
+                const { seed, seedHex, tablePda, instrPda } = seedsWithPdas[i];
+                const tableAcc = tableAccounts[i];
                 if (!tableAcc) continue;
                 const tableDecoded = coder.decode('Table', tableAcc.data) as TableAccountData | null;
                 if (!tableDecoded) continue;
@@ -468,7 +485,7 @@ export function ChatClient() {
                     ? lastTimestampRaw
                     : Number(lastTimestampRaw || 0);
                 roomList.push({
-                    seedHex: bytesToHex(seed),
+                    seedHex,
                     seedBytes: seed,
                     name,
                     tableAddress: tablePda.toBase58(),
@@ -747,10 +764,8 @@ export function ChatClient() {
         connection,
         account: tableAccount,
         handler: refreshMessagesFromAccount,
-        commitment: 'processed',
-        enabled:
-            !roomWsConnected &&
-            (typeof document === 'undefined' || document.visibilityState === 'visible'),
+        commitment: 'confirmed',
+        enabled: typeof document === 'undefined' || document.visibilityState === 'visible',
     });
 
     /* --------------------------------------------------------------------------

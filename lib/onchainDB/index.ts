@@ -8,9 +8,11 @@ export { configs } from './configs'
 import { pdaRoot, pdaTxRef, pdaTargetTxRef, pdaTable, pdaInstructionTable, pdaExternalRecord, pdaExternalRecordFromStrings, pdaExtTable, pdaDmTable, pdaDmInstructionTable, pdaDmListBox, pdaUser } from './provider/pda.provider'
 export { pdaRoot, pdaTxRef, pdaTargetTxRef, pdaTable, pdaInstructionTable, pdaExternalRecord, pdaExternalRecordFromStrings, pdaExtTable, pdaDmTable, pdaDmInstructionTable, pdaDmListBox, pdaUser }
 
-// Web reader API (UI-friendly)
-export type { ReaderParams, ReaderResult, Row } from './web/reader'
-export { readRecentRows, readRowsByTable, readRowsByDmSeed, readTableMeta, readDmTableMeta } from './web/reader'
+// Web reader API (UI-friendly) - using cached versions
+export type { ReaderParams, ReaderResult } from './web/reader'
+export type { Row } from './web/cached-reader-integration'
+export { readRecentRows, readTableMeta, readDmTableMeta } from './web/reader'
+export { readRowsByTable, readRowsByDmSeed, invalidateRoomCache, invalidateDmCache } from './web/cached-reader-integration'
 export type { BytesLike } from './core/seed'
 
 // Web writer API (wallet-adapter + Anchor Program)

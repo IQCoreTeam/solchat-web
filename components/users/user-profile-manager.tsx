@@ -14,6 +14,7 @@ import { ProfileEditor } from './profile-editor';
 import { UserList } from './user-list';
 import { updateUserMetadataWeb, pdaUser, pdaRoot, pdaTable, pdaDmTable, createExtTableWeb, writeRowWeb, readRowsByTable, requestDmWeb } from '@/lib/onchainDB';
 import { getAnchorProvider, getProgram, type WalletAdapterLike } from '@/lib/onchainDB/web/provider';
+import { getCachedAccountInfo } from '@/lib/rpc/cache';
 import idl from '@/lib/onchainDB/idl.json';
 import type { Idl } from '@coral-xyz/anchor';
 import { ROOT_ID, MESSAGE_COLUMNS } from '@/lib/onchainDB/constants';
@@ -80,8 +81,8 @@ export function UserProfileManager() {
 
       console.log('[UserProfile] Fetching User account:', userAccount.toBase58());
 
-      // Fetch the User account
-      const accountInfo = await connection.getAccountInfo(userAccount);
+      // Fetch the User account (cached)
+      const accountInfo = await getCachedAccountInfo(connection, userAccount);
 
       if (accountInfo && accountInfo.data) {
         // Parse the User account data
@@ -200,25 +201,40 @@ export function UserProfileManager() {
       const rootPk = pdaRoot(ROOT_ID);
       const profiles: UserProfile[] = [];
 
-      // For each row, extract the pubkey and fetch their User account
+      // Collect all user pubkeys and their PDAs for batch fetching
+      const userEntries: { pubkeyString: string; userAccount: PublicKey }[] = [];
       for (const row of rows) {
+        const pubkeyString = (row as any).pubkeyString || (row as any).pubkey;
+        if (!pubkeyString) {
+          console.warn('[UserProfile] No pubkeyString found in row:', row);
+          continue;
+        }
         try {
-          // Row is already parsed by readRowsByTable
-          const pubkeyString = (row as any).pubkeyString || (row as any).pubkey;
-
-          if (!pubkeyString) {
-            console.warn('[UserProfile] No pubkeyString found in row:', row);
-            continue;
-          }
-
-          console.log('[UserProfile] Fetching User account for:', pubkeyString.slice(0, 8) + '...');
-
           const userPk = new PublicKey(pubkeyString);
           const userAccount = pdaUser(rootPk, userPk);
+          userEntries.push({ pubkeyString, userAccount });
+        } catch (err) {
+          console.error('[UserProfile] Invalid pubkey:', pubkeyString, err);
+        }
+      }
 
-          // Fetch the User account
-          const accountInfo = await connection.getAccountInfo(userAccount);
+      if (userEntries.length === 0) {
+        setAllProfiles([]);
+        return;
+      }
 
+      console.log('[UserProfile] Batch fetching', userEntries.length, 'User accounts...');
+
+      // Batch fetch all user accounts using getMultipleAccountsInfo
+      const userAccountPdas = userEntries.map((e) => e.userAccount);
+      const accountInfos = await connection.getMultipleAccountsInfo(userAccountPdas);
+
+      // Process each account
+      for (let i = 0; i < userEntries.length; i++) {
+        const { pubkeyString } = userEntries[i];
+        const accountInfo = accountInfos[i];
+
+        try {
           const metadata: string = extractUserMetadataString(accountInfo);
           if (typeof metadata === 'string' && metadata.length > 2) {
             const metadataStr = metadata ?? "";
@@ -249,7 +265,7 @@ export function UserProfileManager() {
             }
           }
         } catch (err) {
-          console.error('[UserProfile] Error fetching user:', err);
+          console.error('[UserProfile] Error processing user:', pubkeyString, err);
         }
       }
 

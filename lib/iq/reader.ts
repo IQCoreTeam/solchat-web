@@ -1,6 +1,7 @@
 import { Connection, PublicKey, ConfirmedSignatureInfo } from '@solana/web3.js';
 import { getTransactionChunks, getCache } from './client';
 import { reconstructData, formatTimestamp } from './utils';
+import { getCachedSignatures, getCachedTransaction } from '@/lib/rpc/cache';
 
 export interface ChatMessage {
   handle: string;
@@ -10,7 +11,7 @@ export interface ChatMessage {
 }
 
 /**
- * Fetch transaction signatures for an account
+ * Fetch transaction signatures for an account (cached)
  */
 export async function fetchDataSignatures(
   connection: Connection,
@@ -18,7 +19,7 @@ export async function fetchDataSignatures(
   limit: number = 10
 ): Promise<ConfirmedSignatureInfo[]> {
   try {
-    const signatures = await connection.getSignaturesForAddress(accountPubkey, { limit }, 'confirmed');
+    const signatures = await getCachedSignatures(connection, accountPubkey, limit);
     return signatures;
   } catch (error) {
     console.error('Failed to fetch signatures:', error);
@@ -34,16 +35,14 @@ async function parseDbCodeIn(
   signature: string
 ): Promise<{ handle: string; tailTx: string } | null> {
   try {
-    const tx = await connection.getTransaction(signature, {
-      maxSupportedTransactionVersion: 0,
-      commitment: 'confirmed',
-    });
+    const result = await getCachedTransaction(connection, signature);
+    const tx = result.tx;
 
     if (!tx || !tx.transaction) {
       return null;
     }
 
-    const instructions = tx.transaction.message.compiledInstructions || [];
+    const instructions = (tx.transaction.message as any).compiledInstructions || [];
 
     for (const instruction of instructions) {
       try {
@@ -125,16 +124,14 @@ async function parseSendCode(
   }
 
   try {
-    const tx = await connection.getTransaction(signature, {
-      maxSupportedTransactionVersion: 0,
-      commitment: 'confirmed',
-    });
+    const result = await getCachedTransaction(connection, signature);
+    const tx = result.tx;
 
     if (!tx || !tx.transaction) {
       return null;
     }
 
-    const instructions = tx.transaction.message.compiledInstructions || []
+    const instructions = (tx.transaction.message as any).compiledInstructions || []
 
     for (const instruction of instructions) {
       if (!instruction.data) continue
