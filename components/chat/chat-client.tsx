@@ -15,7 +15,7 @@ import {
     type WriterCtx,
 } from '@/lib/onchainDB/web/writer';
 import { readRowsByTable, invalidateRoomCache, type Row } from '@/lib/onchainDB/web/cached-reader-integration';
-import { getCachedAccountInfo } from '@/lib/rpc/cache';
+import { getCachedAccountInfo, invalidateSignatureCache } from '@/lib/rpc/cache';
 import { pdaInstructionTable, pdaRoot, pdaTable } from '@/lib/onchainDB';
 import { useUserInit } from '@/lib/onchainDB/hooks/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
@@ -573,6 +573,10 @@ export function ChatClient() {
         }
 
         await invalidateRoomCache(seedHex);
+        const roomMeta = latestRoomsRef.current.find((room) => room.seedHex === seedHex);
+        if (roomMeta?.tableAddress) {
+            invalidateSignatureCache(roomMeta.tableAddress);
+        }
 
         // Signature-targeted refresh path
         if (signature) {
@@ -764,8 +768,10 @@ export function ChatClient() {
         connection,
         account: tableAccount,
         handler: refreshMessagesFromAccount,
-        commitment: 'confirmed',
-        enabled: typeof document === 'undefined' || document.visibilityState === 'visible',
+        commitment: 'processed',
+        enabled:
+            !roomWsConnected &&
+            (typeof document === 'undefined' || document.visibilityState === 'visible'),
     });
 
     /* --------------------------------------------------------------------------

@@ -464,7 +464,6 @@ export async function readRowsByTable(
   const rootPda = pdaRoot(rootIdBytes)
   const tablePda = pdaTable(rootPda, tableName)
   const targetSeedHex = deriveSeedHex(tableName)
-  console.log(`[Reader] readRowsByTable: tableName=${tableName.slice(0,8)}..., targetSeedHex=${targetSeedHex.slice(0,8)}...`)
 
   // Scan signatures touching both table PDA and instruction PDA (if present)
   const ixCoder = makeIxCoder(idl)
@@ -487,9 +486,7 @@ export async function readRowsByTable(
       requestedSignatures.length > 0
         ? requestedSignatures.map((s) => ({ signature: s } as ConfirmedSignatureInfo))
         : await getCachedSignatures(connection, tablePda, maxTx)
-    console.log(`[Reader] readRowsByTable: ${tableName.slice(0,8)}... got ${sigsAll.length} signatures, knownSigSet size: ${knownSigSet.size}`)
     const sigs = sigsAll.filter((s) => !knownSigSet.has(s.signature))
-    console.log(`[Reader] readRowsByTable: after filter, ${sigs.length} signatures to process`)
     const instructionMap = new Map<string, Row>()
     const writeRowBase = new Map<string, Row>()
     const rowMap = new Map<string, Row>()
@@ -673,7 +670,6 @@ export async function readRowsByTable(
     }
 
     const finalRows = Array.from(rowMap.values())
-    console.log(`[Reader] readRowsByTable: ${tableName.slice(0,8)}... returning ${finalRows.length} rows (writeRowBase: ${writeRowBase.size}, rowMap: ${rowMap.size})`)
     return perTableLimit ? finalRows.slice(0, perTableLimit) : finalRows
   }
 }

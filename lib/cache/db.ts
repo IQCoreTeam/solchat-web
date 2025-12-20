@@ -196,10 +196,6 @@ class CacheDB {
             .filter((msg) => !msg.expiresAt || msg.expiresAt > now)
             .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
 
-          console.log(`[CacheDB] Retrieved ${messages.length}/${allMessages.length} cached messages for room: ${roomId}`);
-          if (allMessages.length > 0 && messages.length === 0) {
-            console.log(`[CacheDB] All ${allMessages.length} messages expired! First expires:`, allMessages[0]?.expiresAt, 'now:', now);
-          }
           resolve(messages);
         };
 
@@ -234,7 +230,6 @@ class CacheDB {
 
         // Wait for transaction to complete (data committed to disk)
         transaction.oncomplete = () => {
-          console.log(`[CacheDB] Committed ${messages.length} messages for room: ${roomId}`);
           resolve();
         };
 

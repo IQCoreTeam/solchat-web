@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { PublicKey, type Connection, type AccountInfo, type Context } from '@solana/web3.js'
-import { updateAccountCache } from '@/lib/rpc/cache'
+import { invalidateSignatureCache, updateAccountCache } from '@/lib/rpc/cache'
 
 export type OnAccountChangeArgs = {
   connection: Connection
@@ -46,6 +46,7 @@ export function useOnAccountChange({
             // Update the RPC cache with fresh data from WebSocket
             if (updateCache) {
               updateAccountCache(accountKey, info)
+              invalidateSignatureCache(accountKey)
             }
             // Call the handler
             void handlerRef.current({ connection, account, info, context })
