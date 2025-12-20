@@ -245,9 +245,10 @@ export async function sendSdpOffer(
       signatures.push(sig);
     }
 
-    // Small delay between chunks to avoid rate limiting
+    // Delay between chunks - needs to be long enough for TxRef subscription to catch each one
+    // TxRef only stores the latest tx, so rapid writes can cause missed chunks
     if (i < chunks.length - 1) {
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 1500));
     }
   }
 
@@ -303,8 +304,9 @@ export async function sendSdpAnswer(
       signatures.push(sig);
     }
 
+    // Delay between chunks - needs to be long enough for TxRef subscription to catch each one
     if (i < chunks.length - 1) {
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 1500));
     }
   }
 

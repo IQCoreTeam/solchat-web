@@ -203,24 +203,30 @@ export function useVoiceCall({
 
   // Handle incoming call signal
   const handleSignal = useCallback(async (signal: CallSignal) => {
+    // Log ALL incoming signals before any filtering
+    log('RAW signal:', signal.type, 'chunk:', signal.sdpChunk, '/', signal.sdpTotal, 'from:', signal.from?.slice(0, 8), 'to:', signal.to?.slice(0, 8));
+
     // Skip if not for us
     if (signal.to !== userPubkey && signal.from !== userPubkey) {
+      log('  -> Skipped: not for us');
       return;
     }
 
     // Skip our own signals
     if (signal.from === userPubkey) {
+      log('  -> Skipped: our own signal');
       return;
     }
 
     // Dedupe signals
     const signalKey = `${signal.type}-${signal.callId}-${signal.timestamp}`;
     if (processedSignalsRef.current.has(signalKey)) {
+      log('  -> Skipped: duplicate signal');
       return;
     }
     processedSignalsRef.current.add(signalKey);
 
-    log('Received signal:', signal.type, 'from:', signal.from.slice(0, 8));
+    log('Processing signal:', signal.type, 'from:', signal.from.slice(0, 8), 'callId:', signal.callId?.slice(0, 12), 'chunk:', signal.sdpChunk, '/', signal.sdpTotal);
 
     switch (signal.type) {
       case 'call-offer': {
@@ -243,7 +249,9 @@ export function useVoiceCall({
         // Store remote encryption public key if provided
         if (signal.encPubKey) {
           remoteEncPubKeyRef.current = hexToUint8Array(signal.encPubKey);
-          log('Stored remote encryption key from call-offer');
+          log('Stored remote encryption key from call-offer, length:', remoteEncPubKeyRef.current.length);
+        } else {
+          log('WARNING: call-offer missing encryption public key!');
         }
 
         setState({
@@ -267,7 +275,9 @@ export function useVoiceCall({
         // Store remote encryption public key if provided
         if (signal.encPubKey) {
           remoteEncPubKeyRef.current = hexToUint8Array(signal.encPubKey);
-          log('Stored remote encryption key from call-accept');
+          log('Stored remote encryption key from call-accept, length:', remoteEncPubKeyRef.current.length);
+        } else {
+          log('WARNING: call-accept missing encryption public key!');
         }
 
         if (offerTimeoutRef.current) {
@@ -326,7 +336,11 @@ export function useVoiceCall({
       }
 
       case 'sdp-offer': {
-        if (state.callId !== signal.callId) return;
+        log('SDP-OFFER check: state.callId=', state.callId?.slice(0, 12), 'signal.callId=', signal.callId?.slice(0, 12), 'state.status=', state.status);
+        if (state.callId !== signal.callId) {
+          log('  -> Skipped: callId mismatch');
+          return;
+        }
 
         // Skip if we've already processed the SDP offer
         if (sdpProcessedRef.current) {
@@ -339,24 +353,34 @@ export function useVoiceCall({
           let chunkData = signal.sdp;
 
           // Decrypt chunk if encrypted
-          if (signal.encrypted && signal.nonce && remoteEncPubKeyRef.current && encryptionKeypairRef.current) {
-            const decrypted = decryptFromSender(
-              signal.sdp,
-              signal.nonce,
-              remoteEncPubKeyRef.current,
-              encryptionKeypairRef.current.secretKey
-            );
-            if (decrypted) {
-              chunkData = decrypted;
-              log(`SDP offer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} decrypted`);
+          if (signal.encrypted) {
+            log(`SDP offer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} is encrypted, attempting decrypt...`);
+            log(`  - Have remote pubkey: ${!!remoteEncPubKeyRef.current}`);
+            log(`  - Have own keypair: ${!!encryptionKeypairRef.current}`);
+            log(`  - Have nonce: ${!!signal.nonce}`);
+
+            if (signal.nonce && remoteEncPubKeyRef.current && encryptionKeypairRef.current) {
+              const decrypted = decryptFromSender(
+                signal.sdp,
+                signal.nonce,
+                remoteEncPubKeyRef.current,
+                encryptionKeypairRef.current.secretKey
+              );
+              if (decrypted) {
+                chunkData = decrypted;
+                log(`SDP offer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} decrypted successfully`);
+              } else {
+                log(`Failed to decrypt SDP offer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} - decryption returned null`);
+                return;
+              }
             } else {
-              log(`Failed to decrypt SDP offer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal}`);
+              log(`ERROR: Cannot decrypt SDP offer chunk - missing keys!`);
               return;
             }
           }
 
           remoteSdpChunksRef.current.set(signal.sdpChunk, chunkData);
-          log(`SDP offer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} received`);
+          log(`SDP offer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} stored`);
         }
 
         // Check if we have all chunks
@@ -422,24 +446,34 @@ export function useVoiceCall({
           let chunkData = signal.sdp;
 
           // Decrypt chunk if encrypted
-          if (signal.encrypted && signal.nonce && remoteEncPubKeyRef.current && encryptionKeypairRef.current) {
-            const decrypted = decryptFromSender(
-              signal.sdp,
-              signal.nonce,
-              remoteEncPubKeyRef.current,
-              encryptionKeypairRef.current.secretKey
-            );
-            if (decrypted) {
-              chunkData = decrypted;
-              log(`SDP answer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} decrypted`);
+          if (signal.encrypted) {
+            log(`SDP answer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} is encrypted, attempting decrypt...`);
+            log(`  - Have remote pubkey: ${!!remoteEncPubKeyRef.current}`);
+            log(`  - Have own keypair: ${!!encryptionKeypairRef.current}`);
+            log(`  - Have nonce: ${!!signal.nonce}`);
+
+            if (signal.nonce && remoteEncPubKeyRef.current && encryptionKeypairRef.current) {
+              const decrypted = decryptFromSender(
+                signal.sdp,
+                signal.nonce,
+                remoteEncPubKeyRef.current,
+                encryptionKeypairRef.current.secretKey
+              );
+              if (decrypted) {
+                chunkData = decrypted;
+                log(`SDP answer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} decrypted successfully`);
+              } else {
+                log(`Failed to decrypt SDP answer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} - decryption returned null`);
+                return;
+              }
             } else {
-              log(`Failed to decrypt SDP answer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal}`);
+              log(`ERROR: Cannot decrypt SDP answer chunk - missing keys!`);
               return;
             }
           }
 
           remoteSdpChunksRef.current.set(signal.sdpChunk, chunkData);
-          log(`SDP answer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} received`);
+          log(`SDP answer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} stored`);
         }
 
         // Check if we have all chunks
@@ -470,18 +504,28 @@ export function useVoiceCall({
             let candidateJson = signal.candidate;
 
             // Decrypt if encrypted
-            if (signal.encrypted && signal.nonce && remoteEncPubKeyRef.current && encryptionKeypairRef.current) {
-              const decrypted = decryptFromSender(
-                signal.candidate,
-                signal.nonce,
-                remoteEncPubKeyRef.current,
-                encryptionKeypairRef.current.secretKey
-              );
-              if (decrypted) {
-                candidateJson = decrypted;
-                log('ICE candidates decrypted');
+            if (signal.encrypted) {
+              log('ICE candidates are encrypted, attempting decrypt...');
+              log(`  - Have remote pubkey: ${!!remoteEncPubKeyRef.current}`);
+              log(`  - Have own keypair: ${!!encryptionKeypairRef.current}`);
+              log(`  - Have nonce: ${!!signal.nonce}`);
+
+              if (signal.nonce && remoteEncPubKeyRef.current && encryptionKeypairRef.current) {
+                const decrypted = decryptFromSender(
+                  signal.candidate,
+                  signal.nonce,
+                  remoteEncPubKeyRef.current,
+                  encryptionKeypairRef.current.secretKey
+                );
+                if (decrypted) {
+                  candidateJson = decrypted;
+                  log('ICE candidates decrypted successfully');
+                } else {
+                  log('Failed to decrypt ICE candidates - decryption returned null');
+                  return;
+                }
               } else {
-                log('Failed to decrypt ICE candidates');
+                log('ERROR: Cannot decrypt ICE candidates - missing keys!');
                 return;
               }
             }
