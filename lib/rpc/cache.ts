@@ -27,6 +27,11 @@ const inFlightSignatures = new Map<string, Promise<ConfirmedSignatureInfo[]>>()
 const inFlightTransactions = new Map<string, Promise<VersionedTransactionResponse | null>>()
 const inFlightAccounts = new Map<string, Promise<any>>()
 
+// ... imports
+import { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue'
+
+// ...
+
 /**
  * Cached getSignaturesForAddress with deduplication
  */
@@ -51,14 +56,14 @@ export async function getCachedSignatures(
   }
 
   // Make the request
-  const promise = (async () => {
+  const promise = runWithRpcRateLimit(async () => {
     const result = await connection.getSignaturesForAddress(
       address,
       { limit, before },
       'confirmed'
     )
     return result
-  })()
+  }, { endpoint: connection.rpcEndpoint })
 
   inFlightSignatures.set(cacheKey, promise)
 
@@ -94,7 +99,7 @@ export async function getCachedSignaturesPaginated(
   }
 
   // Make the request with pagination
-  const promise = (async () => {
+  const promise = runWithRpcRateLimit(async () => {
     const out: ConfirmedSignatureInfo[] = []
     let before: string | undefined = undefined
     while (out.length < limit) {
@@ -108,7 +113,7 @@ export async function getCachedSignaturesPaginated(
       before = chunk[chunk.length - 1].signature
     }
     return out
-  })()
+  }, { endpoint: connection.rpcEndpoint })
 
   inFlightSignatures.set(cacheKey, promise)
 
@@ -140,6 +145,9 @@ export async function getCachedTransaction(
     if (cachedTx) {
       return { tx: cachedTx, fromCache: true }
     }
+    // If it was null (negative cache), we might want to re-check depending on policy
+    // but here we just return as is (immutable).
+    // Actually, line 19 original code checks for 'null' too.
     transactionCache.delete(signature)
   }
 
@@ -151,10 +159,10 @@ export async function getCachedTransaction(
   }
 
   // Make the request
-  const promise = connection.getTransaction(signature, {
+  const promise = runWithRpcRateLimit(() => connection.getTransaction(signature, {
     maxSupportedTransactionVersion: 0,
     commitment: 'confirmed',
-  })
+  }), { endpoint: connection.rpcEndpoint })
 
   inFlightTransactions.set(signature, promise)
 
@@ -163,6 +171,12 @@ export async function getCachedTransaction(
     if (result) {
       transactionCache.set(signature, result)
     } else {
+      // Don't cache nulls forever? Original code deleted it if null?
+      // "transactionCache.delete(signature)" was in catch/else logic maybe.
+      // Original logic set result if truthy. If falsy...
+      // Original: 
+      // if (result) { transactionCache.set(signature, result) } else { transactionCache.delete(signature) }
+      // This logic implies if result is null, we ensure it's NOT in cache.
       transactionCache.delete(signature)
     }
     return { tx: result, fromCache: false }
@@ -193,7 +207,7 @@ export async function getCachedAccountInfo(
   }
 
   // Make the request
-  const promise = connection.getAccountInfo(address)
+  const promise = runWithRpcRateLimit(() => connection.getAccountInfo(address), { endpoint: connection.rpcEndpoint })
 
   inFlightAccounts.set(cacheKey, promise)
 
