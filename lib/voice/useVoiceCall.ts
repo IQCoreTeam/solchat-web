@@ -309,6 +309,10 @@ export function useVoiceCall({
             sdp,
             encryptionParams
           );
+
+          // Flush ICE candidates AFTER SDP is sent to ensure proper ordering
+          log('SDP offer sent, now flushing ICE candidates...');
+          manager.flushIceCandidatesNow();
         } catch (error) {
           log('Failed to create offer:', error);
           setState(prev => ({
@@ -418,6 +422,10 @@ export function useVoiceCall({
                 answerSdp,
                 encryptionParams
               );
+
+              // Flush ICE candidates AFTER SDP is sent to ensure proper ordering
+              log('SDP answer sent, now flushing ICE candidates...');
+              webrtcRef.current?.flushIceCandidatesNow();
             } catch (error) {
               log('Failed to handle SDP offer:', error);
               sdpProcessedRef.current = false; // Reset on error

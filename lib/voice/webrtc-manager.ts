@@ -31,10 +31,10 @@ export class WebRTCManager {
   private config: WebRTCManagerConfig;
   private pendingCandidates: RTCIceCandidateInit[] = [];
 
-  // ICE candidate batching - collect for 1 second then send all at once
+  // ICE candidate batching - collect until explicitly flushed or gathering completes
   private iceCandidateBuffer: RTCIceCandidate[] = [];
-  private iceBatchTimeout: NodeJS.Timeout | null = null;
   private iceGatheringComplete = false;
+  private iceFlushed = false; // Track if we've already flushed
 
   constructor(config: WebRTCManagerConfig) {
     this.config = config;
@@ -78,16 +78,21 @@ export class WebRTCManager {
 
   /**
    * Flush buffered ICE candidates - filter and send in batch
+   * This is called explicitly after SDP is sent, or when gathering completes
    */
   private flushIceCandidates(): void {
-    if (this.iceBatchTimeout) {
-      clearTimeout(this.iceBatchTimeout);
-      this.iceBatchTimeout = null;
+    // Prevent duplicate flushes
+    if (this.iceFlushed) {
+      this.log('ICE already flushed, skipping');
+      return;
     }
 
     if (this.iceCandidateBuffer.length === 0) {
+      this.log('No ICE candidates to flush');
       return;
     }
+
+    this.iceFlushed = true;
 
     const allCandidates = [...this.iceCandidateBuffer];
     this.iceCandidateBuffer = [];
@@ -102,6 +107,15 @@ export class WebRTCManager {
   }
 
   /**
+   * Public method to explicitly flush ICE candidates
+   * Call this AFTER SDP has been sent to ensure proper ordering
+   */
+  flushIceCandidatesNow(): void {
+    this.log('Explicit ICE flush requested');
+    this.flushIceCandidates();
+  }
+
+  /**
    * Initialize the peer connection
    */
   async initialize(): Promise<void> {
@@ -112,21 +126,13 @@ export class WebRTCManager {
       iceCandidatePoolSize: 10,
     });
 
-    // Handle ICE candidates - batch them instead of sending individually
+    // Handle ICE candidates - buffer them until explicitly flushed
+    // We don't use a timeout here - instead, flushIceCandidatesNow() is called
+    // after SDP is sent to ensure proper ordering of on-chain signals
     this.pc.onicecandidate = (event) => {
       if (event.candidate) {
         this.log('ICE candidate buffered:', event.candidate.candidate.slice(0, 40));
         this.iceCandidateBuffer.push(event.candidate);
-
-        // Reset the batch timeout - wait for more candidates
-        if (this.iceBatchTimeout) {
-          clearTimeout(this.iceBatchTimeout);
-        }
-
-        // Send batch after 1 second of no new candidates
-        this.iceBatchTimeout = setTimeout(() => {
-          this.flushIceCandidates();
-        }, 1000);
       }
     };
 
@@ -403,13 +409,10 @@ export class WebRTCManager {
   close(): void {
     this.log('Closing...');
 
-    // Clear ICE batch timeout
-    if (this.iceBatchTimeout) {
-      clearTimeout(this.iceBatchTimeout);
-      this.iceBatchTimeout = null;
-    }
+    // Reset ICE state
     this.iceCandidateBuffer = [];
     this.iceGatheringComplete = false;
+    this.iceFlushed = false;
 
     // Stop local stream
     if (this.localStream) {
