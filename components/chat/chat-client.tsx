@@ -848,7 +848,7 @@ export function ChatClient() {
             } else if (latestTimestamp > lastSeenTimestamp) {
                 setHasNewMessages(true);
                 if (!newMarkerByChannelRef.current[selectedChannelKey]) {
-                    const latestSender = latest?.sender || latest?.senderAddress;
+                    const latestSender = latest?.sender;
                     const viewer = walletAddress;
                     const isOwn = viewer && latestSender && viewer === latestSender;
                     if (latest?.id && !isOwn) {

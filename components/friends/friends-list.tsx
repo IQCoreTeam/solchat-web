@@ -244,7 +244,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             const latest = friendTimestamps[friend.dmSeedHex] ?? friend.lastTimestamp ?? 0;
             const cached = getLastMessageTimestamp(makeDmTimestampKey(friend.dmSeedHex)) ?? 0;
             if (latest && latest > cached) {
-                const label = friend.displayName || shortenAddress(friend.address, 6);
+                const label = shortenAddress(friend.address, 6);
                 showToast(`New message available from ${label}`);
                 break;
             }
@@ -436,9 +436,9 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             prevDmCountRef.current = current;
             return;
         }
-        if (current > prev && !dmIsAtBottomRef.current && mode !== 'prepend') {
+        if (current > prev && !dmIsAtBottomRef.current && mode !== 'append') {
             const latest = dmMessages[dmMessages.length - 1];
-            const latestSender = latest?.sender || latest?.senderAddress;
+            const latestSender = latest?.sender;
             const viewer = userAddress;
             const isOwn = viewer && latestSender && viewer === latestSender;
             if (latest?.id && !dmMarkerByChannelRef.current[selectedDmChannelKey] && !isOwn) {
@@ -510,7 +510,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             setDmAlerts((prev) => ({ ...prev, [dmSeedHex]: true, [channelKey]: true }));
             const targetFriend = friendMapBySeedHex[dmSeedHex];
             if (targetFriend) {
-                const label = targetFriend.displayName || shortenAddress(targetFriend.address, 6);
+                const label = shortenAddress(targetFriend.address, 6);
                 showToast(`New message from ${label}`);
             }
         }
