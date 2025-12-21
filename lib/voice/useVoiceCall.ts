@@ -29,6 +29,7 @@ import {
   sendSdpOffer,
   sendSdpAnswer,
   sendIceCandidates,
+  pollRecentCallSignals,
 } from './call-signaling';
 import { reassembleSdp } from './sdp-chunker';
 import { WebRTCManager, type WebRTCState } from './webrtc-manager';
@@ -101,6 +102,8 @@ export function useVoiceCall({
   const sdpProcessedRef = useRef<boolean>(false); // Track if we've already processed remote SDP
   const handleSignalRef = useRef<((signal: CallSignal) => Promise<void>) | null>(null); // Stable ref for subscription
   const remoteSdpChunksRef = useRef<Map<number, string>>(new Map()); // Use ref to avoid stale closure issues
+  const sdpPollIntervalRef = useRef<NodeJS.Timeout | null>(null); // Polling interval for missed SDP chunks
+  const expectedSdpTotalRef = useRef<number | null>(null); // Expected total SDP chunks
 
   // Encryption: generate keypair once per session, store remote party's public key
   const encryptionKeypairRef = useRef<BoxKeyPair | null>(null);
@@ -130,6 +133,11 @@ export function useVoiceCall({
       offerTimeoutRef.current = null;
     }
 
+    if (sdpPollIntervalRef.current) {
+      clearInterval(sdpPollIntervalRef.current);
+      sdpPollIntervalRef.current = null;
+    }
+
     if (webrtcRef.current) {
       webrtcRef.current.close();
       webrtcRef.current = null;
@@ -138,6 +146,7 @@ export function useVoiceCall({
     processedSignalsRef.current.clear();
     sdpProcessedRef.current = false;
     remoteSdpChunksRef.current.clear();
+    expectedSdpTotalRef.current = null;
     remoteEncPubKeyRef.current = null; // Clear remote encryption key on cleanup
     setState(INITIAL_STATE);
     setWebrtcState('new');
@@ -356,6 +365,11 @@ export function useVoiceCall({
         if (signal.sdp && signal.sdpChunk !== undefined) {
           let chunkData = signal.sdp;
 
+          // Track expected total for polling mechanism
+          if (signal.sdpTotal) {
+            expectedSdpTotalRef.current = signal.sdpTotal;
+          }
+
           // Decrypt chunk if encrypted
           if (signal.encrypted) {
             log(`SDP offer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} is encrypted, attempting decrypt...`);
@@ -384,7 +398,8 @@ export function useVoiceCall({
           }
 
           remoteSdpChunksRef.current.set(signal.sdpChunk, chunkData);
-          log(`SDP offer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} stored`);
+          log(`SDP offer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} stored (have ${remoteSdpChunksRef.current.size}/${signal.sdpTotal})`);
+
         }
 
         // Check if we have all chunks
@@ -453,6 +468,11 @@ export function useVoiceCall({
         if (signal.sdp && signal.sdpChunk !== undefined) {
           let chunkData = signal.sdp;
 
+          // Track expected total for polling mechanism
+          if (signal.sdpTotal) {
+            expectedSdpTotalRef.current = signal.sdpTotal;
+          }
+
           // Decrypt chunk if encrypted
           if (signal.encrypted) {
             log(`SDP answer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} is encrypted, attempting decrypt...`);
@@ -481,7 +501,7 @@ export function useVoiceCall({
           }
 
           remoteSdpChunksRef.current.set(signal.sdpChunk, chunkData);
-          log(`SDP answer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} stored`);
+          log(`SDP answer chunk ${signal.sdpChunk + 1}/${signal.sdpTotal} stored (have ${remoteSdpChunksRef.current.size}/${signal.sdpTotal})`);
         }
 
         // Check if we have all chunks
@@ -634,6 +654,98 @@ export function useVoiceCall({
       setState(prev => ({ ...prev, pendingIceCandidates: [] }));
     }
   }, [state.pendingIceCandidates, log]);
+
+  // Poll for missed SDP chunks when in connecting state
+  // This is the fallback mechanism to ensure we NEVER miss chunks due to TxRef overwrites
+  useEffect(() => {
+    // Only poll when we're in connecting state and have a callId
+    if (state.status !== 'connecting' || !state.callId || !connection || !userPubkey) {
+      // Clear any existing polling when not in connecting state
+      if (sdpPollIntervalRef.current) {
+        clearInterval(sdpPollIntervalRef.current);
+        sdpPollIntervalRef.current = null;
+        log('Polling stopped: not in connecting state');
+      }
+      return;
+    }
+
+    // Don't poll if SDP is already processed
+    if (sdpProcessedRef.current) {
+      if (sdpPollIntervalRef.current) {
+        clearInterval(sdpPollIntervalRef.current);
+        sdpPollIntervalRef.current = null;
+        log('Polling stopped: SDP already processed');
+      }
+      return;
+    }
+
+    // Don't start a new interval if one already exists
+    if (sdpPollIntervalRef.current) {
+      return;
+    }
+
+    log('Starting SDP chunk polling (every 3s)...');
+
+    // Start polling every 3 seconds (increased from 2s to reduce RPC load)
+    const pollInterval = setInterval(async () => {
+      // Check again if we still need to poll
+      if (sdpProcessedRef.current) {
+        clearInterval(pollInterval);
+        sdpPollIntervalRef.current = null;
+        log('Polling stopped: SDP processed');
+        return;
+      }
+
+      if (!state.callId) {
+        clearInterval(pollInterval);
+        sdpPollIntervalRef.current = null;
+        log('Polling stopped: no callId');
+        return;
+      }
+
+      const chunksHave = remoteSdpChunksRef.current.size;
+      const chunksExpected = expectedSdpTotalRef.current;
+      log(`Polling for SDP chunks (have ${chunksHave}/${chunksExpected || '?'})...`);
+
+      try {
+        const signals = await pollRecentCallSignals(
+          connection,
+          state.callId,
+          userPubkey,
+          15 // Reduced to minimize RPC calls
+        );
+
+        if (signals.length > 0) {
+          log(`Poll found ${signals.length} signals, processing...`);
+
+          // Process each signal through the handler
+          for (const signal of signals) {
+            if (handleSignalRef.current) {
+              await handleSignalRef.current(signal);
+            }
+          }
+        }
+      } catch (error) {
+        log('Poll error:', error);
+      }
+
+      // Stop polling if SDP is now processed
+      if (sdpProcessedRef.current) {
+        clearInterval(pollInterval);
+        sdpPollIntervalRef.current = null;
+        log('SDP processed, stopping poll');
+      }
+    }, 3000); // Poll every 3 seconds to avoid rate limiting
+
+    sdpPollIntervalRef.current = pollInterval;
+
+    return () => {
+      if (sdpPollIntervalRef.current) {
+        clearInterval(sdpPollIntervalRef.current);
+        sdpPollIntervalRef.current = null;
+      }
+    };
+  }, [state.status, state.callId, connection, userPubkey, log]);
 
   // Start a call
   const startCall = useCallback(async (targetPubkey: string): Promise<boolean> => {

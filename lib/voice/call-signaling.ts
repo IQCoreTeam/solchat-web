@@ -6,7 +6,7 @@
  * account to receive real-time updates.
  */
 
-import { Connection, PublicKey } from '@solana/web3.js';
+import { Connection, PublicKey, ConfirmedSignatureInfo } from '@solana/web3.js';
 import {
   writeRowWeb,
   createTableWeb,
@@ -17,6 +17,7 @@ import {
 } from '@/lib/onchainDB';
 import { ROOT_ID } from '@/lib/onchainDB/constants';
 import { sendAndConfirmTx } from '@/lib/onchainDB/utils/transaction-helpers';
+import { getCachedSignatures, getCachedTransaction } from '@/lib/rpc/cache';
 import {
   type CallSignal,
   type CallSignalType,
@@ -247,8 +248,9 @@ export async function sendSdpOffer(
 
     // Delay between chunks - needs to be long enough for TxRef subscription to catch each one
     // TxRef only stores the latest tx, so rapid writes can cause missed chunks
+    // Polling fallback will catch any missed chunks, but longer delay reduces need for polling
     if (i < chunks.length - 1) {
-      await new Promise(r => setTimeout(r, 1500));
+      await new Promise(r => setTimeout(r, 2000));
     }
   }
 
@@ -305,8 +307,9 @@ export async function sendSdpAnswer(
     }
 
     // Delay between chunks - needs to be long enough for TxRef subscription to catch each one
+    // Polling fallback will catch any missed chunks, but longer delay reduces need for polling
     if (i < chunks.length - 1) {
-      await new Promise(r => setTimeout(r, 1500));
+      await new Promise(r => setTimeout(r, 2000));
     }
   }
 
@@ -363,4 +366,199 @@ export async function sendIceCandidates(
  */
 export function getCallsTxRefPda(): PublicKey {
   return pdaTxRef(ROOT_ID);
+}
+
+/**
+ * Read the current signal directly from TxRef account
+ * This is a fallback when transaction history polling fails
+ */
+export async function readCurrentTxRefSignal(
+  connection: Connection
+): Promise<CallSignal | null> {
+  try {
+    const txRefPda = getCallsTxRefPda();
+    const accountInfo = await connection.getAccountInfo(txRefPda, 'confirmed');
+
+    if (!accountInfo || !accountInfo.data) {
+      console.log('[CallSignaling] TxRef account not found or empty');
+      return null;
+    }
+
+    const data = Buffer.from(accountInfo.data);
+    if (data.length < 12) return null;
+
+    // Parse TxRef data: 8-byte discriminator + 4-byte length + data
+    const dataLen = data.readUInt32LE(8);
+    if (data.length < 12 + dataLen) return null;
+
+    const rawData = data.slice(12, 12 + dataLen);
+    const jsonStr = new TextDecoder().decode(rawData);
+
+    const parsed = JSON.parse(jsonStr);
+    if (parsed.type && parsed.callId && parsed.from && parsed.to) {
+      console.log('[CallSignaling] Read current TxRef signal:', parsed.type, 'callId:', parsed.callId?.slice(0, 12));
+      return parsed as CallSignal;
+    }
+
+    return null;
+  } catch (error) {
+    console.error('[CallSignaling] Failed to read TxRef signal:', error);
+    return null;
+  }
+}
+
+/**
+ * Get the voice-calls table PDA
+ */
+export function getCallsTablePda(): PublicKey {
+  const rootPubkey = pdaRoot(ROOT_ID);
+  return pdaTable(rootPubkey, new TextEncoder().encode(CALLS_TABLE_NAME));
+}
+
+/**
+ * Parse a transaction to extract call signal data
+ * Returns null if not a valid voice-call signal
+ */
+async function parseCallSignalFromTx(
+  connection: Connection,
+  signature: string
+): Promise<CallSignal | null> {
+  try {
+    const result = await getCachedTransaction(connection, signature);
+    const tx = result.tx;
+
+    if (!tx || !tx.transaction) {
+      return null;
+    }
+
+    // Get the transaction message
+    const msg = tx.transaction.message as any;
+    const instructions = msg?.compiledInstructions || msg?.instructions || [];
+
+    for (const instruction of instructions) {
+      try {
+        const data = Buffer.from(instruction.data);
+        if (data.length < 20) continue;
+
+        // Try to find JSON payload in the instruction data
+        // Scan for {"type": pattern which is how our signals start
+        const dataStr = data.toString('utf8');
+        const jsonStartIdx = dataStr.indexOf('{"type"');
+
+        if (jsonStartIdx >= 0) {
+          // Find the end of the JSON by counting braces
+          let braceCount = 0;
+          let jsonEndIdx = jsonStartIdx;
+          for (let i = jsonStartIdx; i < dataStr.length; i++) {
+            if (dataStr[i] === '{') braceCount++;
+            if (dataStr[i] === '}') braceCount--;
+            if (braceCount === 0) {
+              jsonEndIdx = i + 1;
+              break;
+            }
+          }
+
+          const jsonStr = dataStr.slice(jsonStartIdx, jsonEndIdx);
+          try {
+            const parsed = JSON.parse(jsonStr);
+            if (parsed.type && parsed.callId && parsed.from && parsed.to) {
+              return parsed as CallSignal;
+            }
+          } catch {
+            // Not valid JSON, continue
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('[CallSignaling] Failed to parse tx:', signature.slice(0, 8), error);
+    return null;
+  }
+}
+
+/**
+ * Poll recent call signals from blockchain transaction history
+ * This is the fallback mechanism to catch any signals missed by TxRef subscription
+ *
+ * @param connection Solana connection
+ * @param callId The call ID to filter signals for
+ * @param userPubkey The user's public key (to filter signals for us)
+ * @param limit Maximum number of recent transactions to scan
+ * @returns Array of CallSignals for the specified call
+ */
+// Rate limiting for polling
+let lastPollTime = 0;
+const MIN_POLL_INTERVAL = 1000; // Minimum 1 second between polls
+
+export async function pollRecentCallSignals(
+  connection: Connection,
+  callId: string,
+  userPubkey: string,
+  limit: number = 15
+): Promise<CallSignal[]> {
+  // Rate limiting - wait if we polled too recently
+  const now = Date.now();
+  const timeSinceLastPoll = now - lastPollTime;
+  if (timeSinceLastPoll < MIN_POLL_INTERVAL) {
+    await new Promise(r => setTimeout(r, MIN_POLL_INTERVAL - timeSinceLastPoll));
+  }
+  lastPollTime = Date.now();
+
+  const signals: CallSignal[] = [];
+
+  try {
+    // First, try reading the current TxRef signal directly (fast, single RPC call)
+    const currentSignal = await readCurrentTxRefSignal(connection);
+    if (currentSignal &&
+        currentSignal.callId === callId &&
+        (currentSignal.to === userPubkey || currentSignal.from === userPubkey) &&
+        currentSignal.from !== userPubkey) {
+      signals.push(currentSignal);
+    }
+
+    // Get transaction history from TxRef PDA
+    const txRefPda = getCallsTxRefPda();
+
+    const txRefSigs = await connection.getSignaturesForAddress(
+      txRefPda,
+      { limit },
+      'confirmed'
+    );
+
+    if (txRefSigs && txRefSigs.length > 0) {
+      console.log('[CallSignaling] Scanning', txRefSigs.length, 'transactions for callId:', callId.slice(0, 12));
+
+      // Parse transactions sequentially with small delays to avoid rate limiting
+      for (const sig of txRefSigs) {
+        try {
+          const signal = await parseCallSignalFromTx(connection, sig.signature);
+          if (signal &&
+              signal.callId === callId &&
+              (signal.to === userPubkey || signal.from === userPubkey) &&
+              signal.from !== userPubkey) {
+            // Avoid duplicates
+            if (!signals.find(s => s.type === signal.type && s.sdpChunk === signal.sdpChunk && s.timestamp === signal.timestamp)) {
+              signals.push(signal);
+              console.log('[CallSignaling] Found:', signal.type, 'chunk:', signal.sdpChunk, '/', signal.sdpTotal);
+            }
+          }
+          // Small delay between transaction fetches to avoid rate limiting
+          await new Promise(r => setTimeout(r, 50));
+        } catch (e) {
+          // Continue on error, try next transaction
+          continue;
+        }
+      }
+    }
+
+    console.log('[CallSignaling] Poll complete:', signals.length, 'signals found');
+    return signals;
+  } catch (error) {
+    console.error('[CallSignaling] Poll error:', error);
+    return signals;
+  }
 }
