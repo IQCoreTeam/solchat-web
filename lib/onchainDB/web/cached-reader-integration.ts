@@ -59,9 +59,31 @@ interface ReadDmParams {
 export async function readRowsByTable(params: ReadTableParams): Promise<Row[]> {
   const { tableName } = params;
   const roomId = `room:${tableName}`;
+  const shouldSkipCache = tableName === 'global_user_list';
   const manager = getCacheManager();
 
   try {
+    if (shouldSkipCache) {
+      return await originalReadRowsByTable(params);
+    }
+
+    const forceNetwork = Boolean(
+      (Array.isArray(params.signatures) && params.signatures.length) ||
+      params.maxTx
+    );
+
+    if (forceNetwork) {
+      const rows = await originalReadRowsByTable(params);
+      if (manager.isReady()) {
+        try {
+          await manager.updateRoomCache(roomId, rows);
+        } catch (error) {
+          console.warn('[CachedReader] Failed to update cache after network fetch:', error);
+        }
+      }
+      return rows;
+    }
+
     // If cache not ready, fallback to original
     if (!manager.isReady()) {
       console.log('[CachedReader] Cache not ready, using direct fetch');
@@ -81,12 +103,6 @@ export async function readRowsByTable(params: ReadTableParams): Promise<Row[]> {
       }
     );
 
-    if (result.fromCache) {
-      console.log(`[CachedReader] CACHE HIT: ${result.messages.length} messages for ${tableName}`);
-    } else {
-      console.log(`[CachedReader] CACHE MISS: fetched ${result.messages.length} messages for ${tableName}`);
-    }
-
     return result.messages;
   } catch (error) {
     console.error('[CachedReader] Cache error, falling back to direct fetch:', error);
@@ -103,6 +119,22 @@ export async function readRowsByDmSeed(params: ReadDmParams): Promise<Row[]> {
 
   try {
     const manager = getCacheManager();
+    const forceNetwork = Boolean(
+      (Array.isArray(params.signatures) && params.signatures.length) ||
+      params.maxTx
+    );
+
+    if (forceNetwork) {
+      const rows = await originalReadRowsByDmSeed(params);
+      if (manager.isReady()) {
+        try {
+          await manager.updateDmCache(dmSeedHex, rows);
+        } catch (error) {
+          console.warn('[CachedReader] Failed to update DM cache after network fetch:', error);
+        }
+      }
+      return rows;
+    }
 
     // If cache not ready, fallback to original
     if (!manager.isReady()) {
@@ -121,10 +153,6 @@ export async function readRowsByDmSeed(params: ReadDmParams): Promise<Row[]> {
         onProgress: params.onProgress,
       }
     );
-
-    if (result.fromCache) {
-      console.log(`[CachedReader] Loaded ${result.messages.length} DM messages from cache`);
-    }
 
     return result.messages;
   } catch (error) {

@@ -38,6 +38,7 @@ import { NotificationToggle } from '@/components/ui/notification-toggle';
 import { RpcConfigPrompt } from '@/components/ui/rpc-config-prompt';
 import { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
 import { DMCallButton } from '@/components/voice/DMCallButton';
+import { invalidateSignatureCache } from '@/lib/rpc/cache';
 type Tab = 'all' | 'pending' | 'blocked';
 type ProgramIdl = Idl & { address?: string };
 const FRIENDS_IDL = idl as ProgramIdl;
@@ -484,6 +485,9 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         if (targetFriend) {
             try {
                 await invalidateDmCache(targetFriend.dmSeed);
+                if (targetFriend.tableAddress) {
+                    invalidateSignatureCache(targetFriend.tableAddress);
+                }
             } catch (error) {
                 console.error('[FriendsList] Failed to invalidate DM cache', error);
             }
@@ -596,8 +600,8 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         handler: () => {
             void handleDmLogs();
         },
-        commitment: 'confirmed',
-        enabled: true,
+        commitment: 'processed',
+        enabled: !dmWsConnected,
     });
 
     useEffect(() => {

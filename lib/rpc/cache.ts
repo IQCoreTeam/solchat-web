@@ -41,7 +41,6 @@ export async function getCachedSignatures(
   // Check cache
   const cached = signatureCache.get(cacheKey)
   if (cached && Date.now() - cached.timestamp < SIGNATURE_CACHE_TTL) {
-    console.log(`[RPC Cache] HIT signatures for ${address.toBase58().slice(0, 8)}...`)
     return cached.data
   }
 
@@ -85,7 +84,6 @@ export async function getCachedSignaturesPaginated(
   // Check cache
   const cached = signatureCache.get(cacheKey)
   if (cached && Date.now() - cached.timestamp < SIGNATURE_CACHE_TTL) {
-    console.log(`[RPC Cache] HIT paginated sigs for ${address.toBase58().slice(0, 8)}... (${cached.data.length} sigs)`)
     return cached.data
   }
 
@@ -138,7 +136,11 @@ export async function getCachedTransaction(
 ): Promise<CachedTransactionResult> {
   // Check cache first
   if (transactionCache.has(signature)) {
-    return { tx: transactionCache.get(signature) ?? null, fromCache: true }
+    const cachedTx = transactionCache.get(signature)
+    if (cachedTx) {
+      return { tx: cachedTx, fromCache: true }
+    }
+    transactionCache.delete(signature)
   }
 
   // Check if request is already in flight
@@ -158,7 +160,11 @@ export async function getCachedTransaction(
 
   try {
     const result = await promise
-    transactionCache.set(signature, result)
+    if (result) {
+      transactionCache.set(signature, result)
+    } else {
+      transactionCache.delete(signature)
+    }
     return { tx: result, fromCache: false }
   } finally {
     inFlightTransactions.delete(signature)
