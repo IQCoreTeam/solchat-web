@@ -160,6 +160,7 @@ export function ChatClient() {
     const lastSeenTimestampRef = useRef<Record<string, number>>({});
     const latestMessageTimestampRef = useRef<number>(0);
     const markerClearTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const roomLastPongRef = useRef<number>(Date.now());
 
     // Writer context
     const writerWallet = useMemo<WalletAdapterLike | null>(() => {
@@ -668,21 +669,34 @@ export function ChatClient() {
 
                 socket.addEventListener('open', () => {
                     if (!active) return;
-                    console.log('[ChatClient] WS connected');
+                    console.log('[ChatClient] WS connected to', url);
                     roomWsBackoffRef.current = 0;
+                    roomLastPongRef.current = Date.now();
                     setRoomWsConnected(true);
                     clearPing();
+                    
+                    // Ping every 15 seconds
                     roomPingIntervalRef.current = setInterval(() => {
                         if (socket.readyState === WebSocket.OPEN) {
+                            // Check if we got a pong recently (within 45 seconds)
+                            if (Date.now() - roomLastPongRef.current > 45000) {
+                                console.warn('[ChatClient] WS no pong in 45s, forcing reconnect');
+                                socket.close();
+                                return;
+                            }
                             socket.send(JSON.stringify({ type: 'ping' }));
+                            console.log('[ChatClient] WS ping sent');
                         }
-                    }, 20000);
+                    }, 15000);
                 });
 
                 const handleMessage = (event: MessageEvent) => {
                     try {
                         const data = JSON.parse(event.data);
-                        if (data?.type === 'pong') return;
+                        if (data?.type === 'pong') {
+                            roomLastPongRef.current = Date.now();
+                            return;
+                        }
                         console.log('[ChatClient] WS message:', data);
                         if (data && (data.type === 'roomUpdated' || data.type === 'roomSnapshot' || data.type === 'messageSent')) {
                             const handler = roomSocketHandlerRef.current;
