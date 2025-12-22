@@ -69,6 +69,7 @@ export function RoomSidebar({
                             }: RoomSidebarProps) {
     return (
         <aside className={`
+      safe-area-inset
       flex w-72 flex-col border-r border-white/10 bg-black z-50
       absolute md:relative inset-y-0 left-0
       transform transition-transform duration-300 ease-in-out
