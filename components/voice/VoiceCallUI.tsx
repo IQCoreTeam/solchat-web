@@ -46,6 +46,18 @@ const ChainIcon = () => (
   </svg>
 );
 
+const RecordIcon = () => (
+  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+     <circle cx="12" cy="12" r="8" />
+  </svg>
+);
+
+const StopIcon = () => (
+  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+    <rect x="6" y="6" width="12" height="12" />
+  </svg>
+);
+
 // ============================================================================
 // Props
 // ============================================================================
@@ -81,8 +93,11 @@ export function VoiceCallUI({ userPubkey, connection, writerCtx, onError }: Voic
     rejectCall,
     endCall,
     toggleMute,
+    toggleRecording,
     isReady,
+    isRecording,
   } = useVoiceCall({
+
     connection: connection || null,
     writerCtx: writerCtx || null,
     userPubkey,
@@ -189,7 +204,7 @@ export function VoiceCallUI({ userPubkey, connection, writerCtx, onError }: Voic
   }
 
   // Active/connecting call bar
-  if (status === 'active' || status === 'connecting' || status === 'accepting') {
+  if (status === 'active' || status === 'connecting' || status === 'accepting' || status === 'ending') {
     return (
       <div className="fixed top-0 left-0 right-0 bg-green-700 text-white py-2 px-4 flex items-center justify-between z-50">
         <div className="flex items-center gap-3">
@@ -226,6 +241,20 @@ export function VoiceCallUI({ userPubkey, connection, writerCtx, onError }: Voic
           >
             {isMuted ? <MicOffIcon /> : <MicIcon />}
           </button>
+          
+          <button
+            onClick={toggleRecording}
+            className={`flex items-center gap-2 px-3 py-1 rounded-full border transition-colors ${
+              isRecording 
+                ? 'bg-red-900/50 border-red-500 text-red-100 animate-pulse' 
+                : 'bg-gray-600 border-transparent hover:bg-gray-700 text-gray-200'
+            }`}
+            title={isRecording ? 'Stop Recording' : 'Record Proof'}
+          >
+             {isRecording ? <StopIcon /> : <RecordIcon />}
+             <span className="text-xs font-bold">{isRecording ? 'REC' : 'PROOF'}</span>
+          </button>
+
           <button
             onClick={handleEndCall}
             className="flex items-center gap-2 px-4 py-1 rounded-full bg-red-500 hover:bg-red-600 transition-colors"

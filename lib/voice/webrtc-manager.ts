@@ -1,3 +1,5 @@
+import { encryptBytesForRecipient } from './encryption';
+
 /**
  * WebRTC Manager
  *
@@ -6,6 +8,7 @@
  */
 
 import { ICE_SERVERS } from './types';
+
 
 export type WebRTCState =
   | 'new'
@@ -27,9 +30,17 @@ export interface WebRTCManagerConfig {
 export class WebRTCManager {
   private pc: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
+  private remoteStream: MediaStream | null = null;
   private remoteAudio: HTMLAudioElement | null = null;
   private config: WebRTCManagerConfig;
   private pendingCandidates: RTCIceCandidateInit[] = [];
+
+  // Recording
+  private mediaRecorder: MediaRecorder | null = null;
+  private recordedChunks: Uint8Array[] = []; // Encrypted chunks
+  private rawRecordedChunks: Blob[] = []; // Playable raw chunks
+  private recordedMimeType: string = 'audio/webm'; // Default fallback
+  private encryptionKeys: { recipientPubKey: Uint8Array; senderSecretKey: Uint8Array } | null = null;
 
   // ICE candidate batching - collect until explicitly flushed or gathering completes
   private iceCandidateBuffer: RTCIceCandidate[] = [];
@@ -210,8 +221,18 @@ export class WebRTCManager {
           }
         }
 
-        this.config.onRemoteStream(stream);
-        this.playRemoteStream(stream);
+        // Create a new MediaStream for the remote track to ensure clean state
+        const remoteStream = new MediaStream([event.track]);
+        this.remoteStream = remoteStream;
+        
+        this.config.onRemoteStream(remoteStream);
+        this.playRemoteStream(remoteStream);
+
+        // If recording was requested before stream arrived, restart it with new stream
+        if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+           this.log('Restarting recording with new remote stream');
+           this.startRecording(this.encryptionKeys!);
+        }
       }
     };
 
@@ -406,8 +427,108 @@ export class WebRTCManager {
   /**
    * Close the connection and release resources
    */
+  /**
+   * Start recording the *remote* stream
+   * Encrypts chunks on the fly
+   */
+  startRecording(keys: { recipientPubKey: Uint8Array; senderSecretKey: Uint8Array }): void {
+    if (!this.remoteStream) {
+      this.log('Cannot start recording: no remote stream yet');
+      this.encryptionKeys = keys; // Store for later
+      return;
+    }
+
+    this.log('Starting call recording...');
+    this.encryptionKeys = keys;
+    this.recordedChunks = [];
+    this.rawRecordedChunks = [];
+
+    // Detect supported MIME type, preferring MP4 (AAC) for compatibility
+    const mimeTypes = [
+      'audio/mp4',
+      'audio/webm;codecs=opus',
+      'audio/webm'
+    ];
+    
+    let selectedType = 'audio/webm';
+    for (const type of mimeTypes) {
+      if (MediaRecorder.isTypeSupported(type)) {
+        selectedType = type;
+        break;
+      }
+    }
+    this.recordedMimeType = selectedType;
+    this.log('Using MIME type for recording:', selectedType);
+
+    try {
+      this.mediaRecorder = new MediaRecorder(this.remoteStream, { mimeType: selectedType });
+      
+      this.mediaRecorder.ondataavailable = async (e) => {
+        if (e.data && e.data.size > 0) {
+          try {
+            // 1. Keep raw blob for playable download
+            this.rawRecordedChunks.push(e.data);
+
+            // 2. Encrypt for proof
+            const buffer = await e.data.arrayBuffer();
+            const bytes = new Uint8Array(buffer);
+            
+            // Encrypt using the session keys (creates a recoverable proof)
+            const { encrypted } = encryptBytesForRecipient(
+              bytes,
+              keys.recipientPubKey,
+              keys.senderSecretKey
+            );
+            
+            this.recordedChunks.push(encrypted);
+            this.log(`Recorded chunk: ${bytes.length} bytes -> ${encrypted.length} encrypted`);
+          } catch (err) {
+            this.log('Failed to encrypt chunk:', err);
+          }
+        }
+      };
+
+      this.mediaRecorder.start(1000); // 1-second chunks
+    } catch (error) {
+      this.log('Failed to start MediaRecorder:', error);
+    }
+  }
+
+  /**
+   * Stop recording and return encrypted chunks, raw blobs, and used MIME type
+   */
+  stopRecording(): { encrypted: Uint8Array[], raw: Blob[], mimeType: string } {
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      this.mediaRecorder.stop();
+      this.log('Stopped recording');
+    }
+    return {
+      encrypted: this.recordedChunks,
+      raw: this.rawRecordedChunks,
+      mimeType: this.recordedMimeType
+    };
+  }
+
+  /**
+   * Get current recorded chunks
+   */
+  getRecordedChunks(): { encrypted: Uint8Array[], raw: Blob[], mimeType: string } {
+    return {
+      encrypted: this.recordedChunks,
+      raw: this.rawRecordedChunks,
+      mimeType: this.recordedMimeType
+    };
+  }
+
   close(): void {
     this.log('Closing...');
+    
+    // Stop recording
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      this.mediaRecorder.stop();
+    }
+    this.recordedChunks = [];
+    this.rawRecordedChunks = [];
 
     // Reset ICE state
     this.iceCandidateBuffer = [];
@@ -425,6 +546,9 @@ export class WebRTCManager {
       this.remoteAudio.srcObject = null;
       this.remoteAudio = null;
     }
+    
+    // Clear refs
+    this.remoteStream = null;
 
     // Close peer connection
     if (this.pc) {
@@ -436,3 +560,4 @@ export class WebRTCManager {
     this.log('Closed');
   }
 }
+

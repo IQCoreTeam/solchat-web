@@ -30,8 +30,10 @@ import {
   sendSdpAnswer,
   sendIceCandidates,
   pollRecentCallSignals,
+  sendCallProof,
 } from './call-signaling';
 import { reassembleSdp } from './sdp-chunker';
+import { buildMerkleTree, getMerkleRoot } from './proof';
 import { WebRTCManager, type WebRTCState } from './webrtc-manager';
 import {
   generateEncryptionKeypair,
@@ -58,6 +60,7 @@ interface UseVoiceCallReturn {
   isOutgoing: boolean;
   isMuted: boolean;
   webrtcState: WebRTCState;
+  isRecording: boolean;
   error: string | null;
 
   // Actions
@@ -66,6 +69,7 @@ interface UseVoiceCallReturn {
   rejectCall: (reason?: string) => Promise<void>;
   endCall: () => Promise<void>;
   toggleMute: () => void;
+  toggleRecording: () => void;
 
   // Status
   isReady: boolean;
@@ -93,6 +97,7 @@ export function useVoiceCall({
   const [state, setState] = useState<CallState>(INITIAL_STATE);
   const [webrtcState, setWebrtcState] = useState<WebRTCState>('new');
   const [isMuted, setIsMuted] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [tableReady, setTableReady] = useState(false);
 
   const webrtcRef = useRef<WebRTCManager | null>(null);
@@ -151,6 +156,7 @@ export function useVoiceCall({
     setState(INITIAL_STATE);
     setWebrtcState('new');
     setIsMuted(false);
+    setIsRecording(false);
   }, [log]);
 
   // Initialize WebRTC manager
@@ -189,6 +195,7 @@ export function useVoiceCall({
 
         if (newState === 'connected') {
           setState(prev => ({ ...prev, status: 'active', startedAt: Date.now() }));
+          // Note: Recording is now OPT-IN via toggleRecording
         } else if (newState === 'failed' || newState === 'disconnected') {
           setState(prev => ({ ...prev, error: 'Connection lost' }));
         }
@@ -869,6 +876,100 @@ export function useVoiceCall({
     }
 
     if (state.callId && state.remotePubkey) {
+      // Set status to ending so UI shows "ENDING..." / "Proofing..."
+      setState(prev => ({ ...prev, status: 'ending' }));
+
+      // 1. Generate and anchor proof 
+      if (webrtcRef.current) {
+        try {
+          const recordingResult = webrtcRef.current.stopRecording();
+          const encryptedChunks = recordingResult.encrypted;
+          const rawChunks = recordingResult.raw;
+          const mimeType = recordingResult.mimeType;
+
+          if (encryptedChunks.length > 0) {
+            log('Generating Merkle proof for', encryptedChunks.length, 'audio chunks...');
+            const tree = buildMerkleTree(encryptedChunks);
+            const root = getMerkleRoot(tree);
+            log('Anchoring Merkle root on-chain:', root);
+            
+            // We await this so the proof is on-chain before the call-end signal
+            await sendCallProof(
+              connection,
+              writerCtx,
+              state.callId,
+              userPubkey,
+              state.remotePubkey,
+              root
+            );
+            log('Proof anchored successfully!');
+
+            // 2. Download proof package (keys + encrypted chunks + root + signature)
+            // Ideally we also include the transaction signature, but we can't easily wait for confirmation here
+            // without blocking UI too long. The root is enough for verification.
+            try {
+              if (remoteEncPubKeyRef.current && encryptionKeypairRef.current) {
+                // A. Download JSON Evidence
+                const pkg = {
+                  callId: state.callId,
+                  timestamp: Date.now(),
+                  merkleRoot: root,
+                  senderPubkey: userPubkey, 
+                  remotePubkey: state.remotePubkey,
+                  
+                  // Keys needed to decrypt
+                  mySecretKey: uint8ArrayToHex(encryptionKeypairRef.current.secretKey),
+                  myPublicKey: uint8ArrayToHex(encryptionKeypairRef.current.publicKey),
+                  remotePublicKey: uint8ArrayToHex(remoteEncPubKeyRef.current),
+
+                  // The evidence
+                  encryptedChunks: encryptedChunks.map(c => uint8ArrayToHex(c))
+                };
+
+                const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `call-proof-${state.callId}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                log('Proof package downloaded');
+
+                // B. Download Playable Audio (Raw)
+                if (rawChunks.length > 0) {
+                   const audioBlob = new Blob(rawChunks, { type: mimeType });
+                   const audioUrl = URL.createObjectURL(audioBlob);
+                   
+                   // Determine extension from MIME type (simple heuristic)
+                   let ext = 'webm';
+                   if (mimeType.includes('mp4')) ext = 'mp4';
+                   else if (mimeType.includes('wav')) ext = 'wav';
+                   else if (mimeType.includes('ogg')) ext = 'ogg';
+
+                   const b = document.createElement('a');
+                   b.href = audioUrl;
+                   b.download = `recording-${state.callId}.${ext}`;
+                   document.body.appendChild(b);
+                   b.click();
+                   document.body.removeChild(b);
+                   URL.revokeObjectURL(audioUrl);
+                   log('Audio recording downloaded:', mimeType);
+                }
+              }
+            } catch (err) {
+              console.error('Failed to download proof package:', err);
+            }
+
+          } else {
+             log('No audio chunks recorded, skipping proof.');
+          }
+        } catch (error) {
+          console.error('Failed to anchor call proof:', error);
+        }
+      }
+
       log('Ending call:', state.callId);
 
       await sendCallEnd(
@@ -892,6 +993,32 @@ export function useVoiceCall({
     }
   }, [isMuted]);
 
+  // Toggle recording
+  const toggleRecording = useCallback(() => {
+    if (!webrtcRef.current || state.status !== 'active') return;
+
+    if (isRecording) {
+      // Stop recording but keep chunks in memory
+      webrtcRef.current.stopRecording();
+      log('User stopped recording');
+      setIsRecording(false);
+    } else {
+      // Start recording
+      if (remoteEncPubKeyRef.current && encryptionKeypairRef.current) {
+        log('User started recording');
+        webrtcRef.current.startRecording({
+          recipientPubKey: remoteEncPubKeyRef.current,
+          senderSecretKey: encryptionKeypairRef.current.secretKey
+        });
+        setIsRecording(true);
+      } else {
+        log('Cannot start recording: missing keys');
+      }
+    }
+  }, [isRecording, state.status, log]);
+
+  // Clean recording state if muted? No, independent.
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -909,6 +1036,7 @@ export function useVoiceCall({
     isOutgoing: state.isOutgoing,
     isMuted,
     webrtcState,
+    isRecording,
     error: state.error,
 
     startCall,
@@ -916,6 +1044,7 @@ export function useVoiceCall({
     rejectCall,
     endCall,
     toggleMute,
+    toggleRecording,
 
     isReady: !!connection && !!writerCtx && !!userPubkey && tableReady,
   };

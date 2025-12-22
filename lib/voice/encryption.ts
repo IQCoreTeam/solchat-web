@@ -49,6 +49,24 @@ export function encryptForRecipient(
 }
 
 /**
+ * Encrypt a binary message for a recipient
+ */
+export function encryptBytesForRecipient(
+  message: Uint8Array,
+  recipientPublicKey: Uint8Array,
+  senderSecretKey: Uint8Array
+): { encrypted: Uint8Array; nonce: Uint8Array } {
+  const nonce = nacl.randomBytes(nacl.box.nonceLength);
+  const encrypted = nacl.box(message, nonce, recipientPublicKey, senderSecretKey);
+
+  if (!encrypted) {
+    throw new Error('Encryption failed');
+  }
+
+  return { encrypted, nonce };
+}
+
+/**
  * Decrypt a message from a sender
  */
 export function decryptFromSender(

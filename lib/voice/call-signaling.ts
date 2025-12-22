@@ -189,6 +189,30 @@ export async function sendCallEnd(
 }
 
 /**
+ * Send call proof (Merkle root of encrypted recorded audio)
+ */
+export async function sendCallProof(
+  connection: Connection,
+  writerCtx: WriterCtx,
+  callId: string,
+  fromPubkey: string,
+  toPubkey: string,
+  merkleRoot: string,
+  cid?: string
+): Promise<string | null> {
+  const signal: CallSignal = {
+    type: 'call-proof',
+    callId,
+    from: fromPubkey,
+    to: toPubkey,
+    timestamp: Date.now(),
+    merkleRoot,
+    cid,
+  };
+  return writeSignal(connection, writerCtx, signal);
+}
+
+/**
  * Encryption params for SDP/ICE
  */
 interface EncryptionParams {

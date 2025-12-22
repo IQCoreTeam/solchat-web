@@ -15,7 +15,8 @@ export type CallSignalType =
   | 'call-busy'       // Callee is busy
   | 'sdp-offer'       // WebRTC SDP offer
   | 'sdp-answer'      // WebRTC SDP answer
-  | 'ice-candidate';  // ICE candidate
+  | 'ice-candidate'   // ICE candidate
+  | 'call-proof';     // Merkle proof anchoring
 
 export interface CallSignal {
   type: CallSignalType;
@@ -33,6 +34,9 @@ export interface CallSignal {
   encPubKey?: string; // Sender's encryption public key (hex) - in call-offer/call-accept
   nonce?: string;     // Nonce for encrypted data (base64)
   encrypted?: boolean; // True if sdp/candidate is encrypted
+  // Proof fields (for call-proof)
+  merkleRoot?: string; // Hex string of the Merkle root
+  cid?: string;        // IPFS/Arweave CID of the encrypted bundle
 }
 
 // ============================================================================
