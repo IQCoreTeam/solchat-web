@@ -17,6 +17,7 @@ import {
   clearTransactionCache,
   invalidateSignatureCache,
 } from '@/lib/rpc/cache'
+import { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue'
 
 export type Row = Record<string, any>
 
@@ -324,7 +325,10 @@ export async function readRecentRows(params: ReaderParams): Promise<ReaderResult
   }))
 
   const tablePdas = seedsWithPdas.map((s) => s.tablePda)
-  const tableAccountInfos = await connection.getMultipleAccountsInfo(tablePdas)
+  const tableAccountInfos = await runWithRpcRateLimit(
+    () => connection.getMultipleAccountsInfo(tablePdas),
+    { endpoint: (connection as any)._rpcEndpoint || endpoint }
+  )
 
   for (let i = 0; i < seedsWithPdas.length; i++) {
     const { seedHex, tablePda, instPda } = seedsWithPdas[i]

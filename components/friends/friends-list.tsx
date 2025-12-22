@@ -121,6 +121,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     const dmIsAtBottomRef = useRef(true);
     const dmMarkerElRef = useRef<HTMLDivElement | null>(null);
     const dmMarkerClearTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const dmLastPongRef = useRef<number>(Date.now());
 
     /* --------------------------------------------------------------------------
      * Writer Context
@@ -636,21 +637,34 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
 
                 socket.addEventListener('open', () => {
                     if (!active) return;
-                    console.log('[FriendsList] DM WS connected');
+                    console.log('[FriendsList] DM WS connected to', url);
                     dmWsBackoffRef.current = 0;
+                    dmLastPongRef.current = Date.now();
                     setDmWsConnected(true);
                     clearPing();
+                    
+                    // Ping every 15 seconds
                     dmPingIntervalRef.current = setInterval(() => {
                         if (socket.readyState === WebSocket.OPEN) {
+                            // Check if we got a pong recently (within 45 seconds)
+                            if (Date.now() - dmLastPongRef.current > 45000) {
+                                console.warn('[FriendsList] DM WS no pong in 45s, forcing reconnect');
+                                socket.close();
+                                return;
+                            }
                             socket.send(JSON.stringify({ type: 'ping' }));
+                            console.log('[FriendsList] DM WS ping sent');
                         }
-                    }, 20000);
+                    }, 15000);
                 });
 
                 const handleMessage = (event: MessageEvent) => {
                     try {
                         const data = JSON.parse(event.data);
-                        if (data?.type === 'pong') return;
+                        if (data?.type === 'pong') {
+                            dmLastPongRef.current = Date.now();
+                            return;
+                        }
                         console.log('[FriendsList] DM WS message:', data);
                         if (data && (data.type === 'roomUpdated' || data.type === 'roomSnapshot' || data.type === 'messageSent')) {
                             const handler = dmSocketHandlerRef.current;
@@ -681,12 +695,25 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
 
         connect();
 
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                const socket = dmSocketRef.current;
+                if (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) {
+                    console.log('[FriendsList] Tab visible, reconnecting DM WS...');
+                    scheduleReconnect();
+                }
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
         return () => {
             active = false;
             clearPing();
             dmSubscribedIdsRef.current.clear();
             dmSocketRef.current?.close();
             dmSocketRef.current = null;
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
         // Keep socket alive; handler is updated via ref.
     }, []);
@@ -858,7 +885,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         }
     };
 
-    const notifyDmMessageSent = useCallback((dmSeedHex: string, ts: number) => {
+    const notifyDmMessageSent = useCallback((dmSeedHex: string, ts: number, signature?: string) => {
         const socket = dmSocketRef.current;
         if (!socket || socket.readyState !== WebSocket.OPEN) {
             console.warn('[FriendsList] DM notify skipped, state =', socket?.readyState ?? 'no socket');
@@ -870,9 +897,10 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                     type: 'messageSent',
                     roomId: makeDmTimestampKey(dmSeedHex),
                     timestamp: ts,
+                    signature,
                 })
             );
-            console.log('[FriendsList] DM notify sent for', dmSeedHex.slice(0, 8), 'ts', ts);
+            console.log('[FriendsList] DM notify sent for', dmSeedHex.slice(0, 8), 'ts', ts, 'sig', signature?.slice(0, 8));
         } catch (error) {
             console.warn('[FriendsList] Failed to emit DM notification', error);
         }
@@ -929,9 +957,9 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
 
         try {
             const { tx } = await writeDmRowWeb(writerCtx, ROOT_ID, chatFriend.dmSeed, JSON.stringify(payload));
-            await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] DM sent:');
+            const signature = await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] DM sent:');
             if (chatFriend.dmSeedHex) {
-                notifyDmMessageSent(chatFriend.dmSeedHex, timestamp);
+                notifyDmMessageSent(chatFriend.dmSeedHex, timestamp, signature);
                 const channelKey = makeDmChannelKey(chatFriend.dmSeedHex);
                 applyLocalRows(channelKey, [
                     {
