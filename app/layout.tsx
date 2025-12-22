@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 // import { Geist_Mono } from "next/font/google";
 
 import "./globals.css";
@@ -12,6 +12,12 @@ const bitArrayA2 = localFont({
 });
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://solchat.iqlabs.dev";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),

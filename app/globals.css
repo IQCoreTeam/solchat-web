@@ -16,14 +16,22 @@
      * Example:
      * <div className="text-iq-green">Text</div>
      * <div style={{ color: 'var(--iq-green)' }}>Text</div>
-     * <div style={{ backgroundColor: 'rgba(var(--iq-green-rgb), 0.2)' }}>Text</div>
-     */
+* <div style={{ backgroundColor: 'rgba(var(--iq-green-rgb), 0.2)' }}>Text</div>
+ */
     --iq-green: #41FF00;
     --iq-green-rgb: 65, 255, 0;
     --iq-green-dark: #00FF22;
     --iq-green-darker: #006400;
     --brand-bg-dark: rgb(0, 33, 0);
     font-family: "bitArrayA2", serif;
+}
+
+body {
+    /* Respect iOS/Android safe areas so content clears notches & gesture bars */
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
 }
 
 @theme inline {
