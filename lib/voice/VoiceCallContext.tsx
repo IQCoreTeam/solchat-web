@@ -23,6 +23,7 @@ interface VoiceCallContextValue {
   isMuted: boolean;
   isVideoEnabled: boolean;
   isRecording: boolean;
+  isScreenSharing: boolean;
   webrtcState: WebRTCState;
   error: string | null;
   isReady: boolean;
@@ -37,6 +38,7 @@ interface VoiceCallContextValue {
   toggleMute: () => void;
   toggleVideo: () => void;
   toggleRecording: () => void;
+  toggleScreenShare: () => Promise<void>;
 
   // Duration tracking
   duration: number;

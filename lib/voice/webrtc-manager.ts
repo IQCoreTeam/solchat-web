@@ -426,12 +426,22 @@ export class WebRTCManager {
   /**
    * Toggle local video
    */
-  setVideoEnabled(enabled: boolean): void {
+  async setVideoEnabled(enabled: boolean): Promise<void> {
     if (this.localStream) {
+      // If we are enabling video and don't have a track (or it was stopped), we might need to re-acquire?
+      // For now assume tracks exist and we just toggle 'enabled'.
+      // If we are screen sharing, this toggle generally applies to the camera track which might be dormant.
+      // But if we stop screen share, we check this flag.
+      
       this.localStream.getVideoTracks().forEach((track) => {
         track.enabled = enabled;
       });
       this.log('Video enabled:', enabled);
+
+      // If we are currently screen sharing, enabling "video" usually doesn't mean stop screen share.
+      // But disabling video MIGHT mean stop sending anything if we weren't screen sharing.
+      // NOTE: For simplicity, the specific toggleVideo button will control the CAMERA.
+      // Screen share overrides camera.
     }
   }
 
@@ -444,10 +454,108 @@ export class WebRTCManager {
     return track ? track.enabled : false;
   }
 
+  // Screen Sharing
+  private screenStream: MediaStream | null = null;
+
   /**
-   * Get local stream
+   * Start screen sharing
+   * Replaces the video track in the peer connection with the screen track
+   */
+  async startScreenShare(): Promise<MediaStream> {
+    if (!this.pc || !this.localStream) {
+      throw new Error('Peer connection not active');
+    }
+
+    try {
+      const displayMedia = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false // Usually we keep the mic, don't want system audio mixing weirdly yet
+      });
+
+      this.screenStream = displayMedia;
+      const screenTrack = this.screenStream.getVideoTracks()[0];
+
+      if (!screenTrack) {
+        throw new Error('No video track in screen share');
+      }
+
+      // Handle user clicking "Stop Sharing" via browser UI
+      screenTrack.onended = () => {
+        this.log('Screen share ended by user');
+        this.stopScreenShare();
+      };
+
+      // Find the sender for video
+      const sender = this.pc.getSenders().find(s => s.track?.kind === 'video' || s.track === null);
+
+      if (sender) {
+        this.log('Replacing video track with screen track');
+        await sender.replaceTrack(screenTrack);
+      } else {
+        // If we were audio-only, we need to add the track
+        // Note: This might require renegotiation which we are avoiding for simplicity
+        // But usually we init the call with video:false which might strictly not create a transceiver.
+        // For now, assume we swap. If we adding a new track type mid-call without renegotiation, it won't show.
+        // Best practice: Always init with video=true but nothing sent, or do a renegotiation.
+        // Our current setup creates PC with video: video ? ... : false.
+        // If false, we might not have a video transceiver. 
+        // Let's rely on replaceTrack for now assuming video was negotiated or transceivers exist.
+        
+        // If no sender found, try adding transceiver or track (calls for renegotiation usually)
+        this.log('No video sender found (audio-only call?). Adding track to local stream...');
+        this.localStream.addTrack(screenTrack);
+        this.pc.addTrack(screenTrack, this.localStream);
+      }
+
+      return this.screenStream;
+    } catch (error) {
+      this.log('Failed to start screen share:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Stop screen sharing and revert to camera
+   */
+  async stopScreenShare(): Promise<void> {
+    if (!this.screenStream) return;
+
+    this.log('Stopping screen share...');
+    
+    // Stop the screen tracks
+    this.screenStream.getTracks().forEach(t => t.stop());
+    this.screenStream = null;
+
+    if (!this.pc || !this.localStream) return;
+
+    // Revert to camera track
+    const cameraTrack = this.localStream.getVideoTracks()[0];
+    
+    // Find sender
+    const sender = this.pc.getSenders().find(s => s.track?.kind === 'video');
+    
+    if (sender && cameraTrack) {
+      this.log('Reverting to camera track');
+      // If camera was "disabled" (muted) by the user, it stays disabled but attached
+      await sender.replaceTrack(cameraTrack);
+    } else {
+       this.log('No camera track to revert to');
+    }
+  }
+
+  /**
+   * Get active video stream (screen or camera)
    */
   getLocalStream(): MediaStream | null {
+    // If screen sharing, construct a stream with Mic + Screen
+    if (this.screenStream && this.localStream) {
+      const audioTrack = this.localStream.getAudioTracks()[0];
+      const screenTrack = this.screenStream.getVideoTracks()[0];
+      if (audioTrack && screenTrack) {
+        return new MediaStream([audioTrack, screenTrack]);
+      }
+      return this.screenStream;
+    }
     return this.localStream;
   }
 

@@ -65,6 +65,12 @@ const VideoOffIcon = () => (
   </svg>
 );
 
+const ScreenShareIcon = () => (
+  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+    <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.11-.9-2-2-2H4c-1.11 0-2 .89-2 2v10c0 1.1.89 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
+  </svg>
+);
+
 
 
 export function ActiveCallBar() {
@@ -85,11 +91,13 @@ export function ActiveCallBar() {
     isMuted,
     isVideoEnabled,
     isRecording,
+    isScreenSharing,
     webrtcState,
     error,
     duration,
     toggleMute,
     toggleVideo,
+    toggleScreenShare,
     toggleRecording,
     endCall,
     localStream,
@@ -238,6 +246,16 @@ export function ActiveCallBar() {
           title={isVideoEnabled ? 'Stop Video' : 'Start Video'}
         >
           {isVideoEnabled ? <VideoIcon /> : <VideoOffIcon />}
+        </button>
+
+        <button
+          onClick={() => toggleScreenShare()}
+          className={`p-2 rounded-full transition-colors ${
+            isScreenSharing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-600 hover:bg-gray-700'
+          }`}
+          title={isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
+        >
+          <ScreenShareIcon />
         </button>
 
         <button

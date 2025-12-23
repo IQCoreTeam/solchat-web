@@ -61,6 +61,7 @@ interface UseVoiceCallReturn {
   isMuted: boolean;
   webrtcState: WebRTCState;
   isRecording: boolean;
+  isScreenSharing: boolean;
   isVideoEnabled: boolean; // Local video state
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
@@ -74,6 +75,7 @@ interface UseVoiceCallReturn {
   toggleMute: () => void;
   toggleVideo: () => void;
   toggleRecording: () => void;
+  toggleScreenShare: () => Promise<void>;
 
   // Status
   isReady: boolean;
@@ -103,6 +105,7 @@ export function useVoiceCall({
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoEnabled, setIsVideoEnabled] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [tableReady, setTableReady] = useState(false);
@@ -1042,6 +1045,30 @@ export function useVoiceCall({
     }
   }, [isRecording, state.status, log]);
 
+  // Toggle screen share
+  const toggleScreenShare = useCallback(async () => {
+    if (!webrtcRef.current) return;
+
+    if (isScreenSharing) {
+      await webrtcRef.current.stopScreenShare();
+      setIsScreenSharing(false);
+      log('User stopped screen share');
+    } else {
+      try {
+        await webrtcRef.current.startScreenShare();
+        setIsScreenSharing(true);
+        log('User started screen share');
+      } catch (err) {
+        log('Failed to start screen share', err);
+        return; // Failed to start
+      }
+    }
+    
+    // Update local stream state for UI
+    setLocalStream(webrtcRef.current.getLocalStream());
+
+  }, [isScreenSharing, log]);
+
   // Clean recording state if muted? No, independent.
 
   // Cleanup on unmount
@@ -1065,6 +1092,7 @@ export function useVoiceCall({
     remoteStream,
     webrtcState,
     isRecording,
+    isScreenSharing,
     error: state.error,
 
     startCall,
@@ -1074,6 +1102,7 @@ export function useVoiceCall({
     toggleMute,
     toggleVideo,
     toggleRecording,
+    toggleScreenShare,
 
     isReady: !!connection && !!writerCtx && !!userPubkey && tableReady,
   };
