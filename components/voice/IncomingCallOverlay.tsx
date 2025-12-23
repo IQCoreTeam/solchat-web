@@ -57,17 +57,27 @@ export function IncomingCallOverlay() {
         <div className="flex gap-4">
           <button
             onClick={() => rejectCall()}
-            className="flex items-center gap-2 px-6 py-3 rounded-full bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"
+            className="flex items-center gap-2 px-4 py-3 rounded-full bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"
           >
             <PhoneOffIcon />
             Decline
           </button>
+          
           <button
-            onClick={acceptCall}
-            className="flex items-center gap-2 px-6 py-3 rounded-full bg-green-600 hover:bg-green-700 text-white font-medium transition-colors"
+            onClick={() => acceptCall(false)}
+            className="flex items-center gap-2 px-4 py-3 rounded-full bg-green-600 hover:bg-green-700 text-white font-medium transition-colors"
           >
             <PhoneIcon />
-            Answer
+            Audio
+          </button>
+
+          <button
+            onClick={() => acceptCall(true)}
+            className="flex items-center gap-2 px-4 py-3 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
+          >
+             {/* Using a simpler inline video icon since I can't import the one from ActiveCallBar easily without code dupe or refactor */}
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+            Video
           </button>
         </div>
       </div>

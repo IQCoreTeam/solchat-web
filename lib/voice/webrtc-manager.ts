@@ -129,8 +129,8 @@ export class WebRTCManager {
   /**
    * Initialize the peer connection
    */
-  async initialize(): Promise<void> {
-    this.log('Initializing peer connection...');
+  async initialize(video: boolean = false): Promise<void> {
+    this.log('Initializing peer connection...', video ? '(Video Enabled)' : '(Audio Only)');
 
     this.pc = new RTCPeerConnection({
       iceServers: ICE_SERVERS,
@@ -240,7 +240,7 @@ export class WebRTCManager {
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
-        video: false,
+        video: video ? { facingMode: 'user' } : false,
       });
 
       // Add local tracks to peer connection
@@ -267,7 +267,7 @@ export class WebRTCManager {
 
     const offer = await this.pc.createOffer({
       offerToReceiveAudio: true,
-      offerToReceiveVideo: false,
+      offerToReceiveVideo: true,
     });
 
     await this.pc.setLocalDescription(offer);
@@ -372,6 +372,12 @@ export class WebRTCManager {
   private playRemoteStream(stream: MediaStream): void {
     this.log('playRemoteStream called, stream id:', stream.id);
 
+    // If stream has video, let the UI handle playback via <video> element
+    if (stream.getVideoTracks().length > 0) {
+      this.log('Stream has video tracks - skipping internal audio-only playback');
+      return;
+    }
+
     if (this.remoteAudio) {
       this.log('Cleaning up previous audio element');
       this.remoteAudio.pause();
@@ -415,6 +421,34 @@ export class WebRTCManager {
     if (!this.localStream) return true;
     const track = this.localStream.getAudioTracks()[0];
     return track ? !track.enabled : true;
+  }
+
+  /**
+   * Toggle local video
+   */
+  setVideoEnabled(enabled: boolean): void {
+    if (this.localStream) {
+      this.localStream.getVideoTracks().forEach((track) => {
+        track.enabled = enabled;
+      });
+      this.log('Video enabled:', enabled);
+    }
+  }
+
+  /**
+   * Check if video is enabled
+   */
+  get isVideoEnabled(): boolean {
+    if (!this.localStream) return false;
+    const track = this.localStream.getVideoTracks()[0];
+    return track ? track.enabled : false;
+  }
+
+  /**
+   * Get local stream
+   */
+  getLocalStream(): MediaStream | null {
+    return this.localStream;
   }
 
   /**

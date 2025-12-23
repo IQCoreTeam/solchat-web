@@ -61,14 +61,18 @@ interface UseVoiceCallReturn {
   isMuted: boolean;
   webrtcState: WebRTCState;
   isRecording: boolean;
+  isVideoEnabled: boolean; // Local video state
+  localStream: MediaStream | null;
+  remoteStream: MediaStream | null;
   error: string | null;
 
   // Actions
-  startCall: (targetPubkey: string) => Promise<boolean>;
-  acceptCall: () => Promise<boolean>;
+  startCall: (targetPubkey: string, video?: boolean) => Promise<boolean>;
+  acceptCall: (video?: boolean) => Promise<boolean>;
   rejectCall: (reason?: string) => Promise<void>;
   endCall: () => Promise<void>;
   toggleMute: () => void;
+  toggleVideo: () => void;
   toggleRecording: () => void;
 
   // Status
@@ -97,7 +101,10 @@ export function useVoiceCall({
   const [state, setState] = useState<CallState>(INITIAL_STATE);
   const [webrtcState, setWebrtcState] = useState<WebRTCState>('new');
   const [isMuted, setIsMuted] = useState(false);
+  const [isVideoEnabled, setIsVideoEnabled] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [tableReady, setTableReady] = useState(false);
 
   const webrtcRef = useRef<WebRTCManager | null>(null);
@@ -156,13 +163,17 @@ export function useVoiceCall({
     setState(INITIAL_STATE);
     setWebrtcState('new');
     setIsMuted(false);
+    setIsVideoEnabled(false);
     setIsRecording(false);
+    setLocalStream(null);
+    setRemoteStream(null);
   }, [log]);
 
   // Initialize WebRTC manager
   const initWebRTC = useCallback(async (
     callId: string,
-    remotePubkey: string
+    remotePubkey: string,
+    video: boolean = false
   ): Promise<WebRTCManager> => {
     if (!connection || !writerCtx || !userPubkey) {
       throw new Error('Missing connection or wallet');
@@ -202,6 +213,7 @@ export function useVoiceCall({
       },
       onRemoteStream: (stream) => {
         log('Remote stream received, tracks:', stream.getTracks().length);
+        setRemoteStream(stream);
       },
       onError: (error) => {
         log('WebRTC error:', error);
@@ -211,8 +223,10 @@ export function useVoiceCall({
       debug,
     });
 
-    await manager.initialize();
+    await manager.initialize(video);
     webrtcRef.current = manager;
+    setLocalStream(manager.getLocalStream());
+    setIsVideoEnabled(video);
 
     return manager;
   }, [connection, writerCtx, userPubkey, log, debug, onError]);
@@ -304,7 +318,7 @@ export function useVoiceCall({
         setState(prev => ({ ...prev, status: 'connecting' }));
 
         try {
-          const manager = await initWebRTC(signal.callId, signal.from);
+          const manager = await initWebRTC(signal.callId, signal.from, isVideoEnabled);
           const sdp = await manager.createOffer();
 
           // Prepare encryption if we have remote public key
@@ -421,7 +435,7 @@ export function useVoiceCall({
 
             try {
               if (!webrtcRef.current) {
-                await initWebRTC(signal.callId, signal.from);
+                await initWebRTC(signal.callId, signal.from, isVideoEnabled);
               }
 
               const answerSdp = await webrtcRef.current!.handleOffer(fullSdp);
@@ -660,7 +674,7 @@ export function useVoiceCall({
       });
       setState(prev => ({ ...prev, pendingIceCandidates: [] }));
     }
-  }, [state.pendingIceCandidates, log]);
+  }, [state.pendingIceCandidates, log, localStream]); // Added localStream as trigger for when WebRTC is ready
 
   // Poll for missed SDP chunks when in connecting state
   // This is the fallback mechanism to ensure we NEVER miss chunks due to TxRef overwrites
@@ -755,7 +769,7 @@ export function useVoiceCall({
   }, [state.status, state.callId, connection, userPubkey, log]);
 
   // Start a call
-  const startCall = useCallback(async (targetPubkey: string): Promise<boolean> => {
+  const startCall = useCallback(async (targetPubkey: string, video: boolean = false): Promise<boolean> => {
     if (!connection || !writerCtx || !userPubkey) {
       onError?.('Wallet not connected');
       return false;
@@ -792,6 +806,8 @@ export function useVoiceCall({
       remotePubkey: targetPubkey,
       isOutgoing: true,
     });
+    
+    setIsVideoEnabled(video);
 
     // Set timeout for offer
     offerTimeoutRef.current = setTimeout(() => {
@@ -806,7 +822,7 @@ export function useVoiceCall({
   }, [connection, writerCtx, userPubkey, state.status, log, cleanup, onError, getEncryptionKeypair]);
 
   // Accept incoming call
-  const acceptCall = useCallback(async (): Promise<boolean> => {
+  const acceptCall = useCallback(async (video: boolean = false): Promise<boolean> => {
     if (!connection || !writerCtx || !userPubkey) {
       return false;
     }
@@ -839,7 +855,7 @@ export function useVoiceCall({
 
     // Initialize WebRTC and wait for SDP offer
     try {
-      await initWebRTC(state.callId, state.remotePubkey);
+      await initWebRTC(state.callId, state.remotePubkey, video);
       setState(prev => ({ ...prev, status: 'connecting' }));
       return true;
     } catch (error) {
@@ -993,6 +1009,15 @@ export function useVoiceCall({
     }
   }, [isMuted]);
 
+  // Toggle video
+  const toggleVideo = useCallback(() => {
+    if (webrtcRef.current) {
+      const newVideo = !isVideoEnabled;
+      webrtcRef.current.setVideoEnabled(newVideo);
+      setIsVideoEnabled(newVideo);
+    }
+  }, [isVideoEnabled]);
+
   // Toggle recording
   const toggleRecording = useCallback(() => {
     if (!webrtcRef.current || state.status !== 'active') return;
@@ -1035,6 +1060,9 @@ export function useVoiceCall({
     remotePubkey: state.remotePubkey,
     isOutgoing: state.isOutgoing,
     isMuted,
+    isVideoEnabled,
+    localStream,
+    remoteStream,
     webrtcState,
     isRecording,
     error: state.error,
@@ -1044,6 +1072,7 @@ export function useVoiceCall({
     rejectCall,
     endCall,
     toggleMute,
+    toggleVideo,
     toggleRecording,
 
     isReady: !!connection && !!writerCtx && !!userPubkey && tableReady,

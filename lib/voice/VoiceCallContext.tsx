@@ -21,16 +21,22 @@ interface VoiceCallContextValue {
   remotePubkey: string | null;
   isOutgoing: boolean;
   isMuted: boolean;
+  isVideoEnabled: boolean;
+  isRecording: boolean;
   webrtcState: WebRTCState;
   error: string | null;
   isReady: boolean;
+  localStream: MediaStream | null;
+  remoteStream: MediaStream | null;
 
   // Actions
-  startCall: (targetPubkey: string) => Promise<boolean>;
-  acceptCall: () => Promise<boolean>;
+  startCall: (targetPubkey: string, video?: boolean) => Promise<boolean>;
+  acceptCall: (video?: boolean) => Promise<boolean>;
   rejectCall: (reason?: string) => Promise<void>;
   endCall: () => Promise<void>;
   toggleMute: () => void;
+  toggleVideo: () => void;
+  toggleRecording: () => void;
 
   // Duration tracking
   duration: number;

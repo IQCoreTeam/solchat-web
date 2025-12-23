@@ -3,7 +3,7 @@
 /**
  * VoiceCallUI Component
  *
- * Full on-chain signaling with WebRTC audio.
+ * Full on-chain signaling with WebRTC audio and video.
  * Shows call button, incoming call overlay, and active call bar.
  */
 
@@ -58,6 +58,18 @@ const StopIcon = () => (
   </svg>
 );
 
+const VideoIcon = () => (
+  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+    <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
+  </svg>
+);
+
+const VideoOffIcon = () => (
+  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+    <path d="M21 6.5l-4 4V7c0-.55-.45-1-1-1H9.82L21 17.18V6.5zM3.27 2L2 3.27 4.73 6H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.21 0 .39-.08.54-.18L19.73 21 21 19.73 3.27 2zM5 7h1.27l10 10H5V7z"/>
+  </svg>
+);
+
 // ============================================================================
 // Props
 // ============================================================================
@@ -79,6 +91,8 @@ export function VoiceCallUI({ userPubkey, connection, writerCtx, onError }: Voic
   const [duration, setDuration] = useState(0);
 
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
   const {
     status,
@@ -93,11 +107,14 @@ export function VoiceCallUI({ userPubkey, connection, writerCtx, onError }: Voic
     rejectCall,
     endCall,
     toggleMute,
+    toggleVideo,
     toggleRecording,
     isReady,
     isRecording,
+    isVideoEnabled,
+    localStream,
+    remoteStream,
   } = useVoiceCall({
-
     connection: connection || null,
     writerCtx: writerCtx || null,
     userPubkey,
@@ -127,9 +144,24 @@ export function VoiceCallUI({ userPubkey, connection, writerCtx, onError }: Voic
     };
   }, [status]);
 
+  // Attach streams to video elements
+  useEffect(() => {
+    if (localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
+    }
+    if (remoteVideoRef.current && remoteStream) {
+      remoteVideoRef.current.srcObject = remoteStream;
+    }
+  }, [localStream, remoteStream, status]);
+
   const handleStartCall = useCallback(async () => {
     if (!callTarget.trim()) return;
-    const success = await startCall(callTarget.trim());
+    // Default to video off unless we want to prompt
+    // For now, start with audio only? Or video?
+    // Let's assume audio only for "Call" button, maybe add "Video Call" later?
+    // Or just start with video enabled if they toggle it?
+    // Let's pass video: false by default for now
+    const success = await startCall(callTarget.trim(), false);
     if (success) {
       setShowCallInput(false);
       setCallTarget('');
@@ -191,7 +223,7 @@ export function VoiceCallUI({ userPubkey, connection, writerCtx, onError }: Voic
               Decline
             </button>
             <button
-              onClick={acceptCall}
+              onClick={() => acceptCall(false)} // Answer audio only by default
               className="flex items-center gap-2 px-6 py-3 rounded-full bg-green-600 hover:bg-green-700 text-white font-medium transition-colors"
             >
               <PhoneIcon />
@@ -205,8 +237,47 @@ export function VoiceCallUI({ userPubkey, connection, writerCtx, onError }: Voic
 
   // Active/connecting call bar
   if (status === 'active' || status === 'connecting' || status === 'accepting' || status === 'ending') {
+    const hasRemoteVideo = remoteStream && remoteStream.getVideoTracks().length > 0;
+    const hasLocalVideo = isVideoEnabled;
+    const showVideoOverlay = hasRemoteVideo || hasLocalVideo;
+
     return (
-      <div className="fixed top-0 left-0 right-0 bg-green-700 text-white py-2 px-4 flex items-center justify-between z-50">
+      <>
+        {/* Video Overlay - Only show if there is actual video */}
+        {showVideoOverlay && (
+          <div className="fixed bottom-20 right-4 w-72 h-48 bg-black rounded-lg overflow-hidden shadow-2xl z-40 border-2 border-gray-700 flex flex-col transition-all">
+             {/* Remote Video (Main) */}
+             <div className="flex-1 relative bg-gray-900 flex items-center justify-center">
+               {remoteStream ? (
+                  <video 
+                    ref={remoteVideoRef} 
+                    autoPlay 
+                    playsInline 
+                    className="w-full h-full object-cover" 
+                  />
+               ) : (
+                  <div className="flex flex-col items-center text-gray-500 text-xs">
+                    <span className="animate-pulse">Waiting for remote video...</span>
+                  </div>
+               )}
+               
+               {/* Local Video (PIP) */}
+               {localStream && isVideoEnabled && (
+                 <div className="absolute bottom-2 right-2 w-24 h-16 bg-gray-900 border border-gray-600 rounded overflow-hidden shadow-lg transform rotate-y-180">
+                    <video 
+                      ref={localVideoRef} 
+                      autoPlay 
+                      playsInline 
+                      muted 
+                      className="w-full h-full object-cover" 
+                    />
+                 </div>
+               )}
+             </div>
+          </div>
+        )}
+
+      <div className="fixed top-0 left-0 right-0 bg-green-700 text-white py-2 px-4 flex items-center justify-between z-50 shadow-lg">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1 text-green-200">
             <ChainIcon />
@@ -243,6 +314,16 @@ export function VoiceCallUI({ userPubkey, connection, writerCtx, onError }: Voic
           </button>
           
           <button
+            onClick={toggleVideo}
+            className={`p-2 rounded-full transition-colors ${
+              isVideoEnabled ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-600 hover:bg-gray-700'
+            }`}
+            title={isVideoEnabled ? 'Stop Video' : 'Start Video'}
+          >
+            {isVideoEnabled ? <VideoIcon /> : <VideoOffIcon />}
+          </button>
+
+          <button
             onClick={toggleRecording}
             className={`flex items-center gap-2 px-3 py-1 rounded-full border transition-colors ${
               isRecording 
@@ -264,6 +345,7 @@ export function VoiceCallUI({ userPubkey, connection, writerCtx, onError }: Voic
           </button>
         </div>
       </div>
+      </>
     );
   }
 
