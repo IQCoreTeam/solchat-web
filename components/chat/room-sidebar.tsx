@@ -7,7 +7,6 @@
 
 import { FormEvent } from 'react';
 import { shorten } from '@/lib/utils/message-utils';
-import type { WriterCtx } from '@/lib/onchainDB/web/writer';
 
 interface RoomMeta {
     seedHex: string;
@@ -37,9 +36,10 @@ interface RoomSidebarProps {
     roomAlerts: Record<string, boolean>;
 
     // Auth state
+    hasWallet: boolean;
     canWrite: boolean;
-    writerCtx: WriterCtx | null;
     isUserInitialized: boolean;
+    isUserInitializing: boolean;
     userInitError: Error | null;
 
     // Mobile
@@ -58,13 +58,14 @@ export function RoomSidebar({
                                 selectedSeed,
                                 onSelectRoom,
                                 roomsLoading,
-                                roomsError,
-                                roomAlerts,
-                                canWrite,
-                                writerCtx,
-                                isUserInitialized,
-                                userInitError,
-                                isSidebarOpen,
+    roomsError,
+    roomAlerts,
+    hasWallet,
+    canWrite,
+    isUserInitialized,
+    isUserInitializing,
+    userInitError,
+    isSidebarOpen,
                                 onCloseSidebar,
                             }: RoomSidebarProps) {
     return (
@@ -99,7 +100,7 @@ export function RoomSidebar({
                         placeholder="Room name"
                         className="w-full rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2"
                         style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
-                        disabled={creatingRoom || !writerCtx}
+                        disabled={creatingRoom || !hasWallet}
                     />
                     <input
                         type="text"
@@ -108,7 +109,7 @@ export function RoomSidebar({
                         placeholder="Gate mint (optional)"
                         className="w-full rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2"
                         style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
-                        disabled={creatingRoom || !writerCtx}
+                        disabled={creatingRoom || !hasWallet}
                     />
                     <button
                         type="submit"
@@ -129,10 +130,10 @@ export function RoomSidebar({
                     >
                         {creatingRoom ? 'Creating…' : 'Create'}
                     </button>
-                    {!writerCtx && (
+                    {!hasWallet && (
                         <p className="text-xs text-orange-300">Connect your wallet to create rooms.</p>
                     )}
-                    {writerCtx && !isUserInitialized && !userInitError && (
+                    {isUserInitializing && !isUserInitialized && !userInitError && (
                         <p className="text-xs text-yellow-300">Setting up your account…</p>
                     )}
                     {userInitError && (

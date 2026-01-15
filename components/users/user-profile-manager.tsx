@@ -1,6 +1,5 @@
 /**
  * User Profile Manager Component - Zo's Vision
- * Uses the new User account system with onchain metadata
  * - My Profile: Set name, bio, profile pic using updateUserMetadata
  * - All Users: Fetch all user pubkeys from admin table, then fetch each User account's metadata
  */
@@ -12,20 +11,15 @@ import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
 import { ProfileEditor } from './profile-editor';
 import { UserList } from './user-list';
-import { updateUserMetadataWeb, pdaUser, pdaRoot, pdaTable, pdaDmTable, createExtTableWeb, writeRowWeb, readRowsByTable, requestDmWeb } from '@/lib/onchainDB';
-import { getAnchorProvider, getProgram, type WalletAdapterLike } from '@/lib/onchainDB/web/provider';
 import { getCachedAccountInfo } from '@/lib/rpc/cache';
-import idl from '@/lib/onchainDB/idl.json';
+import { PublicKey, SystemProgram, type AccountInfo } from '@solana/web3.js';
+import { Buffer } from 'buffer';
 import type { Idl } from '@coral-xyz/anchor';
-import { ROOT_ID, MESSAGE_COLUMNS } from '@/lib/onchainDB/constants';
-import { PublicKey } from '@solana/web3.js';
-import { sendAndConfirmTx } from '@/lib/onchainDB/utils/transaction-helpers';
-import type { AccountInfo } from '@solana/web3.js';
-import type { WriterCtx } from '@/lib/onchainDB/web/writer';
-import {codeInWithonlyTailTx, initializeUser, WalletExecutor} from '@/lib/iq/transaction';
-import { reconstructMessageFromChainForTailTx } from '@/lib/iq/reader';
-import {getDBPDA} from "@/lib/iq";
-import { deriveDmSeed } from '@/lib/friends/utils';
+import iqlabs from 'iqlabs-sdk/src';
+import idl from 'iqlabs-sdk/idl/code_in.json';
+import type { SignerInput } from 'iqlabs-sdk/src/sdk/utils/wallet';
+import { sendTx } from 'iqlabs-sdk/src/sdk/writer/writer_utils';
+import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
 
 export interface UserProfile {
   pubkey: string;
@@ -35,30 +29,50 @@ export interface UserProfile {
   timestamp?: number;
 }
 
-type ProgramIdl = Idl & { address?: string };
+// Helper: Extract metadata string from User account
+function extractUserMetadata(info?: AccountInfo<Buffer> | null): string {
+  if (!info?.data) return '';
+  try {
+    const data = Buffer.from(info.data);
+    let offset = 8; // discriminator
+    offset += 32; // owner
+    if (offset + 4 > data.length) return '';
+    const dataLen = data.readUInt32LE(offset);
+    offset += 4 + dataLen;
+    if (offset + 4 > data.length) return '';
+    const metadataLen = data.readUInt32LE(offset);
+    offset += 4;
+    if (metadataLen <= 0 || offset + metadataLen > data.length) return '';
+    return data.slice(offset, offset + metadataLen).toString('utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
+// Helper: Parse metadata (txID or direct JSON)
+async function parseMetadata(
+  connection: ReturnType<typeof useAppConnection>['connection'],
+  metadataStr: string
+): Promise<{ name: string; bio: string; profilePicture: string } | null> {
+  if (!metadataStr || metadataStr.length <= 2) return null;
+
+  try {
+    // Check if it's a txID (base58, 88-90 chars)
+    if (metadataStr.length <= 100 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(metadataStr)) {
+      const result = await iqlabs.reader.readCodeIn(metadataStr);
+      if (!result?.data || result.data.startsWith('[unable')) return null;
+      return JSON.parse(result.data);
+    }
+    // Direct JSON
+    return JSON.parse(metadataStr);
+  } catch {
+    return null;
+  }
+}
 
 export function UserProfileManager() {
   const { connection } = useAppConnection();
   const wallet = useAppWallet();
-  const writerWallet = useMemo<WalletAdapterLike | null>(() => {
-    if (!wallet?.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) {
-      return null;
-    }
-    return {
-      publicKey: wallet.publicKey,
-      signTransaction: wallet.signTransaction.bind(wallet),
-      signAllTransactions: wallet.signAllTransactions.bind(wallet),
-    };
-  }, [wallet]);
-  const writerCtx = useMemo<WriterCtx | null>(() => {
-    if (!writerWallet) return null;
-    return {
-      connection,
-      wallet: writerWallet,
-      idl: idl as ProgramIdl,
-      programId: (idl as ProgramIdl).address,
-    };
-  }, [connection, writerWallet]);
   const { ready, authenticated, login } = usePrivy();
   const userAddress = wallet?.publicKey?.toBase58();
 
@@ -68,217 +82,112 @@ export function UserProfileManager() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'my-profile' | 'all-users'>('my-profile');
 
+  const programId = useMemo(() => iqlabs.contract.getProgramId(), []);
+  const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
+  const dbRoot = useMemo(() => iqlabs.contract.getDbRootPda(dbRootId, programId), [dbRootId, programId]);
+  const builder = useMemo(() => iqlabs.contract.createInstructionBuilder(idl as Idl, programId), [programId]);
+
+  const signer = useMemo<SignerInput | null>(() => {
+    if (!wallet?.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) return null;
+    return {
+      publicKey: wallet.publicKey,
+      signTransaction: wallet.signTransaction.bind(wallet),
+      signAllTransactions: wallet.signAllTransactions.bind(wallet),
+    } as SignerInput;
+  }, [wallet]);
+
   // Load user's profile from their User account
   const loadMyProfile = useCallback(async () => {
-    if (!userAddress || !connection) return;
+    if (!userAddress) return;
 
     setLoading(true);
     setError(null);
     try {
       const userPk = new PublicKey(userAddress);
-      const rootPk = pdaRoot(ROOT_ID);
-      const userAccount = pdaUser(rootPk, userPk);
+      const userPda = iqlabs.contract.getUserPda(userPk, programId);
 
-      console.log('[UserProfile] Fetching User account:', userAccount.toBase58());
-
-      // Fetch the User account (cached)
-      const accountInfo = await getCachedAccountInfo(connection, userAccount);
-
-      if (accountInfo && accountInfo.data) {
-        // Parse the User account data
-        // User struct: { owner: Pubkey (32), data: Vec<u8> (4 + len), metadata: Vec<u8> (4 + len) }
-        const data = Buffer.from(accountInfo.data);
-
-        // Skip discriminator (8 bytes)
-        let offset = 8;
-
-        // Skip owner (32 bytes)
-        offset += 32;
-
-        // Skip data Vec (4 bytes length + data)
-        const dataLen = data.readUInt32LE(offset);
-        offset += 4 + dataLen;
-
-        // Read metadata Vec
-        const metadataLen = data.readUInt32LE(offset);
-        offset += 4;
-        const metadataBytes = data.slice(offset, offset + metadataLen);
-        const metadata: string = metadataBytes.toString('utf8');
-
-        console.log('[UserProfile] Raw metadata:', metadata);
-
-        if (typeof metadata === 'string' && metadata.length > 2) {
-          const metadataStr = metadata ?? "";
-          try {
-            // Zo's system: Check if metadata is a transaction ID
-            // Transaction IDs are typically 88-90 chars, alphanumeric (base58)
-            let profileData;
-
-            if (metadataStr.length <= 100 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(metadataStr)) {
-              // Looks like a transaction ID, reconstruct the original JSON
-              console.log('[UserProfile] Metadata is txID, reconstructing from chain...');
-              const reconstructed = await reconstructMessageFromChainForTailTx(
-                connection,
-                String(metadataStr ?? '')
-              );
-
-              if (!reconstructed || reconstructed.startsWith('[unable')) {
-                throw new Error('Failed to reconstruct metadata from transaction');
-              }
-
-              console.log('[UserProfile] Reconstructed metadata:', reconstructed);
-              profileData = JSON.parse(reconstructed);
-            } else {
-              // Direct JSON metadata (backwards compatibility)
-              console.log('[UserProfile] Metadata is direct JSON');
-              profileData = JSON.parse(metadataStr);
-            }
-
-            setMyProfile({
-              pubkey: userAddress,
-              name: profileData.name || '',
-              bio: profileData.bio || '',
-              profilePicture: profileData.profilePicture || '',
-              timestamp: Date.now(),
-            });
-            console.log('[UserProfile] Loaded profile from User account');
-          } catch (parseErr) {
-            console.error('[UserProfile] Failed to parse metadata:', parseErr);
-            setMyProfile({
-              pubkey: userAddress,
-              name: '',
-              bio: '',
-              profilePicture: '',
-              timestamp: Date.now(),
-            });
-          }
-        } else {
-          console.log('[UserProfile] No metadata found');
-          setMyProfile({
-            pubkey: userAddress,
-            name: '',
-            bio: '',
-            profilePicture: '',
-            timestamp: Date.now(),
-          });
-        }
-      } else {
-        console.log('[UserProfile] User account not found (not initialized yet)');
+      const accountInfo = await getCachedAccountInfo(connection, userPda);
+      if (!accountInfo?.data) {
         setMyProfile(null);
+        return;
       }
+
+      const metadataStr = extractUserMetadata(accountInfo);
+      const profileData = await parseMetadata(connection, metadataStr);
+
+      setMyProfile({
+        pubkey: userAddress,
+        name: profileData?.name || '',
+        bio: profileData?.bio || '',
+        profilePicture: profileData?.profilePicture || '',
+        timestamp: Date.now(),
+      });
     } catch (err) {
       console.error('[UserProfile] Error loading profile:', err);
       setError(err instanceof Error ? err.message : 'Failed to load profile');
     } finally {
       setLoading(false);
     }
-  }, [userAddress, connection]);
+  }, [userAddress, connection, programId]);
 
-  // Load all user profiles from global_user_list admin table
+  // Load all user profiles from global_user_list table
   const loadAllProfiles = useCallback(async () => {
-    if (!connection) return;
+    if (!userAddress) return;
 
     setLoading(true);
     setError(null);
     try {
-      console.log('[UserProfile] Fetching global_user_list admin table...');
+      // Get global_user_list table
+      const tableSeed = Buffer.from('global_user_list', 'utf8');
+      const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed, programId);
+      const tableInfo = await connection.getAccountInfo(tablePda);
 
-      // Fetch all rows from global_user_list table
-      if (!userAddress) {
+      if (!tableInfo) {
         setAllProfiles([]);
         return;
       }
-      const rows = await readRowsByTable({
-        connection,
-        rootId: ROOT_ID,
-        userPublicKey: userAddress,
-        tableName: 'global_user_list',
-        idl: idl as any,
-      });
 
-      console.log('[UserProfile] Found', rows.length, 'users in global_user_list');
+      // Fetch all rows from table
+      const rows = await iqlabs.reader.readTableRows(tablePda);
 
-      const rootPk = pdaRoot(ROOT_ID);
-      const profiles: UserProfile[] = [];
-
-      // Collect all user pubkeys and their PDAs for batch fetching
-      const userEntries: { pubkeyString: string; userAccount: PublicKey }[] = [];
+      // Extract user pubkeys
+      const userPubkeys: string[] = [];
       for (const row of rows) {
-        const pubkeyString = (row as any).pubkeyString || (row as any).pubkey;
-        if (!pubkeyString) {
-          console.warn('[UserProfile] No pubkeyString found in row:', row);
-          continue;
-        }
-        try {
-          const userPk = new PublicKey(pubkeyString);
-          const userAccount = pdaUser(rootPk, userPk);
-          userEntries.push({ pubkeyString, userAccount });
-        } catch (err) {
-          console.error('[UserProfile] Invalid pubkey:', pubkeyString, err);
-        }
+        const pubkeyStr = (row as any).pubkeyString || (row as any).pubkey;
+        if (pubkeyStr) userPubkeys.push(pubkeyStr);
       }
 
-      if (userEntries.length === 0) {
+      if (userPubkeys.length === 0) {
         setAllProfiles([]);
         return;
       }
 
-      console.log('[UserProfile] Batch fetching', userEntries.length, 'User accounts...');
+      // Batch fetch User accounts
+      const userPdas = userPubkeys.map(pk => iqlabs.contract.getUserPda(new PublicKey(pk), programId));
+      const accountInfos = await connection.getMultipleAccountsInfo(userPdas);
 
-      // Batch fetch all user accounts using getMultipleAccountsInfo
-      const userAccountPdas = userEntries.map((e) => e.userAccount);
-      const accountInfos = await connection.getMultipleAccountsInfo(userAccountPdas);
-
-      // Process each account
-      for (let i = 0; i < userEntries.length; i++) {
-        const { pubkeyString } = userEntries[i];
+      // Parse profiles
+      const profiles: UserProfile[] = [];
+      for (let i = 0; i < userPubkeys.length; i++) {
+        const pubkey = userPubkeys[i];
         const accountInfo = accountInfos[i];
 
-        try {
-          const metadata: string = extractUserMetadataString(accountInfo);
-          if (typeof metadata === 'string' && metadata.length > 2) {
-            const metadataStr = metadata ?? "";
-            try {
-              const profileData =
-                metadataStr.length <= 100 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(metadataStr)
-                  ? JSON.parse(
-                      await reconstructMessageFromChainForTailTx(connection, metadataStr) as string
-                    )
-                  : JSON.parse(metadataStr);
+        const metadataStr = extractUserMetadata(accountInfo);
+        const profileData = await parseMetadata(connection, metadataStr);
 
-              profiles.push({
-                pubkey: pubkeyString,
-                name: profileData.name || '',
-                bio: profileData.bio || '',
-                profilePicture: profileData.profilePicture || '',
-                timestamp: Date.now(),
-              });
-            } catch (parseErr) {
-              console.error('[UserProfile] Failed to parse metadata for', pubkeyString, parseErr);
-              profiles.push({
-                pubkey: pubkeyString,
-                name: '',
-                bio: '',
-                profilePicture: '',
-                timestamp: Date.now(),
-              });
-            }
-          }
-        } catch (err) {
-          console.error('[UserProfile] Error processing user:', pubkeyString, err);
-        }
+        profiles.push({
+          pubkey,
+          name: profileData?.name || '',
+          bio: profileData?.bio || '',
+          profilePicture: profileData?.profilePicture || '',
+          timestamp: Date.now(),
+        });
       }
 
-      const uniqueProfiles = Array.from(
-        new Map(profiles.map((profile) => [profile.pubkey, profile])).values()
-      );
-      console.log('[UserProfile] Loaded', uniqueProfiles.length, 'unique user profiles');
-      setAllProfiles(uniqueProfiles);
+      setAllProfiles(profiles);
     } catch (err) {
       console.error('[UserProfile] Error loading profiles:', err);
-      // If table doesn't exist yet, just show empty list
       if (err instanceof Error && err.message.includes('Account does not exist')) {
-        console.log('[UserProfile] Userlist table not created yet');
         setAllProfiles([]);
       } else {
         setError(err instanceof Error ? err.message : 'Failed to load profiles');
@@ -286,179 +195,160 @@ export function UserProfileManager() {
     } finally {
       setLoading(false);
     }
-  }, [connection, userAddress]);
+  }, [connection, userAddress, dbRoot, programId]);
 
-  // Save user profile using updateUserMetadata
-  const saveProfile = useCallback(async (profile: Omit<UserProfile, 'pubkey'>) => {
-    if (!userAddress || !connection || !wallet) {
-      throw new Error('Wallet not connected');
-    }
+  // Save user profile
+  const saveProfile = useCallback(
+    async (profile: Omit<UserProfile, 'pubkey'>) => {
+      if (!userAddress || !signer) throw new Error('Wallet not connected');
 
-    setError(null);
-    try {
-      const rootPk = pdaRoot(ROOT_ID);
-      const userPk = new PublicKey(userAddress);
-      const userPda = pdaUser(rootPk, userPk);
-
-      // Prepare full metadata JSON (can be up to 1MB!)
-      const fullMetadata = JSON.stringify({
-        name: profile.name,
-        bio: profile.bio,
-        profilePicture: profile.profilePicture,
-      });
-
-      console.log('[UserProfile] Storing metadata with codeInWithonlyTailTx...');
-      console.log('[UserProfile] Metadata size:', fullMetadata.length, 'bytes');
-      console.log('[UserProfile] Metadata content:', fullMetadata);
-
-      const DBPDA = await getDBPDA(userAddress);
-      const isUserHaveIQPDA = await connection.getAccountInfo(new PublicKey(DBPDA));
-      if (!isUserHaveIQPDA) {
-        console.log('[UserProfile] Creating IQPDA for user...');
-          const signingWallet: WalletExecutor = {
-              publicKey: wallet.publicKey!,
-              signTransaction: wallet.signTransaction ?? undefined,
-              sendTransaction: wallet.sendTransaction ?? undefined,
-          };
-        const createIQPDA = await initializeUser(connection,signingWallet);
-        console.log('[UserProfile] IQPDA created:', createIQPDA);
-      }
-      // Zo's system: Store full metadata as transaction, get txID (90 bytes)
-      const txId = await codeInWithonlyTailTx(
-        connection,
-        wallet as any,
-        fullMetadata,
-        'profile-metadata',
-        userAddress
-      );
-
-      if (!txId) {
-        throw new Error('Failed to store metadata transaction - no txID returned');
-      }
-
-      console.log('[UserProfile] Metadata stored in txID:', txId);
-      console.log('[UserProfile] txID length:', txId.length);
-      console.log('[UserProfile] Saving txID with updateUserMetadata...');
-
-      // Snapshot before updating
-      const metadataBefore = extractUserMetadataString(await connection.getAccountInfo(userPda));
-
-      // Create writer context
-      if (!writerWallet) {
-        throw new Error('Wallet not connected');
-      }
-      const writerCtx: WriterCtx = {
-        wallet: writerWallet,
-        connection,
-        idl: idl as Idl,
-      };
-
-      // Save the txID (90 bytes) in User account
-      const { tx } = await updateUserMetadataWeb(writerCtx, ROOT_ID, txId);
-
-      // Send transaction
-      await sendAndConfirmTx(connection, wallet, tx, '[UserProfile] Profile saved!');
-
-      const userAccountAfter = await connection.getAccountInfo(userPda);
-      const metadataAfter = extractUserMetadataString(userAccountAfter);
-
-      const addedMetadataThisCall = !metadataBefore && !!metadataAfter;
-
-      if (addedMetadataThisCall) {
-         // alert('added metadata in this call!');
-        try {
-          console.log('[UserProfile] Adding user to global_user_list table...');
-
-          // Check if global_user_list table exists by checking the account directly
-          const tablePk = pdaTable(rootPk, 'global_user_list');
-          const tableAccount = await connection.getAccountInfo(tablePk);
-
-          if (!tableAccount) {
-            // Create global_user_list table if it doesn't exist
-            console.log('[UserProfile] Creating global_user_list admin table...');
-            const { tx: createTableTx } = await createExtTableWeb(
-              writerCtx,
-              ROOT_ID,
-              'global_user_list',
-              ['pubkeyString'],
-              { idColumn: 'pubkeyString' }
-            );
-
-            const tableSig = await sendAndConfirmTx(connection, wallet, createTableTx, '[UserProfile] global_user_list table created:');
-            // Wait a bit for the table to be fully initialized
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          } else {
-            console.log('[UserProfile] global_user_list table already exists');
-          }
-
-          // Add user pubkey to global_user_list
-          const globalUserListRow = JSON.stringify({
-            pubkeyString: userAddress,
-          });
-
-          const { tx: rowTx } = await writeRowWeb(writerCtx, ROOT_ID, 'global_user_list', globalUserListRow);
-
-          const rowSig = await sendAndConfirmTx(connection, wallet, rowTx, '[UserProfile] User added to global_user_list! Signature:');
-          setTimeout(() => loadAllProfiles(), 1000);
-        } catch (listErr) {
-          console.error('[UserProfile] Error managing global_user_list:', listErr);
-          // Don't fail the whole operation if global_user_list update fails
-        }
-      }
-
-      const fullProfile: UserProfile = {
-        pubkey: userAddress,
-        ...profile,
-        timestamp: Date.now(),
-      };
-
-      setMyProfile(fullProfile);
-
-      return fullProfile;
-    } catch (err) {
-      console.error('[UserProfile] Error saving profile:', err);
-      throw err;
-    }
-  }, [userAddress, connection, wallet, loadAllProfiles]);
-
-  const handleSendFriendRequest = useCallback(
-    async (targetPubkey: string) => {
-      if (!userAddress || !wallet?.publicKey) {
-        throw new Error('Wallet not connected');
-      }
-      if (targetPubkey === userAddress) {
-        throw new Error('Cannot add yourself as a friend');
-      }
-      if (!writerCtx) {
-        throw new Error('Wallet not ready');
-      }
-      const programId = (idl as ProgramIdl).address;
-      const rootPk = pdaRoot(ROOT_ID, programId);
-      const dmSeed = deriveDmSeed(userAddress, targetPubkey);
-      const dmPda = pdaDmTable(rootPk, dmSeed, programId);
-      const existing = await connection.getAccountInfo(dmPda);
-      if (existing) {
-        throw new Error('Connection already exists :3');
-      }
+      setError(null);
       try {
-        const { tx } = await requestDmWeb(
-          writerCtx,
-          ROOT_ID,
-          dmSeed,
-          'dm',
-          [...MESSAGE_COLUMNS],
-          targetPubkey,
-          {},
-          { idColumn: 'id' }
+        const userPk = new PublicKey(userAddress);
+        const userPda = iqlabs.contract.getUserPda(userPk, programId);
+
+        // Prepare metadata JSON
+        const fullMetadata = JSON.stringify({
+          name: profile.name,
+          bio: profile.bio,
+          profilePicture: profile.profilePicture,
+        });
+
+        console.log('[UserProfile] Storing metadata with iqlabs.writer.codeIn...');
+
+        // Store metadata as transaction, get txID
+        // SDK's codeIn automatically handles user initialization with ensureUserInitialized
+        const result = await iqlabs.writer.codeIn(
+          connection,
+          signer,
+          fullMetadata,
+          Buffer.from('profile-metadata', 'utf8')
         );
-        await sendAndConfirmTx(connection, writerCtx.wallet, tx, '[UserList] Friend request sent:');
+
+        if (!result?.tailTx) throw new Error('Failed to store metadata transaction');
+        const txId = result.tailTx;
+
+        console.log('[UserProfile] Metadata stored in txID:', txId);
+
+        // Check if this is first time setting metadata
+        const metadataBefore = extractUserMetadata(await connection.getAccountInfo(userPda));
+
+        // Update User account with txID
+        const ix = iqlabs.contract.updateUserMetadataInstruction(
+          builder,
+          {
+            user: userPk,
+            user_state: userPda,
+            system_program: SystemProgram.programId,
+          },
+          { metadata: Buffer.from(txId, 'utf8') }
+        );
+
+        await sendTx(connection, signer, ix);
+
+        const metadataAfter = extractUserMetadata(await connection.getAccountInfo(userPda));
+        const addedMetadataThisCall = !metadataBefore && !!metadataAfter;
+
+        // Add to global_user_list if first time
+        if (addedMetadataThisCall) {
+          try {
+            const tableSeed = Buffer.from('global_user_list', 'utf8');
+            const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed, programId);
+            const tableInfo = await connection.getAccountInfo(tablePda);
+
+            // Create table if doesn't exist
+            if (!tableInfo) {
+              const createTableIx = iqlabs.contract.createExtTableInstruction(
+                builder,
+                {
+                  db_root: dbRoot,
+                  table: tablePda,
+                  signer: userPk,
+                  system_program: SystemProgram.programId,
+                },
+                {
+                  table_seed: tableSeed,
+                  column_names: [Buffer.from('pubkeyString', 'utf8')],
+                  id_column: Buffer.from('pubkeyString', 'utf8'),
+                }
+              );
+              await sendTx(connection, signer, createTableIx);
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+
+            // Write user row
+            const rowData = JSON.stringify({ pubkeyString: userAddress });
+            const writeIx = iqlabs.contract.writeRowInstruction(
+              builder,
+              {
+                db_root: dbRoot,
+                table: tablePda,
+                signer: userPk,
+              },
+              { row_data: Buffer.from(rowData, 'utf8') }
+            );
+            await sendTx(connection, signer, writeIx);
+
+            setTimeout(() => loadAllProfiles(), 1000);
+          } catch (listErr) {
+            console.error('[UserProfile] Error managing global_user_list:', listErr);
+          }
+        }
+
+        const fullProfile: UserProfile = {
+          pubkey: userAddress,
+          ...profile,
+          timestamp: Date.now(),
+        };
+
+        setMyProfile(fullProfile);
+        return fullProfile;
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to send friend request';
-        console.error('[UserProfileManager] requestDmWeb error', err);
-        throw new Error(message);
+        console.error('[UserProfile] Error saving profile:', err);
+        throw err;
       }
     },
-    [connection, userAddress, wallet?.publicKey, writerCtx]
+    [userAddress, connection, wallet, signer, programId, dbRoot, builder, loadAllProfiles]
+  );
+
+  // Send friend request
+  const handleSendFriendRequest = useCallback(
+    async (targetPubkey: string) => {
+      if (!userAddress || !signer) throw new Error('Wallet not connected');
+      if (targetPubkey === userAddress) throw new Error('Cannot add yourself as a friend');
+
+      const userPk = new PublicKey(userAddress);
+      const targetPk = new PublicKey(targetPubkey);
+      const dmSeed = iqlabs.utils.deriveDmSeed(userAddress, targetPubkey);
+      const dmPda = iqlabs.contract.getConnectionTablePda(dbRoot, dmSeed, programId);
+
+      const existing = await connection.getAccountInfo(dmPda);
+      if (existing) throw new Error('Connection already exists :3');
+
+      try {
+        const ix = iqlabs.contract.requestDmInstruction(
+          builder,
+          {
+            db_root: dbRoot,
+            connection_table: dmPda,
+            signer: userPk,
+            target: targetPk,
+            system_program: SystemProgram.programId,
+          },
+          {
+            dm_seed: dmSeed,
+            table_name: Buffer.from(DM_TABLE_NAME, 'utf8'),
+            column_names: MESSAGE_COLUMNS.map(c => Buffer.from(c, 'utf8')),
+            id_column: Buffer.from('id', 'utf8'),
+          }
+        );
+        await sendTx(connection, signer, ix);
+      } catch (err) {
+        console.error('[UserProfileManager] requestDm error', err);
+        throw err;
+      }
+    },
+    [connection, userAddress, signer, dbRoot, programId, builder]
   );
 
   useEffect(() => {
@@ -468,11 +358,8 @@ export function UserProfileManager() {
     }
   }, [userAddress, loadMyProfile, loadAllProfiles]);
 
-  // Handle login
   const handleLogin = () => {
-    if (ready && !authenticated) {
-      login();
-    }
+    if (ready && !authenticated) login();
   };
 
   if (!ready) {
@@ -502,7 +389,6 @@ export function UserProfileManager() {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-6xl">
-      {/* Header */}
       <div className="mb-8">
         <h1 className="text-4xl font-bold text-green-400 mb-2">User Profiles</h1>
         <p className="text-white/60">
@@ -510,14 +396,12 @@ export function UserProfileManager() {
         </p>
       </div>
 
-      {/* Error Banner */}
       {error && (
         <div className="mb-6 p-4 bg-red-900/30 border border-red-500 rounded text-red-400">
           {error}
         </div>
       )}
 
-      {/* Tabs */}
       <div className="flex gap-4 mb-6 border-b border-white/10">
         <button
           onClick={() => setActiveTab('my-profile')}
@@ -541,14 +425,9 @@ export function UserProfileManager() {
         </button>
       </div>
 
-      {/* Content */}
       <div className="mt-6">
         {activeTab === 'my-profile' && (
-          <ProfileEditor
-            profile={myProfile}
-            onSave={saveProfile}
-            loading={loading}
-          />
+          <ProfileEditor profile={myProfile} onSave={saveProfile} loading={loading} />
         )}
         {activeTab === 'all-users' && (
           <UserList
@@ -560,7 +439,6 @@ export function UserProfileManager() {
         )}
       </div>
 
-      {/* Info Box */}
       <div className="mt-12 p-6 bg-green-900/10 border border-green-700/30 rounded-lg">
         <h3 className="text-green-400 font-bold mb-2">About This Feature - Zo's New User Account System</h3>
         <p className="text-white/70 text-sm mb-2">
@@ -592,25 +470,4 @@ export function UserProfileManager() {
       </div>
     </div>
   );
-}
-
-function extractUserMetadataString(info?: AccountInfo<Buffer> | null): string {
-  if (!info || !info.data) return ''
-  try {
-    const data = Buffer.from(info.data)
-    let offset = 8 // discriminator
-    offset += 32 // owner
-    if (offset + 4 > data.length) return ''
-    const dataLen = data.readUInt32LE(offset)
-    offset += 4 + dataLen
-    if (offset + 4 > data.length) return ''
-    const metadataLen = data.readUInt32LE(offset)
-    offset += 4
-    if (metadataLen <= 0 || offset + metadataLen > data.length) return ''
-    const metadataBytes = data.slice(offset, offset + metadataLen)
-    const metadata = metadataBytes.toString('utf8').trim()
-    return metadata.length > 0 ? metadata : ''
-  } catch {
-    return ''
-  }
 }

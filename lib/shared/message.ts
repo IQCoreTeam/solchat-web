@@ -1,4 +1,4 @@
-import type { MessageRow } from '@/lib/onchainDB/utils/message-helpers';
+import type { MessageRow } from './message-helpers';
 
 export type MessagePayload = {
   id: string;

@@ -13,8 +13,7 @@
     "@coral-xyz/anchor": "^0.32.1",
     "@noble/hashes": "^2.0.1",
     "@privy-io/react-auth": "^3.6.1",
-    "@solana-program/memo": "^0.10.0",
-    "@solana/kit": "^5.0.0",
+    "@solana-program/memo": "^0.8.0",
     "@solana/spl-token": "^0.4.14",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-react": "^0.15.39",
@@ -26,7 +25,6 @@
     "bs58": "^6.0.0",
     "dayjs": "^1.11.19",
     "hanlock": "^1.0.2",
-    "iq-sdk": "^1.0.7",
     "next": "16.0.1",
     "next-themes": "^0.4.6",
     "react": "19.2.0",
@@ -34,7 +32,8 @@
     "react95": "^4.0.0",
     "styled-components": "^6.1.19",
     "tweetnacl": "^1.0.3",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "iqlabs-sdk": "file:../iqlabs-sdk"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

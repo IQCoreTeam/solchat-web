@@ -7,40 +7,39 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PublicKey } from '@solana/web3.js';
+import { Buffer } from 'buffer';
 import type { FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { useFriends } from '@/lib/friends/use-friends';
 import { FriendCard } from './friend-card';
 import { AddFriendForm } from './add-friend-form';
-import { configs, requestDmWeb, manageDmWeb, writeDmRowWeb, type WriterCtx } from '@/lib/onchainDB';
-import { readRowsByDmSeed, invalidateDmCache } from '@/lib/onchainDB/web/cached-reader-integration';
-import { deriveDmSeed, shortenAddress } from '@/lib/friends/utils';
+import iqlabs from 'iqlabs-sdk/src';
+import idl from 'iqlabs-sdk/idl/code_in.json';
+import type { SignerInput } from 'iqlabs-sdk/src/sdk/utils/wallet';
+import { sendTx } from 'iqlabs-sdk/src/sdk/writer/writer_utils';
+import { shortenAddress } from '@/lib/friends/utils';
 import { DM_STATUS } from '@/lib/friends/types';
 import type { Friend } from '@/lib/friends/types';
-import idl from '@/lib/onchainDB/idl.json';
 import { Idl } from '@coral-xyz/anchor';
-import type { WalletAdapterLike } from '@/lib/onchainDB/web/provider';
 import { Window, WindowHeader, WindowContent, Button, Cutout } from 'react95';
 import { MessageBubble } from '@/components/ui/message-bubble';
 import { MessageInputForm } from '@/components/chat/message-input-form';
 import { normalizeFileUrl } from '@/lib/utils/message-utils';
 import { GlobalStyles } from './theme';
-import { ROOT_ID, MESSAGE_COLUMNS } from '@/lib/onchainDB/constants';
-import { sendAndConfirmTx } from '@/lib/onchainDB/utils/transaction-helpers';
-import { rowToMessage } from '@/lib/onchainDB/utils/message-helpers';
-import { mergeMessages, type MessagePayload } from '@/lib/onchainDB/shared/message';
-import { usePendingMessages } from '@/lib/onchainDB/shared/use-pending-messages';
-import { useMessageIndexLoader, type FetchConfig } from '@/lib/onchainDB/shared/useMessageIndexLoader';
-import { useOnAccountChange } from '@/lib/onchainDB/shared/useOnAccountChange';
+import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
+import { rowToMessage } from '@/lib/shared/message-helpers';
+import { mergeMessages, type MessagePayload } from '@/lib/shared/message';
+import { usePendingMessages } from '@/lib/shared/use-pending-messages';
+import { useMessageIndexLoader, type FetchConfig } from '@/lib/shared/useMessageIndexLoader';
+import { useOnAccountChange } from '@/lib/shared/useOnAccountChange';
 import { makeDmTimestampKey, setLastMessageTimestamp, getLastMessageTimestamp } from '@/lib/cache/message-timestamp-cache';
 import { NotificationToggle } from '@/components/ui/notification-toggle';
 import { RpcConfigPrompt } from '@/components/ui/rpc-config-prompt';
 import { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
 import { invalidateSignatureCache } from '@/lib/rpc/cache';
+import { useUserInit } from '@/lib/iqlabs/use-user-init';
 type Tab = 'all' | 'pending' | 'blocked';
-type ProgramIdl = Idl & { address?: string };
-const FRIENDS_IDL = idl as ProgramIdl;
 
 type FriendsListProps = {
     dmQueryAddress?: string;
@@ -58,11 +57,23 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     const wallet = useAppWallet();
     const router = useRouter();
     const userAddress = wallet?.publicKey?.toBase58();
+    const {
+        isInitialized: isUserInitialized,
+        error: userInitError,
+    } = useUserInit();
+    const programId = useMemo(() => iqlabs.contract.getProgramId(), []);
+    const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
+    const dbRoot = useMemo(
+        () => iqlabs.contract.getDbRootPda(dbRootId, programId),
+        [dbRootId, programId]
+    );
+    const builder = useMemo(
+        () => iqlabs.contract.createInstructionBuilder(idl as Idl, programId),
+        [programId]
+    );
     const { friends, loading, error: friendsError, refetch } = useFriends({
         connection,
         userAddress: userAddress || '',
-        programId: configs.programId,
-        idl: FRIENDS_IDL,
     });
 
     /* --------------------------------------------------------------------------
@@ -123,10 +134,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     const dmMarkerClearTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const dmLastPongRef = useRef<number>(Date.now());
 
-    /* --------------------------------------------------------------------------
-     * Writer Context
-     * -------------------------------------------------------------------------- */
-    const writerWallet = useMemo<WalletAdapterLike | null>(() => {
+    const signer = useMemo<SignerInput | null>(() => {
         if (!wallet?.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) {
             return null;
         }
@@ -136,15 +144,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             signAllTransactions: wallet.signAllTransactions.bind(wallet),
         };
     }, [wallet]);
-
-    const writerCtx = useMemo<WriterCtx | null>(() => {
-        if (!writerWallet) return null;
-        return {
-            connection,
-            wallet: writerWallet,
-            idl: FRIENDS_IDL,
-        };
-    }, [connection, writerWallet]);
+    const hasWallet = Boolean(wallet?.publicKey);
 
     /* --------------------------------------------------------------------------
      * Derived Values
@@ -358,32 +358,63 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
 
         const baseMaxTx = endpointSource === 'default' ? 40 : 200;
         const maxTx = fetchConfig?.maxTx ?? baseMaxTx;
-        const targetSignatures = fetchConfig?.signatures;
+        const targetSignatures = fetchConfig?.signatures?.length
+            ? fetchConfig.signatures
+            : (await iqlabs.reader.fetchAccountTransactions(friend.tableAddress, { limit: maxTx }))
+                .map((sig) => sig.signature);
 
-        const rows = await readRowsByDmSeed({
-            connection,
-            rootId: ROOT_ID,
-            userPublicKey: userAddress,
-            idl: FRIENDS_IDL,
-            dmSeed: friend.dmSeed,
-            maxTx: targetSignatures?.length || maxTx,
-            signatures: targetSignatures,
-            onProgress: (partialRows) => {
-                const partialMessages = partialRows
-                    .map((row) => rowToMessage(row))
-                    .filter((message) => message.text || message.file);
-                fetchConfig?.onProgress?.(partialMessages);
-                if (endpointSource === 'default') {
-                    setChatSlowRpcMode(true);
+        const decodeRowsFromSignatures = async (
+            signatures: string[],
+            onProgress?: (rows: MessageRow[]) => void
+        ) => {
+            const messages: MessageRow[] = [];
+            for (const signature of signatures) {
+                let result: { data: string | null; metadata: string };
+                try {
+                    result = await iqlabs.reader.readCodeIn(signature);
+                } catch (err) {
+                    if (
+                        err instanceof Error &&
+                        err.message.includes('user_inventory_code_in instruction not found')
+                    ) {
+                        continue;
+                    }
+                    throw err;
                 }
-            },
-            knownSignatures: fetchConfig?.knownSignatures,
+                const { data, metadata } = result;
+                let row: Record<string, unknown>;
+                if (!data) {
+                    row = { signature, metadata, data: null };
+                } else {
+                    try {
+                        const parsed = JSON.parse(data) as Record<string, unknown>;
+                        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                            row = { ...parsed, __txSignature: signature };
+                        } else {
+                            row = { signature, metadata, data };
+                        }
+                    } catch {
+                        row = { signature, metadata, data };
+                    }
+                }
+                const message = rowToMessage(row);
+                if (message.text || message.file) {
+                    messages.push(message);
+                    onProgress?.([...messages]);
+                }
+            }
+            return messages;
+        };
+
+        const messages = await decodeRowsFromSignatures(targetSignatures, (partial) => {
+            fetchConfig?.onProgress?.(partial);
+            if (endpointSource === 'default') {
+                setChatSlowRpcMode(true);
+            }
         });
 
-        return rows
-            .map((row) => rowToMessage(row))
-            .filter((message) => message.text || message.file);
-    }, [connection, userAddress, endpointSource, friendMapBySeedHex, setChatSlowRpcMode]);
+        return messages;
+    }, [userAddress, endpointSource, friendMapBySeedHex, setChatSlowRpcMode]);
 
     const {
         messages: dmMessages,
@@ -484,7 +515,6 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         const targetFriend = friendMapBySeedHex[dmSeedHex];
         if (targetFriend) {
             try {
-                await invalidateDmCache(targetFriend.dmSeed);
                 if (targetFriend.tableAddress) {
                     invalidateSignatureCache(targetFriend.tableAddress);
                 }
@@ -755,7 +785,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
      * -------------------------------------------------------------------------- */
     const handleAddFriend = async (friendAddress: string) => {
         setError(null);
-        if (!userAddress || !wallet) {
+        if (!userAddress || !wallet || !signer) {
             throw new Error('Wallet not connected');
         }
 
@@ -775,24 +805,20 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             }
         }
 
-        const dmSeed = deriveDmSeed(userAddress, friendAddress);
-
-        if (!writerCtx) {
-            throw new Error('Wallet not connected');
-        }
+        const dmSeed = iqlabs.utils.deriveDmSeed(userAddress, friendAddress);
 
         try {
-            const { tx } = await requestDmWeb(
-                writerCtx,
-                ROOT_ID,
-                dmSeed,
-                'dm',
-                [...MESSAGE_COLUMNS],
+            await iqlabs.writer.requestConnection(
+                connection,
+                signer,
+                dbRootId,
+                userAddress,
                 friendAddress,
-                {},
-                { idColumn: 'id' }
+                DM_TABLE_NAME,
+                [...MESSAGE_COLUMNS],
+                'id',
+                []
             );
-            await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] Friend request sent:');
             await refetch();
             setAddFriendModalOpen(false);
         } catch (err) {
@@ -801,16 +827,16 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
 
             const maybeLogs = extractErrorLogs(err);
             if (maybeLogs) {
-                console.error('[FriendsList] requestDmWeb logs', maybeLogs);
+                console.error('[FriendsList] requestConnection logs', maybeLogs);
             }
-            console.error('[FriendsList] requestDmWeb error', err);
+            console.error('[FriendsList] requestConnection error', err);
 
             throw err;
         }
     };
 
     const handleApproveFriend = async (friend: Friend) => {
-        if (!wallet) throw new Error('Wallet not connected');
+        if (!wallet || !signer) throw new Error('Wallet not connected');
 
         console.log('[FriendsList] Approving friend:', {
             friendAddress: friend.address,
@@ -820,21 +846,28 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             partyB: friend.partyB,
         });
 
-        const writerCtx: WriterCtx = {
-            connection,
-            wallet,
-            idl: idl as Idl,
-        };
-
         setError(null);
 
         try {
-            const { tx, dmTable } = await manageDmWeb(writerCtx, ROOT_ID, friend.dmSeed, DM_STATUS.APPROVED);
-
-            console.log('[FriendsList] DMTable PDA:', dmTable);
-            console.log('[FriendsList] Expected:', friend.tableAddress);
-
-            await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] Friend approved:');
+            const connectionTable = iqlabs.contract.getConnectionTablePda(
+                dbRoot,
+                friend.dmSeed,
+                programId
+            );
+            const ix = iqlabs.contract.manageConnectionInstruction(
+                builder,
+                {
+                    db_root: dbRoot,
+                    connection_table: connectionTable,
+                    signer: signer.publicKey,
+                },
+                {
+                    db_root_id: dbRootId,
+                    connection_seed: Buffer.from(friend.dmSeed),
+                    new_status: DM_STATUS.APPROVED,
+                }
+            );
+            await sendTx(connection, signer, ix);
             await refetch();
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to approve friend';
@@ -849,15 +882,31 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     };
 
     const handleBlockFriend = async () => {
-        if (!writerCtx || !friendToBlock) return;
+        if (!signer || !friendToBlock) return;
 
         setError(null);
         setBlockConfirmOpen(false);
 
         try {
-            const { tx } = await manageDmWeb(writerCtx, ROOT_ID, friendToBlock.dmSeed, DM_STATUS.BLOCKED);
-
-            await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] Friend blocked:');
+            const connectionTable = iqlabs.contract.getConnectionTablePda(
+                dbRoot,
+                friendToBlock.dmSeed,
+                programId
+            );
+            const ix = iqlabs.contract.manageConnectionInstruction(
+                builder,
+                {
+                    db_root: dbRoot,
+                    connection_table: connectionTable,
+                    signer: signer.publicKey,
+                },
+                {
+                    db_root_id: dbRootId,
+                    connection_seed: Buffer.from(friendToBlock.dmSeed),
+                    new_status: DM_STATUS.BLOCKED,
+                }
+            );
+            await sendTx(connection, signer, ix);
             await refetch();
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to block friend';
@@ -869,14 +918,30 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     };
 
     const handleUnblockFriend = async (friend: Friend) => {
-        if (!writerCtx) throw new Error('Wallet not connected');
+        if (!signer) throw new Error('Wallet not connected');
 
         setError(null);
 
         try {
-            const { tx } = await manageDmWeb(writerCtx, ROOT_ID, friend.dmSeed, DM_STATUS.APPROVED);
-
-            await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] Friend unblocked:');
+            const connectionTable = iqlabs.contract.getConnectionTablePda(
+                dbRoot,
+                friend.dmSeed,
+                programId
+            );
+            const ix = iqlabs.contract.manageConnectionInstruction(
+                builder,
+                {
+                    db_root: dbRoot,
+                    connection_table: connectionTable,
+                    signer: signer.publicKey,
+                },
+                {
+                    db_root_id: dbRootId,
+                    connection_seed: Buffer.from(friend.dmSeed),
+                    new_status: DM_STATUS.APPROVED,
+                }
+            );
+            await sendTx(connection, signer, ix);
             await refetch();
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to unblock friend';
@@ -908,7 +973,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
 
     const handleSendChatMessage = async (event?: FormEvent) => {
         event?.preventDefault();
-        if (!chatFriend || !writerCtx || !userAddress) return;
+        if (!chatFriend || !signer || !userAddress) return;
         const text = chatMessageInput.trim();
         if (!text) return;
         if (!canSendChatToFriend(chatFriend)) {
@@ -956,8 +1021,13 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         addChatPendingMessage(payload);
 
         try {
-            const { tx } = await writeDmRowWeb(writerCtx, ROOT_ID, chatFriend.dmSeed, JSON.stringify(payload));
-            const signature = await sendAndConfirmTx(connection, wallet, tx, '[FriendsList] DM sent:');
+            const signature = await iqlabs.writer.writeConnectionRow(
+                connection,
+                signer,
+                dbRootId,
+                chatFriend.dmSeed,
+                JSON.stringify(payload)
+            );
             if (chatFriend.dmSeedHex) {
                 notifyDmMessageSent(chatFriend.dmSeedHex, timestamp, signature);
                 const channelKey = makeDmChannelKey(chatFriend.dmSeedHex);
@@ -1263,11 +1333,11 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                                 attachmentError={attachmentError}
                                 setAttachmentError={setAttachmentError}
                                 onSubmit={handleSendChatMessage}
-                                canWrite={!!writerCtx && !!chatFriend && canSendChatToFriend(chatFriend)}
-                                canSubmit={!!writerCtx && !!chatMessageInput.trim() && !!chatFriend && canSendChatToFriend(chatFriend)}
-                                writerCtx={writerCtx}
-                                isUserInitialized={true}
-                                userInitError={null}
+                                hasWallet={hasWallet}
+                                canWrite={!!signer && isUserInitialized && !!chatFriend && canSendChatToFriend(chatFriend)}
+                                canSubmit={!!signer && isUserInitialized && !!chatMessageInput.trim() && !!chatFriend && canSendChatToFriend(chatFriend)}
+                                isUserInitialized={isUserInitialized}
+                                userInitError={userInitError}
                                 inputRef={chatInputRef}
                             />
                         </div>

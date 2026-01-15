@@ -12,7 +12,7 @@
 'use client';
 
 import { getCacheDB, type CachedMessage, DEFAULT_MESSAGE_TTL } from './db';
-import type { Row } from '@/lib/onchainDB/web/reader';
+import type { Row } from '@/lib/shared/message-helpers';
 
 // ============================================================================
 // Types

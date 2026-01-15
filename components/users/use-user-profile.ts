@@ -4,14 +4,13 @@
  * Implements global caching and request deduplication to prevent RPC rate limiting
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAppConnection } from '@/lib/wallet/use-app-wallet';
 import { PublicKey } from '@solana/web3.js';
-import { pdaUser, pdaRoot } from '@/lib/onchainDB';
-import { ROOT_ID } from '@/lib/onchainDB/constants';
-import { reconstructMessageFromChainForTailTx } from '@/lib/iq/reader';
+import { ROOT_ID } from '@/lib/iqlabs/constants';
 import { getCachedAccountInfo } from '@/lib/rpc/cache';
 import type { UserProfile } from './user-profile-manager';
+import iqlabs from 'iqlabs-sdk/src';
 
 // Global cache to prevent redundant fetches across components
 const profileCache = new Map<string, { data: UserProfile | null; timestamp: number }>();
@@ -20,6 +19,8 @@ const CACHE_TTL = 1000 * 60 * 5; // 5 minutes
 
 export function useUserProfile(walletAddress: string | undefined) {
   const { connection } = useAppConnection();
+  const programId = useMemo(() => iqlabs.contract.getProgramId(), []);
+
   const [profile, setProfile] = useState<UserProfile | null>(() => {
     if (!walletAddress) return null;
     const cached = profileCache.get(walletAddress);
@@ -76,8 +77,7 @@ export function useUserProfile(walletAddress: string | undefined) {
           } catch {
             return null;
           }
-          const rootPk = pdaRoot(ROOT_ID);
-          const userAccount = pdaUser(rootPk, userPk);
+          const userAccount = iqlabs.contract.getUserPda(userPk, programId);
 
           // Fetch the User account (cached)
           const accountInfo = await getCachedAccountInfo(connection, userAccount);
@@ -121,17 +121,14 @@ export function useUserProfile(walletAddress: string | undefined) {
           let profileData;
 
           if (metadata.length <= 100 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(metadata)) {
-            // Transaction ID - reconstruct original JSON
-            const reconstructed = await reconstructMessageFromChainForTailTx(
-              connection,
-              metadata
-            );
+            // Transaction ID - reconstruct original JSON using SDK HIGH-LEVEL function
+            const result = await iqlabs.reader.readCodeIn(metadata);
 
-            if (!reconstructed || reconstructed.startsWith('[unable')) {
+            if (!result?.data || result.data.startsWith('[unable')) {
               throw new Error('Failed to reconstruct metadata from transaction');
             }
 
-            profileData = JSON.parse(reconstructed);
+            profileData = JSON.parse(result.data);
           } else {
             // Direct JSON metadata
             profileData = JSON.parse(metadata);
@@ -190,7 +187,7 @@ export function useUserProfile(walletAddress: string | undefined) {
     return () => {
       cancelled = true;
     };
-  }, [walletAddress, connection]);
+  }, [walletAddress, connection, programId]);
 
   return { profile, loading, error };
 }

@@ -25,6 +25,7 @@ export function useOnAccountChange({
   commitment?: 'processed' | 'confirmed' | 'finalized'
   enabled?: boolean
   updateCache?: boolean
+
 }) {
   const subscriptionRef = useRef<number | null>(null)
   // Use ref to avoid re-subscribing when handler changes

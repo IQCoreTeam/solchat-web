@@ -5,20 +5,21 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { Buffer } from 'buffer';
 import { useRouter } from 'next/navigation';
 import { useUserProfile } from './use-user-profile';
 import { shorten } from '@/lib/utils/message-utils';
 import { DefaultProfileAvatar } from '@/components/ui/default-profile-avatar';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
-import { deriveDmSeed } from '@/lib/friends/utils';
+import iqlabs from 'iqlabs-sdk/src';
+import idl from 'iqlabs-sdk/idl/code_in.json';
+import type { Idl } from '@coral-xyz/anchor';
+import type { SignerInput } from 'iqlabs-sdk/src/sdk/utils/wallet';
+import { sendTx } from 'iqlabs-sdk/src/sdk/writer/writer_utils';
 import { DM_STATUS } from '@/lib/friends/types';
-import { requestDmWeb, manageDmWeb, type WriterCtx } from '@/lib/onchainDB';
-import { ROOT_ID, MESSAGE_COLUMNS } from '@/lib/onchainDB/constants';
-import idl from '@/lib/onchainDB/idl.json';
-import { sendAndConfirmTx } from '@/lib/onchainDB/utils/transaction-helpers';
+import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
 import { useDmRelationship } from './use-dm-relationship';
-import {Idl} from "@coral-xyz/anchor";
 
 interface ProfileModalProps {
   walletAddress: string;
@@ -32,6 +33,26 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
   const [copied, setCopied] = useState(false);
   const wallet = useAppWallet();
   const { connection } = useAppConnection();
+  const signer = useMemo<SignerInput | null>(() => {
+    if (!wallet.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) {
+      return null;
+    }
+    return {
+      publicKey: wallet.publicKey,
+      signTransaction: wallet.signTransaction.bind(wallet),
+      signAllTransactions: wallet.signAllTransactions.bind(wallet),
+    };
+  }, [wallet]);
+  const programId = useMemo(() => iqlabs.contract.getProgramId(), []);
+  const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
+  const dbRoot = useMemo(
+    () => iqlabs.contract.getDbRootPda(dbRootId, programId),
+    [dbRootId, programId]
+  );
+  const builder = useMemo(
+    () => iqlabs.contract.createInstructionBuilder(idl as Idl, programId),
+    [programId]
+  );
   const viewerAddress = wallet.publicKey?.toBase58() || null;
   const isOwnProfile = viewerAddress === walletAddress;
   const [requestStatus, setRequestStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
@@ -79,34 +100,27 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
   const canSendFriendRequest =
     !!connection &&
     !!wallet.publicKey &&
+    !!signer &&
     walletAddress &&
     walletAddress !== wallet.publicKey.toBase58();
 
   const handleSendFriendRequest = async () => {
-    if (!canSendFriendRequest || !wallet.publicKey) return;
+    if (!canSendFriendRequest || !wallet.publicKey || !signer) return;
     setRequestError(null);
     setRequestStatus('sending');
     try {
       const senderAddress = wallet.publicKey.toBase58();
-      const dmSeed = deriveDmSeed(senderAddress, walletAddress);
-      const writerCtx: WriterCtx = {
-        wallet,
+      await iqlabs.writer.requestConnection(
         connection,
-        idl: idl as Idl,
-      };
-
-      const { tx } = await requestDmWeb(
-        writerCtx,
-        ROOT_ID,
-        dmSeed,
-        'dm',
-        [...MESSAGE_COLUMNS],
+        signer,
+        dbRootId,
+        senderAddress,
         walletAddress,
-        {},
-        { idColumn: 'id' }
+        DM_TABLE_NAME,
+        [...MESSAGE_COLUMNS],
+        'id',
+        []
       );
-
-      await sendAndConfirmTx(connection, wallet, tx, '[ProfileModal] Friend request sent:');
       setRequestStatus('success');
       refreshDmState();
     } catch (err) {
@@ -123,7 +137,7 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
       setUnblockError('Missing DM reference.');
       return;
     }
-    if (!wallet.publicKey) {
+    if (!wallet.publicKey || !signer) {
       setUnblockError('Connect your wallet to manage this DM.');
       setUnblockState('idle');
       return;
@@ -141,14 +155,25 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
     setUnblockState('working');
 
     try {
-      const writerCtx: WriterCtx = {
-        wallet,
-        connection,
-        idl: idl as Idl,
-      };
-
-      const { tx } = await manageDmWeb(writerCtx, ROOT_ID, dmSeed, DM_STATUS.APPROVED);
-      await sendAndConfirmTx(connection, wallet, tx, '[ProfileModal] DM unblocked:');
+      const connectionTable = iqlabs.contract.getConnectionTablePda(
+        dbRoot,
+        dmSeed,
+        programId
+      );
+      const ix = iqlabs.contract.manageConnectionInstruction(
+        builder,
+        {
+          db_root: dbRoot,
+          connection_table: connectionTable,
+          signer: signer.publicKey,
+        },
+        {
+          db_root_id: dbRootId,
+          connection_seed: Buffer.from(dmSeed),
+          new_status: DM_STATUS.APPROVED,
+        }
+      );
+      await sendTx(connection, signer, ix);
       setUnblockState('idle');
       refreshDmState();
     } catch (err) {
