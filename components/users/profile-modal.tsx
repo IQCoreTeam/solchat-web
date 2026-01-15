@@ -7,6 +7,7 @@
 
 import { useMemo, useState } from 'react';
 import { Buffer } from 'buffer';
+import { PublicKey } from '@solana/web3.js';
 import { useRouter } from 'next/navigation';
 import { useUserProfile } from './use-user-profile';
 import { shorten } from '@/lib/utils/message-utils';
@@ -20,6 +21,7 @@ import { sendTx } from 'iqlabs-sdk/src/sdk/writer/writer_utils';
 import { DM_STATUS } from '@/lib/friends/types';
 import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
 import { useDmRelationship } from './use-dm-relationship';
+import { buildRequestConnectionInstruction } from '@/lib/friends/request-connection';
 
 interface ProfileModalProps {
   walletAddress: string;
@@ -109,18 +111,18 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
     setRequestError(null);
     setRequestStatus('sending');
     try {
-      const senderAddress = wallet.publicKey.toBase58();
-      await iqlabs.writer.requestConnection(
-        connection,
-        signer,
+      const receiver = new PublicKey(walletAddress.trim());
+      const { ix } = buildRequestConnectionInstruction({
+        builder,
         dbRootId,
-        senderAddress,
-        walletAddress,
-        DM_TABLE_NAME,
-        [...MESSAGE_COLUMNS],
-        'id',
-        []
-      );
+        programId,
+        requester: wallet.publicKey,
+        receiver,
+        tableName: DM_TABLE_NAME,
+        columns: MESSAGE_COLUMNS,
+        idCol: 'id',
+      });
+      await sendTx(connection, signer, ix);
       setRequestStatus('success');
       refreshDmState();
     } catch (err) {

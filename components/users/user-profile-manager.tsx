@@ -20,6 +20,7 @@ import idl from 'iqlabs-sdk/idl/code_in.json';
 import type { SignerInput } from 'iqlabs-sdk/src/sdk/utils/wallet';
 import { sendTx } from 'iqlabs-sdk/src/sdk/writer/writer_utils';
 import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
+import { buildRequestConnectionInstruction } from '@/lib/friends/request-connection';
 
 export interface UserProfile {
   pubkey: string;
@@ -218,17 +219,41 @@ export function UserProfileManager() {
 
         // Store metadata as transaction, get txID
         // SDK's codeIn automatically handles user initialization with ensureUserInitialized
-        const result = await iqlabs.writer.codeIn(
-          connection,
-          signer,
-          fullMetadata,
-          Buffer.from('profile-metadata', 'utf8')
+        const txId = await iqlabs.writer.codeIn(
+          { connection, signer },
+          [fullMetadata],
+          undefined,
+          'profile-metadata'
         );
 
-        if (!result?.tailTx) throw new Error('Failed to store metadata transaction');
-        const txId = result.tailTx;
+        if (!txId) throw new Error('Failed to store metadata transaction');
 
         console.log('[UserProfile] Metadata stored in txID:', txId);
+
+        const rootInfo = await connection.getAccountInfo(dbRoot);
+        if (!rootInfo) {
+          try {
+            const initRootIx = iqlabs.contract.initializeDbRootInstruction(
+              builder,
+              {
+                db_root: dbRoot,
+                signer: userPk,
+                system_program: SystemProgram.programId,
+              },
+              { db_root_id: dbRootId }
+            );
+            await sendTx(connection, signer, initRootIx);
+          } catch (initErr) {
+            if (
+              !(
+                initErr instanceof Error &&
+                (initErr.message.includes('already in use') || initErr.message.includes('AlreadyInUse'))
+              )
+            ) {
+              throw initErr;
+            }
+          }
+        }
 
         // Check if this is first time setting metadata
         const metadataBefore = extractUserMetadata(await connection.getAccountInfo(userPda));
@@ -237,11 +262,15 @@ export function UserProfileManager() {
         const ix = iqlabs.contract.updateUserMetadataInstruction(
           builder,
           {
-            user: userPk,
-            user_state: userPda,
+            user: userPda,
+            db_root: dbRoot,
+            signer: userPk,
             system_program: SystemProgram.programId,
           },
-          { metadata: Buffer.from(txId, 'utf8') }
+          {
+            db_root_id: dbRootId,
+            meta: Buffer.from(txId, 'utf8'),
+          }
         );
 
         await sendTx(connection, signer, ix);
@@ -258,18 +287,29 @@ export function UserProfileManager() {
 
             // Create table if doesn't exist
             if (!tableInfo) {
+              const instructionTable = iqlabs.contract.getInstructionTablePda(
+                dbRoot,
+                tableSeed,
+                programId
+              );
               const createTableIx = iqlabs.contract.createExtTableInstruction(
                 builder,
                 {
                   db_root: dbRoot,
                   table: tablePda,
+                  instruction_table: instructionTable,
                   signer: userPk,
                   system_program: SystemProgram.programId,
                 },
                 {
+                  db_root_id: dbRootId,
                   table_seed: tableSeed,
+                  table_name: tableSeed,
                   column_names: [Buffer.from('pubkeyString', 'utf8')],
-                  id_column: Buffer.from('pubkeyString', 'utf8'),
+                  id_col: Buffer.from('pubkeyString', 'utf8'),
+                  ext_keys: [],
+                  gate_mint_opt: null,
+                  writers_opt: null,
                 }
               );
               await sendTx(connection, signer, createTableIx);
@@ -278,16 +318,13 @@ export function UserProfileManager() {
 
             // Write user row
             const rowData = JSON.stringify({ pubkeyString: userAddress });
-            const writeIx = iqlabs.contract.writeRowInstruction(
-              builder,
-              {
-                db_root: dbRoot,
-                table: tablePda,
-                signer: userPk,
-              },
-              { row_data: Buffer.from(rowData, 'utf8') }
+            await iqlabs.writer.writeRow(
+              connection,
+              signer,
+              dbRootId,
+              tableSeed,
+              rowData
             );
-            await sendTx(connection, signer, writeIx);
 
             setTimeout(() => loadAllProfiles(), 1000);
           } catch (listErr) {
@@ -308,7 +345,7 @@ export function UserProfileManager() {
         throw err;
       }
     },
-    [userAddress, connection, wallet, signer, programId, dbRoot, builder, loadAllProfiles]
+    [userAddress, connection, signer, programId, dbRoot, dbRootId, builder, loadAllProfiles]
   );
 
   // Send friend request
@@ -317,8 +354,31 @@ export function UserProfileManager() {
       if (!userAddress || !signer) throw new Error('Wallet not connected');
       if (targetPubkey === userAddress) throw new Error('Cannot add yourself as a friend');
 
-      const userPk = new PublicKey(userAddress);
-      const targetPk = new PublicKey(targetPubkey);
+      const rootInfo = await connection.getAccountInfo(dbRoot);
+      if (!rootInfo) {
+        try {
+          const initRootIx = iqlabs.contract.initializeDbRootInstruction(
+            builder,
+            {
+              db_root: dbRoot,
+              signer: signer.publicKey,
+              system_program: SystemProgram.programId,
+            },
+            { db_root_id: dbRootId }
+          );
+          await sendTx(connection, signer, initRootIx);
+        } catch (initErr) {
+          if (
+            !(
+              initErr instanceof Error &&
+              (initErr.message.includes('already in use') || initErr.message.includes('AlreadyInUse'))
+            )
+          ) {
+            throw initErr;
+          }
+        }
+      }
+
       const dmSeed = iqlabs.utils.deriveDmSeed(userAddress, targetPubkey);
       const dmPda = iqlabs.contract.getConnectionTablePda(dbRoot, dmSeed, programId);
 
@@ -326,29 +386,24 @@ export function UserProfileManager() {
       if (existing) throw new Error('Connection already exists :3');
 
       try {
-        const ix = iqlabs.contract.requestDmInstruction(
+        const receiver = new PublicKey(targetPubkey.trim());
+        const { ix } = buildRequestConnectionInstruction({
           builder,
-          {
-            db_root: dbRoot,
-            connection_table: dmPda,
-            signer: userPk,
-            target: targetPk,
-            system_program: SystemProgram.programId,
-          },
-          {
-            dm_seed: dmSeed,
-            table_name: Buffer.from(DM_TABLE_NAME, 'utf8'),
-            column_names: MESSAGE_COLUMNS.map(c => Buffer.from(c, 'utf8')),
-            id_column: Buffer.from('id', 'utf8'),
-          }
-        );
+          dbRootId,
+          programId,
+          requester: signer.publicKey,
+          receiver,
+          tableName: DM_TABLE_NAME,
+          columns: MESSAGE_COLUMNS,
+          idCol: 'id',
+        });
         await sendTx(connection, signer, ix);
       } catch (err) {
         console.error('[UserProfileManager] requestDm error', err);
         throw err;
       }
     },
-    [connection, userAddress, signer, dbRoot, programId, builder]
+    [connection, userAddress, signer, dbRoot, dbRootId, programId, builder]
   );
 
   useEffect(() => {
