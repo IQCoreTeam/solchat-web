@@ -6,7 +6,9 @@
 
 'use client';
 
-import { readRowsByTable, readRowsByDmSeed, type Row } from '@/lib/onchainDB/web/reader';
+import { Buffer } from 'buffer';
+import iqlabs from 'iqlabs-sdk/src';
+import type { Row } from '@/lib/shared/message-helpers';
 import { getCacheManager } from './cache-manager';
 import type { Connection } from '@solana/web3.js';
 import type { Idl } from '@coral-xyz/anchor';
@@ -17,6 +19,29 @@ export interface ReaderParams {
   userPublicKey: string;
   idl: Idl;
   maxTx?: number;
+}
+
+async function readRowsByTable(
+  params: ReaderParams & { tableName: string }
+): Promise<Row[]> {
+  const { rootId, tableName, maxTx } = params;
+  const programId = iqlabs.contract.getProgramId();
+  const dbRootId = Buffer.from(rootId, 'utf8');
+  const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programId);
+  const tableSeed = iqlabs.utils.toSeedBytes(tableName);
+  const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed, programId);
+  return iqlabs.reader.readTableRows(tablePda, { limit: maxTx });
+}
+
+async function readRowsByDmSeed(
+  params: ReaderParams & { dmSeed: Uint8Array }
+): Promise<Row[]> {
+  const { rootId, dmSeed, maxTx } = params;
+  const programId = iqlabs.contract.getProgramId();
+  const dbRootId = Buffer.from(rootId, 'utf8');
+  const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programId);
+  const tablePda = iqlabs.contract.getConnectionTablePda(dbRoot, dmSeed, programId);
+  return iqlabs.reader.readTableRows(tablePda, { limit: maxTx });
 }
 
 /**

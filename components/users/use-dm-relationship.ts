@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Connection } from '@solana/web3.js';
 import { PublicKey } from '@solana/web3.js';
+import { Buffer } from 'buffer';
 import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
-import idl from '@/lib/onchainDB/idl.json';
-import { ROOT_ID } from '@/lib/onchainDB/constants';
-import { pdaRoot, pdaDmTable } from '@/lib/onchainDB';
-import { deriveDmSeed } from '@/lib/friends/utils';
+import iqlabs from 'iqlabs-sdk/src';
+import idl from 'iqlabs-sdk/idl/code_in.json';
+import { ROOT_ID } from '@/lib/iqlabs/constants';
 import { STATUS_LABELS, type FriendStatus } from '@/lib/friends/types';
 import { getCachedAccountInfo } from '@/lib/rpc/cache';
 
@@ -42,6 +42,9 @@ const initialState: DmRelationshipState = {
 };
 
 const coder = new BorshAccountsCoder(idl as Idl);
+const programId = iqlabs.contract.getProgramId();
+const dbRootId = Buffer.from(ROOT_ID, 'utf8');
+const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programId);
 
 export function useDmRelationship(
   connection: Connection | null,
@@ -59,7 +62,7 @@ export function useDmRelationship(
     if (!connection || !viewerAddress || !otherAddress) {
       setState((prev) => ({
         ...initialState,
-        dmSeed: viewerAddress && otherAddress ? deriveDmSeed(viewerAddress, otherAddress) : null,
+        dmSeed: viewerAddress && otherAddress ? iqlabs.utils.deriveDmSeed(viewerAddress, otherAddress) : null,
         dmTableAddress: null,
       }));
       return;
@@ -68,9 +71,8 @@ export function useDmRelationship(
     let cancelled = false;
 
     const load = async () => {
-      const seed = deriveDmSeed(viewerAddress, otherAddress);
-      const rootPk = pdaRoot(ROOT_ID);
-      const dmTablePk = pdaDmTable(rootPk, seed);
+      const seed = iqlabs.utils.deriveDmSeed(viewerAddress, otherAddress);
+      const dmTablePk = iqlabs.contract.getConnectionTablePda(dbRoot, seed, programId);
 
       setState((prev) => ({
         ...prev,
@@ -94,7 +96,7 @@ export function useDmRelationship(
           return;
         }
 
-        const decoded = coder.decode('DMTable', info.data);
+        const decoded = coder.decode('Connection', info.data) as any;
         const partyA = new PublicKey(decoded.party_a).toBase58();
         const partyB = new PublicKey(decoded.party_b).toBase58();
         const status = STATUS_LABELS[decoded.status] ?? 'pending';

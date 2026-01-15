@@ -10,6 +10,7 @@ import { Connection, PublicKey, Transaction, VersionedTransaction } from '@solan
 import { usePrivy } from '@privy-io/react-auth';
 import { useWallets } from '@privy-io/react-auth/solana';
 import { RPC_URL } from '@/lib/constants';
+import { setRpcUrl } from 'iqlabs-sdk/src';
 
 export interface AppWallet {
   publicKey: PublicKey | null;
@@ -222,6 +223,11 @@ export function useAppConnection() {
       : 'default';
 
   const connection = useMemo(() => new Connection(endpoint, 'confirmed'), [endpoint]);
+
+  useEffect(() => {
+    setRpcUrl(endpoint);
+  }, [endpoint]);
+
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

@@ -3,21 +3,15 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { AccountInfo } from '@solana/web3.js';
-import { PublicKey } from '@solana/web3.js';
+import { PublicKey, SystemProgram } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
-import idl from '@/lib/onchainDB/idl.json';
-import type { WalletAdapterLike } from '@/lib/onchainDB/web/provider';
-import {
-    initializeRootWeb,
-    createTableWeb,
-    writeRowWeb,
-    type WriterCtx,
-} from '@/lib/onchainDB/web/writer';
-import { readRowsByTable, invalidateRoomCache, type Row } from '@/lib/onchainDB/web/cached-reader-integration';
+import iqlabs from 'iqlabs-sdk/src';
+import idl from 'iqlabs-sdk/idl/code_in.json';
+import type { SignerInput } from 'iqlabs-sdk/src/sdk/utils/wallet';
+import { sendTx } from 'iqlabs-sdk/src/sdk/writer/writer_utils';
 import { getCachedAccountInfo, invalidateSignatureCache } from '@/lib/rpc/cache';
-import { pdaInstructionTable, pdaRoot, pdaTable } from '@/lib/onchainDB';
-import { useUserInit } from '@/lib/onchainDB/hooks/use-user-init';
+import { useUserInit } from '@/lib/iqlabs/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
 import { normalizeFileUrl } from '@/lib/utils/message-utils';
@@ -27,12 +21,12 @@ import {
     decodeBytes,
     rowToMessage,
     type MessageRow,
-} from '@/lib/onchainDB/utils/message-helpers';
-import { mergeMessages, type MessagePayload } from '@/lib/onchainDB/shared/message';
-import { usePendingMessages } from '@/lib/onchainDB/shared/use-pending-messages';
-import { useOnAccountChange } from '@/lib/onchainDB/shared/useOnAccountChange';
-import { useMessageIndexLoader, type FetchConfig } from '@/lib/onchainDB/shared/useMessageIndexLoader';
-import { ROOT_ID, MESSAGE_COLUMNS } from '@/lib/onchainDB/constants';
+} from '@/lib/shared/message-helpers';
+import { mergeMessages, type MessagePayload } from '@/lib/shared/message';
+import { usePendingMessages } from '@/lib/shared/use-pending-messages';
+import { useOnAccountChange } from '@/lib/shared/useOnAccountChange';
+import { useMessageIndexLoader, type FetchConfig } from '@/lib/shared/useMessageIndexLoader';
+import { ROOT_ID, MESSAGE_COLUMNS } from '@/lib/iqlabs/constants';
 import { makeRoomTimestampKey, setLastMessageTimestamp, getLastMessageTimestamp } from '@/lib/cache/message-timestamp-cache';
 import { RpcConfigPrompt } from '@/components/ui/rpc-config-prompt';
 import { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
@@ -42,21 +36,19 @@ import { ChatHeader } from './chat-header';
 import { RoomSidebar } from './room-sidebar';
 import { MessageList } from './message-list';
 import { MessageInputForm } from './message-input-form';
-import { sendAndConfirmTx } from '@/lib/onchainDB/utils/transaction-helpers';
 
-type ProgramIdl = Idl & { address?: string };
+type Row = Record<string, unknown>;
 type RootAccountData = {
     table_seeds?: unknown[];
     tableSeeds?: unknown[];
-    table_names?: unknown[];
+    global_table_seeds?: unknown[];
+    globalTableSeeds?: unknown[];
 };
 type TableAccountData = {
     name?: Uint8Array | string | null;
     columnNames?: Array<Uint8Array | string> | null;
     column_names?: Array<Uint8Array | string> | null;
 };
-
-const PROGRAM_IDL = idl as ProgramIdl;
 
 type RoomMeta = {
     seedHex: string;
@@ -95,8 +87,17 @@ export function ChatClient() {
     } = useUserInit();
     const { logout } = usePrivy();
 
-    const coder = useMemo(() => new BorshAccountsCoder(PROGRAM_IDL), []);
-    const rootPubkey = useMemo(() => pdaRoot(ROOT_ID), []);
+    const programId = useMemo(() => iqlabs.contract.getProgramId(), []);
+    const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
+    const coder = useMemo(() => new BorshAccountsCoder(idl as Idl), []);
+    const builder = useMemo(
+        () => iqlabs.contract.createInstructionBuilder(idl as Idl, programId),
+        [programId]
+    );
+    const rootPubkey = useMemo(
+        () => iqlabs.contract.getDbRootPda(dbRootId, programId),
+        [dbRootId, programId]
+    );
 
     /* --------------------------------------------------------------------------
      * Local State
@@ -162,8 +163,7 @@ export function ChatClient() {
     const markerClearTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const roomLastPongRef = useRef<number>(Date.now());
 
-    // Writer context
-    const writerWallet = useMemo<WalletAdapterLike | null>(() => {
+    const signer = useMemo<SignerInput | null>(() => {
         if (!wallet.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) {
             return null;
         }
@@ -173,16 +173,6 @@ export function ChatClient() {
             signAllTransactions: wallet.signAllTransactions.bind(wallet),
         };
     }, [wallet]);
-
-    const writerCtx = useMemo<WriterCtx | null>(() => {
-        if (!writerWallet) return null;
-        return {
-            connection,
-            wallet: writerWallet,
-            idl: PROGRAM_IDL,
-            programId: PROGRAM_IDL.address,
-        };
-    }, [connection, writerWallet]);
 
     /* --------------------------------------------------------------------------
      * Derived Values
@@ -206,7 +196,8 @@ export function ChatClient() {
     const tableAccount = useMemo(() => (selectedRoom ? new PublicKey(selectedRoom.tableAddress) : null), [selectedRoom]);
 
     const walletAddress = useMemo(() => wallet.publicKey?.toBase58() || '', [wallet.publicKey]);
-    const canWrite = Boolean(writerCtx && isUserInitialized);
+    const hasWallet = Boolean(wallet.publicKey);
+    const canWrite = Boolean(signer && isUserInitialized);
 
     const showToast = useCallback((text: string, tone: ToastTone = 'info') => {
         if (toastTimeoutRef.current) {
@@ -243,6 +234,46 @@ export function ChatClient() {
     }, [selectedChannelKey, setRoomAlerts]);
 
 
+  const decodeRowsFromSignatures = useCallback(
+    async (signatures: string[], onProgress?: (rows: MessageRow[]) => void) => {
+      const messages: MessageRow[] = [];
+      for (const signature of signatures) {
+        let result: { data: string | null; metadata: string };
+        try {
+          result = await iqlabs.reader.readCodeIn(signature);
+        } catch (err) {
+          if (err instanceof Error && err.message.includes('user_inventory_code_in instruction not found')) {
+            continue;
+          }
+          throw err;
+        }
+        const { data, metadata } = result;
+        let row: Row;
+        if (!data) {
+          row = { signature, metadata, data: null };
+        } else {
+          try {
+            const parsed = JSON.parse(data) as Record<string, unknown>;
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              row = { ...parsed, __txSignature: signature };
+            } else {
+              row = { signature, metadata, data };
+            }
+          } catch {
+            row = { signature, metadata, data };
+          }
+        }
+        const message = rowToMessage(row);
+        if (message.text || message.file) {
+          messages.push(message);
+          onProgress?.([...messages]);
+        }
+      }
+      return messages;
+    },
+    []
+  );
+
   const fetcher = useCallback(async (channelKey: string, fetchConfig?: FetchConfig) => {
     if (!walletAddress) return [];
     const seedHex = channelKeyToSeed(channelKey);
@@ -250,30 +281,19 @@ export function ChatClient() {
     if (!room) return [];
     const baseMaxTx = endpointSource === 'default' ? 20 : 40;
     const maxTx = fetchConfig?.maxTx ?? baseMaxTx;
-    const targetSignatures = fetchConfig?.signatures;
-    const rows = await readRowsByTable({
-      connection,
-      rootId: ROOT_ID,
-      userPublicKey: walletAddress,
-      tableName: room.seedHex,
-      idl: PROGRAM_IDL,
-      maxTx: targetSignatures?.length || maxTx,
-      signatures: targetSignatures,
-      onProgress: (partialRows) => {
-        const partialMessages = partialRows
-          .map((row: Row) => rowToMessage(row))
-          .filter((message: MessageRow) => message.text || message.file);
-        fetchConfig?.onProgress?.(partialMessages);
-        if (endpointSource === 'default') {
-          setSlowRpcMode(true);
-        }
-      },
-      knownSignatures: fetchConfig?.knownSignatures,
+    const targetSignatures = fetchConfig?.signatures?.length
+      ? fetchConfig.signatures
+      : (await iqlabs.reader.fetchAccountTransactions(room.tableAddress, { limit: maxTx }))
+          .map((sig) => sig.signature);
+
+    const messages = await decodeRowsFromSignatures(targetSignatures, (partial) => {
+      fetchConfig?.onProgress?.(partial);
+      if (endpointSource === 'default') {
+        setSlowRpcMode(true);
+      }
     });
-    return rows
-      .map((row: Row) => rowToMessage(row))
-      .filter((message: MessageRow) => message.text || message.file);
-  }, [walletAddress, rooms, endpointSource, connection, setSlowRpcMode]);
+    return messages;
+  }, [walletAddress, rooms, endpointSource, setSlowRpcMode, decodeRowsFromSignatures]);
 
     const resolveChannelMeta = useCallback((channelKey: string) => {
         const seedHex = channelKeyToSeed(channelKey);
@@ -407,15 +427,23 @@ export function ChatClient() {
         return () => {
             mounted = false;
         };
-    }, [connection, rootPubkey]);
+    }, [connection, rootPubkey, isUserInitialized, isUserInitializing]);
 
     // Create root if missing
     const handleCreateRoot = useCallback(async () => {
-        if (!writerCtx) return;
+        if (!signer) return;
         setRootStatus('creating');
         try {
-            const { tx } = await initializeRootWeb(writerCtx, ROOT_ID);
-            await sendAndConfirmTx(connection, writerCtx.wallet, tx, '[ChatClient] Root initialized:');
+            const ix = iqlabs.contract.initializeDbRootInstruction(
+                builder,
+                {
+                    db_root: rootPubkey,
+                    signer: signer.publicKey,
+                    system_program: SystemProgram.programId,
+                },
+                { db_root_id: dbRootId }
+            );
+            await sendTx(connection, signer, ix);
             const acc = await runWithRpcRateLimit(
                 () => connection.getAccountInfo(rootPubkey),
                 { endpoint: connection.rpcEndpoint }
@@ -427,7 +455,7 @@ export function ChatClient() {
             setRootStatus('error');
             setRootError(err instanceof Error ? err.message : 'Failed to create root');
         }
-    }, [writerCtx, connection, rootPubkey]);
+    }, [signer, builder, connection, rootPubkey, dbRootId]);
 
     /* --------------------------------------------------------------------------
      * Data Loading Helpers
@@ -438,11 +466,11 @@ export function ChatClient() {
         setRoomsLoading(true);
         setRoomsError(null);
         try {
-            const decoded = coder.decode('Root', rootAccount.data) as RootAccountData | null;
+            const decoded = coder.decode('DbRoot', rootAccount.data) as RootAccountData | null;
             if (!decoded) throw new Error('Failed to decode root account');
 
             // Use table_seeds from the root account; exclude global tables
-            const seedsRaw = decoded.table_seeds ?? decoded.tableSeeds ?? decoded.table_names ?? [];
+            const seedsRaw = decoded.table_seeds ?? decoded.tableSeeds ?? [];
 
             const uniqueSeeds = Array.from(
                 new Map(
@@ -462,8 +490,8 @@ export function ChatClient() {
             const seedsWithPdas = uniqueSeeds.map((seed) => ({
                 seed,
                 seedHex: bytesToHex(seed),
-                tablePda: pdaTable(rootPubkey, seed),
-                instrPda: pdaInstructionTable(rootPubkey, seed),
+                tablePda: iqlabs.contract.getTablePda(rootPubkey, seed, programId),
+                instrPda: iqlabs.contract.getInstructionTablePda(rootPubkey, seed, programId),
             }));
 
             // Batch fetch all table accounts using getMultipleAccountsInfo
@@ -510,7 +538,7 @@ export function ChatClient() {
         } finally {
             setRoomsLoading(false);
         }
-    }, [rootStatus, rootAccount, coder, connection, rootPubkey, sortRoomsByTimestamp]);
+    }, [rootStatus, rootAccount, coder, connection, rootPubkey, programId, sortRoomsByTimestamp]);
 
     /* --------------------------------------------------------------------------
      * Effects: Room & Message Loading
@@ -579,7 +607,6 @@ export function ChatClient() {
             });
         }
 
-        await invalidateRoomCache(seedHex);
         const roomMeta = latestRoomsRef.current.find((room) => room.seedHex === seedHex);
         if (roomMeta?.tableAddress) {
             invalidateSignatureCache(roomMeta.tableAddress);
@@ -938,7 +965,7 @@ export function ChatClient() {
     // Handle create room
     const handleCreateRoom = useCallback(async (e: FormEvent) => {
         e.preventDefault();
-        if (!writerCtx || !newRoomName.trim()) return;
+        if (!signer || !newRoomName.trim()) return;
 
         setCreatingRoom(true);
         setRoomsError(null);
@@ -947,16 +974,36 @@ export function ChatClient() {
             const gateMintPubkey = newRoomGateMint?.trim()
                 ? new PublicKey(newRoomGateMint.trim())
                 : undefined;
-
-            const { tx } = await createTableWeb(
-                writerCtx,
-                ROOT_ID,
-                newRoomName.trim(),
-                [...MESSAGE_COLUMNS],
-                { idColumn: 'id', gateMint: gateMintPubkey }
+            const trimmedName = newRoomName.trim();
+            const tableSeed = iqlabs.utils.toSeedBytes(trimmedName);
+            const table = iqlabs.contract.getTablePda(rootPubkey, tableSeed, programId);
+            const instructionTable = iqlabs.contract.getInstructionTablePda(
+                rootPubkey,
+                tableSeed,
+                programId
             );
-
-            await sendAndConfirmTx(connection, writerCtx.wallet, tx, '[ChatClient] Room created:');
+            const ix = iqlabs.contract.createTableInstruction(
+                builder,
+                {
+                    db_root: rootPubkey,
+                    receiver: new PublicKey(iqlabs.constants.DEFAULT_WRITE_FEE_RECEIVER),
+                    signer: signer.publicKey,
+                    table,
+                    instruction_table: instructionTable,
+                    system_program: SystemProgram.programId,
+                },
+                {
+                    db_root_id: dbRootId,
+                    table_seed: Buffer.from(tableSeed),
+                    table_name: Buffer.from(trimmedName, 'utf8'),
+                    column_names: MESSAGE_COLUMNS.map((name) => Buffer.from(name, 'utf8')),
+                    id_col: Buffer.from('id', 'utf8'),
+                    ext_keys: [],
+                    gate_mint_opt: gateMintPubkey ?? null,
+                    writers_opt: null,
+                }
+            );
+            await sendTx(connection, signer, ix);
 
             setNewRoomName('');
             setNewRoomGateMint('');
@@ -967,7 +1014,7 @@ export function ChatClient() {
         } finally {
             setCreatingRoom(false);
         }
-    }, [writerCtx, newRoomName, newRoomGateMint, connection, loadRooms]);
+    }, [signer, newRoomName, newRoomGateMint, connection, loadRooms, rootPubkey, programId, builder, dbRootId]);
 
     const notifyRoomMessageSent = useCallback((seedHex: string, ts: number, signature?: string) => {
         const socket = roomSocketRef.current;
@@ -994,11 +1041,11 @@ export function ChatClient() {
     // Handle send message
     const handleSendMessage = useCallback(async (e?: FormEvent) => {
         e?.preventDefault();
-        if (!writerCtx || !selectedRoom || !messageInput.trim() || !writerCtx.wallet.publicKey) return;
+        if (!signer || !selectedRoom || !messageInput.trim()) return;
 
         const messageId = crypto.randomUUID?.() || Math.random().toString(36).slice(2, 10);
         const timestamp = Date.now();
-        const userAddr = writerCtx.wallet.publicKey.toBase58();
+        const userAddr = signer.publicKey.toBase58();
         const fileUrl = normalizeFileUrl(attachmentUrl);
         if (attachmentUrl.trim() && !fileUrl) {
             setAttachmentError('Invalid attachment URL. Must be a valid https:// link.');
@@ -1024,8 +1071,13 @@ export function ChatClient() {
         addPendingMessage(payload);
 
         try {
-            const { tx } = await writeRowWeb(writerCtx, ROOT_ID, selectedRoom.seedHex, JSON.stringify(payload));
-            const signature = await sendAndConfirmTx(connection, writerCtx.wallet, tx, '[ChatClient] Message submitted:');
+            const signature = await iqlabs.writer.writeRow(
+                connection,
+                signer,
+                dbRootId,
+                selectedRoom.seedBytes,
+                JSON.stringify(payload)
+            );
             // Optimistically mark this message as confirmed locally so we don't stay in "processing"
             applyLocalRows(makeChannelKey(selectedRoom.seedHex), [
                 {
@@ -1039,9 +1091,7 @@ export function ChatClient() {
                 },
             ], 'append');
             removePendingMessage(messageId);
-            // Invalidate cache so WebSocket listeners get fresh data
-            await invalidateRoomCache(selectedRoom.seedHex);
-            console.log('[handleSendMessage] Cache invalidated for room:', selectedRoom.seedHex.slice(0, 8));
+            invalidateSignatureCache(selectedRoom.tableAddress);
             notifyRoomMessageSent(selectedRoom.seedHex, timestamp, signature);
             // Scroll after DOM updates on next frame
             requestAnimationFrame(() => scrollToBottom('smooth'));
@@ -1055,7 +1105,7 @@ export function ChatClient() {
             const channelKey = makeChannelKey(selectedRoom.seedHex);
             markMessagesRead(channelKey, timestamp);
         }
-    }, [writerCtx, selectedRoom, messageInput, attachmentUrl, connection, addPendingMessage, removePendingMessage, notifyRoomMessageSent, showToast, applyLocalRows, scrollToBottom, markMessagesRead]);
+    }, [signer, selectedRoom, messageInput, attachmentUrl, connection, addPendingMessage, removePendingMessage, notifyRoomMessageSent, showToast, applyLocalRows, scrollToBottom, markMessagesRead, dbRootId]);
 
     // Handle disconnect
     const handleDisconnectPrivy = useCallback(async () => {
@@ -1120,9 +1170,10 @@ export function ChatClient() {
                     roomsLoading={roomsLoading}
                     roomsError={roomsError}
                     roomAlerts={roomAlerts}
+                    hasWallet={hasWallet}
                     canWrite={canWrite}
-                    writerCtx={writerCtx}
                     isUserInitialized={isUserInitialized}
+                    isUserInitializing={isUserInitializing}
                     userInitError={userInitError}
                     isSidebarOpen={isSidebarOpen}
                     onCloseSidebar={() => setIsSidebarOpen(false)}
@@ -1178,7 +1229,7 @@ export function ChatClient() {
                                 onSubmit={handleSendMessage}
                                 canWrite={canWrite}
                                 canSubmit={canSubmitMessage}
-                                writerCtx={writerCtx}
+                                hasWallet={hasWallet}
                                 isUserInitialized={isUserInitialized}
                                 userInitError={userInitError}
                                 inputRef={inputRef}
@@ -1187,11 +1238,11 @@ export function ChatClient() {
                     ) : (
                         <div className="flex flex-1 items-center justify-center text-white/50">
                             {rootStatus === 'missing' && (
-                                <div className="text-center">
-                                    <p className="mb-4">Root account not found</p>
-                                    <button
-                                        onClick={handleCreateRoot}
-                                        disabled={!writerCtx}
+                                        <div className="text-center">
+                                            <p className="mb-4">Root account not found</p>
+                                            <button
+                                                onClick={handleCreateRoot}
+                                        disabled={!signer}
                                         className="rounded bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:opacity-50"
                                     >
                                         Create Root

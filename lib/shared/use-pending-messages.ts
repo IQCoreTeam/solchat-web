@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import type { MessageRow } from '@/lib/onchainDB/utils/message-helpers';
+import type { MessageRow } from './message-helpers';
 import { createPendingMessage, prunePendingMessages, type MessagePayload } from './message';
 
 type PendingMessagesHookReturn = {

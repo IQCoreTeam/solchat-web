@@ -4,8 +4,7 @@ import { useEffect, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { PublicKey } from '@solana/web3.js';
 import { useQuery } from '@tanstack/react-query';
-import { lamportsToSol, ellipsify } from '@/lib/iq/utils';
-import { sendSol, requestAirdrop, type WalletExecutor } from '@/lib/iq/transaction';
+import { LAMPORTS_PER_SOL, SystemProgram, Transaction } from '@solana/web3.js';
 import { getBonkBalance } from '@/lib/token/bonk';
 import { PrivateEntryCard } from './private-entry-card';
 import { PrivateExitCard } from './private-exit-card';
@@ -15,6 +14,48 @@ import {Window, WindowHeader, WindowContent, Panel, Cutout, Button, Frame} from 
 
 const CARD_BASE =
   'rounded-xl border p-6 shadow-md backdrop-blur-sm';
+
+// Inline utility functions for SOL transfers and airdrops
+const lamportsToSol = (lamports: number) => lamports / LAMPORTS_PER_SOL;
+
+const ellipsify = (str: string, chars = 4) => {
+  if (str.length <= chars * 2) return str;
+  return `${str.slice(0, chars)}...${str.slice(-chars)}`;
+};
+
+type WalletExecutor = {
+  publicKey: PublicKey;
+  signTransaction?: (tx: Transaction) => Promise<Transaction>;
+  sendTransaction?: (tx: Transaction) => Promise<string>;
+};
+
+const sendSol = async (connection: any, wallet: WalletExecutor, toPubkey: PublicKey, amount: number) => {
+  const transaction = new Transaction().add(
+    SystemProgram.transfer({
+      fromPubkey: wallet.publicKey,
+      toPubkey,
+      lamports: amount * LAMPORTS_PER_SOL,
+    })
+  );
+  transaction.feePayer = wallet.publicKey;
+  transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+
+  if (wallet.sendTransaction) {
+    return await wallet.sendTransaction(transaction);
+  } else if (wallet.signTransaction) {
+    const signed = await wallet.signTransaction(transaction);
+    const txid = await connection.sendRawTransaction(signed.serialize());
+    return txid;
+  }
+  throw new Error('No signing method available');
+};
+
+const requestAirdrop = async (connection: any, pubkey: PublicKey, amount: number) => {
+  const signature = await connection.requestAirdrop(pubkey, amount * LAMPORTS_PER_SOL);
+  await connection.confirmTransaction(signature);
+  return signature;
+};
+
 function formatAddress(value?: string | null, chars = 4) {
   if (!value) return '';
   return `${value.slice(0, chars)}…${value.slice(-chars)}`;

@@ -31,7 +31,7 @@ import {
   type MessageCacheOptions,
   type LoadMessagesResult,
 } from './message-cache';
-import type { Row } from '@/lib/onchainDB/web/reader';
+import type { MessageRow as Row } from '@/lib/shared/message-helpers';
 import type { ConfirmedSignatureInfo } from '@solana/web3.js';
 
 // ============================================================================

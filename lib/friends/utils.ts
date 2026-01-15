@@ -3,30 +3,6 @@
  * - Helper functions for DM/friends operations
  */
 
-import { Buffer } from 'buffer';
-import { PublicKey } from '@solana/web3.js';
-import { deriveSeedBytes } from '@/lib/onchainDB/core/seed';
-
-/**
- * Sort two public keys alphabetically
- */
-export function sortPubkeys(a: string, b: string): [string, string] {
-  const keyA = new PublicKey(a);
-  const keyB = new PublicKey(b);
-  return Buffer.compare(keyA.toBuffer(), keyB.toBuffer()) <= 0 ? [a, b] : [b, a];
-}
-
-/**
- * Derive deterministic DM seed from two wallet addresses
- * - Seeds are derived from sorted addresses for consistency
- */
-export function deriveDmSeed(userA: string, userB: string): Uint8Array {
-  const [sortedA, sortedB] = sortPubkeys(userA, userB);
-  return deriveSeedBytes(`${sortedA}:${sortedB}`);
-}
-
-
-
 /**
  * Convert bytes to hex string
  */

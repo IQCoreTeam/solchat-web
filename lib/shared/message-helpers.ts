@@ -1,11 +1,12 @@
 /**
- * Message and data transformation helpers for onchain DB
+ * Message and data transformation helpers
  */
 
 import { Buffer } from 'buffer';
-import { sortPubkeys, deriveDmSeed } from '@/lib/friends/utils';
+import iqlabs from 'iqlabs-sdk/src';
 import { deriveAvatarHue } from '@/lib/utils/message-utils';
-import type { Row } from '@/lib/onchainDB/web/cached-reader-integration';
+
+export type Row = Record<string, unknown>;
 
 const DECODER = new TextDecoder();
 const PRINTABLE_ASCII = /^[\x20-\x7E]+$/;
@@ -52,8 +53,8 @@ export function decodeBytes(value: any): string {
 }
 
 export function deriveDmSeedPair(a: string, b: string) {
-  const [userA, userB] = sortPubkeys(a, b);
-  const seedBytes = deriveDmSeed(userA, userB);
+  const [userA, userB] = iqlabs.utils.sortPubkeys(a, b);
+  const seedBytes = iqlabs.utils.deriveDmSeed(userA, userB);
   return { userA, userB, seedBytes, seedHex: bytesToHex(seedBytes) };
 }
 

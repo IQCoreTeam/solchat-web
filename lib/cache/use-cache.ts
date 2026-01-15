@@ -8,7 +8,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { getCacheManager, type MessageCacheOptions, type LoadMessagesResult } from './cache-manager';
-import type { Row } from '@/lib/onchainDB/web/reader';
+import type { Row } from '@/lib/shared/message-helpers';
 
 /**
  * Hook to use the cache manager

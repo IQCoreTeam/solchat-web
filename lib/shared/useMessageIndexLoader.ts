@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { PublicKey, type Connection } from '@solana/web3.js';
 import type { LoaderOptions } from './useMessageLoader';
 import { useMessageLoader } from './useMessageLoader';
-import type { MessageRow } from '../utils/message-helpers';
+import type { MessageRow } from './message-helpers';
 import { getCachedSignatures } from '@/lib/rpc/cache';
 
 export type FetchConfig = {

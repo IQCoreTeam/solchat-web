@@ -6,7 +6,6 @@
 'use client';
 
 import { type FormEvent, type RefObject, type Dispatch, type SetStateAction } from 'react';
-import type { WriterCtx } from '@/lib/onchainDB/web/writer';
 import { shorten } from '@/lib/utils/message-utils';
 
 interface MessageInputFormProps {
@@ -19,9 +18,9 @@ interface MessageInputFormProps {
     attachmentError: string | null;
     setAttachmentError: (error: string | null) => void;
     onSubmit: (e: FormEvent) => void;
+    hasWallet: boolean;
     canWrite: boolean;
     canSubmit: boolean;
-    writerCtx: WriterCtx | null;
     isUserInitialized: boolean;
     userInitError: Error | null;
     inputRef: RefObject<HTMLInputElement | null>;
@@ -37,9 +36,9 @@ export function MessageInputForm({
     attachmentError,
     setAttachmentError,
     onSubmit,
+    hasWallet,
     canWrite,
     canSubmit,
-    writerCtx,
     isUserInitialized,
     userInitError,
     inputRef,
@@ -127,10 +126,10 @@ export function MessageInputForm({
                 )}
                 {attachmentError && <p className="text-xs">{attachmentError}</p>}
             </div>
-            {!writerCtx && (
+            {!hasWallet && (
                 <p className="mt-2 text-xs">Connect your wallet to send messages.</p>
             )}
-            {writerCtx && !isUserInitialized && !userInitError && (
+            {hasWallet && !isUserInitialized && !userInitError && (
                 <p className="mt-2 text-xs">
                     Waiting for your on-chain account initialization…
                 </p>

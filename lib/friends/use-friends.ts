@@ -7,24 +7,18 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { PublicKey, Connection } from '@solana/web3.js';
-import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
-import bs58 from 'bs58';
+import { Buffer } from 'buffer';
+import { BorshAccountsCoder } from '@coral-xyz/anchor';
+import iqlabs from 'iqlabs-sdk/src';
+import idl from 'iqlabs-sdk/idl/code_in.json';
 import type { Friend } from './types';
 import { STATUS_LABELS } from './types';
-import { deriveDmSeed, bytesToHex } from './utils';
-import { pdaRoot, pdaDmTable } from '@/lib/onchainDB';
-
-/**
- * DMTable discriminator from IDL
- * This matches the on-chain account discriminator
- */
-const DM_TABLE_DISCRIMINATOR = [201, 69, 61, 7, 52, 109, 58, 56];
+import { bytesToHex } from './utils';
+import { ROOT_ID } from '@/lib/iqlabs/constants';
 
 export interface UseFriendsParams {
   connection: Connection;
   userAddress: string | undefined;
-  programId: string;
-  idl: Idl;
 }
 
 export interface UseFriendsReturn {
@@ -38,7 +32,7 @@ export interface UseFriendsReturn {
  * Hook to fetch and manage friends list
  */
 export function useFriends(params: UseFriendsParams): UseFriendsReturn {
-  const { connection, userAddress, programId, idl } = params;
+  const { connection, userAddress } = params;
 
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(false);
@@ -56,30 +50,20 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
     setError(null);
 
     try {
-      const programPubkey = new PublicKey(programId);
-      const accCoder = new BorshAccountsCoder(idl);
+      const programPubkey = iqlabs.contract.getProgramId();
+      const accCoder = new BorshAccountsCoder(idl as any);
+      const dbRootId = Buffer.from(ROOT_ID, 'utf8');
+      const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programPubkey);
 
-      // Fetch all DMTable accounts
-      const dmTableAccounts = await connection.getProgramAccounts(programPubkey, {
-        filters: [
-          {
-            memcmp: {
-              offset: 0,
-              bytes: bs58.encode(Buffer.from(DM_TABLE_DISCRIMINATOR)),
-            },
-          },
-        ],
-      });
+      const connectionAccounts = await connection.getProgramAccounts(programPubkey);
 
-      console.log('[useFriends] Found', dmTableAccounts.length, 'DMTable accounts');
+      console.log('[useFriends] Found', connectionAccounts.length, 'connection accounts');
 
       const friendsList: Friend[] = [];
-      const ROOT_ID = process.env.NEXT_PUBLIC_ROOT_ID || 'solchat-root';
-      const rootPda = pdaRoot(ROOT_ID, programPubkey);
 
-      for (const { account, pubkey } of dmTableAccounts) {
+      for (const { account, pubkey } of connectionAccounts) {
         try {
-          const decoded = accCoder.decode('DMTable', account.data);
+          const decoded = accCoder.decode('Connection', account.data) as any;
 
           if (!decoded) continue;
 
@@ -93,30 +77,22 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
 
           const friendAddress = partyA === userAddress ? partyB : partyA;
 
-          const primarySeed = deriveDmSeed(partyA, partyB);
-          const primaryPda = pdaDmTable(rootPda, primarySeed, programPubkey);
-
-          let dmSeed: Uint8Array | null = null;
-          let dmSeedHex: string | null = null;
+          const dmSeed = iqlabs.utils.deriveDmSeed(partyA, partyB);
+          const expected = iqlabs.contract.getConnectionTablePda(
+            dbRoot,
+            dmSeed,
+            programPubkey
+          );
           const actualAddress = pubkey.toBase58();
-
-          if (primaryPda.toBase58() === actualAddress) {
-            dmSeed = primarySeed;
-            dmSeedHex = bytesToHex(primarySeed);
-          }
-           else {
-               console.log(actualAddress)
+          if (!expected.equals(pubkey)) {
             console.warn('[useFriends] PDA mismatch, skipping account:', {
-              expected: primaryPda.toBase58(),
+              expected: expected.toBase58(),
               actual: actualAddress,
             });
             continue;
           }
 
-          // Map status number to label
-          if (!dmSeed || !dmSeedHex) {
-            continue;
-          }
+          const dmSeedHex = bytesToHex(dmSeed);
 
           const status = STATUS_LABELS[decoded.status] || 'pending';
           const lastTimestampRaw = (decoded as any).last_timestamp ?? (decoded as any).lastTimestamp ?? 0;
@@ -137,7 +113,7 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
             lastTimestamp,
           });
         } catch (decodeErr) {
-          console.warn('[useFriends] Failed to decode DMTable:', decodeErr);
+          console.warn('[useFriends] Failed to decode Connection:', decodeErr);
         }
       }
 
@@ -150,7 +126,7 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
     } finally {
       setLoading(false);
     }
-  }, [connection, userAddress, programId, idl]);
+  }, [connection, userAddress]);
 
   useEffect(() => {
     fetchFriends();
