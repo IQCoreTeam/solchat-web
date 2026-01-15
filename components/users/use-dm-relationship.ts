@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Connection } from '@solana/web3.js';
 import { PublicKey } from '@solana/web3.js';
-import { Buffer } from 'buffer';
 import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
+import { Buffer } from 'buffer';
 import iqlabs from 'iqlabs-sdk/src';
 import idl from 'iqlabs-sdk/idl/code_in.json';
 import { ROOT_ID } from '@/lib/iqlabs/constants';

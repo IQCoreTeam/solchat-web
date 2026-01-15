@@ -19,6 +19,7 @@ import idl from 'iqlabs-sdk/idl/code_in.json';
 import type { SignerInput } from 'iqlabs-sdk/src/sdk/utils/wallet';
 import { sendTx } from 'iqlabs-sdk/src/sdk/writer/writer_utils';
 import { shortenAddress } from '@/lib/friends/utils';
+import { buildRequestConnectionInstruction } from '@/lib/friends/request-connection';
 import { DM_STATUS } from '@/lib/friends/types';
 import type { Friend } from '@/lib/friends/types';
 import { Idl } from '@coral-xyz/anchor';
@@ -805,20 +806,19 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             }
         }
 
-        const dmSeed = iqlabs.utils.deriveDmSeed(userAddress, friendAddress);
-
         try {
-            await iqlabs.writer.requestConnection(
-                connection,
-                signer,
+            const receiver = new PublicKey(friendAddress.trim());
+            const { ix } = buildRequestConnectionInstruction({
+                builder,
                 dbRootId,
-                userAddress,
-                friendAddress,
-                DM_TABLE_NAME,
-                [...MESSAGE_COLUMNS],
-                'id',
-                []
-            );
+                programId,
+                requester: signer.publicKey,
+                receiver,
+                tableName: DM_TABLE_NAME,
+                columns: MESSAGE_COLUMNS,
+                idCol: 'id',
+            });
+            await sendTx(connection, signer, ix);
             await refetch();
             setAddFriendModalOpen(false);
         } catch (err) {
