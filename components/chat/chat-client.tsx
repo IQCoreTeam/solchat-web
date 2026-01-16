@@ -12,6 +12,7 @@ import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
 import { usePendingMessages } from '@/lib/shared/use-pending-messages';
 import { useMessageChannel } from '@/lib/shared/use-message-channel';
+import type { FetchConfig } from '@/lib/shared/useMessageIndexLoader';
 import { useAccountSubscription } from '@/lib/shared/use-account-subscription';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
 import { makeRoomTimestampKey, setLastMessageTimestamp, getLastMessageTimestamp } from '@/lib/cache/message-timestamp-cache';
@@ -211,14 +212,14 @@ export function ChatClient() {
         setRoomAlerts((prev) => ({ ...prev, [channel]: false, [seedHex]: false }));
     }, [selectedChannelKey, setRoomAlerts]);
 
-    const fetcher = useMemo(
-        () =>
+    const fetcher = useCallback(
+        (channelKey: string, fetchConfig?: FetchConfig) =>
             createRoomFetcher({
                 walletAddress,
                 endpointSource,
-                rooms,
-            }),
-        [walletAddress, endpointSource, rooms]
+                rooms: latestRoomsRef.current,
+            })(channelKey, fetchConfig),
+        [walletAddress, endpointSource]
     );
 
     const resolveChannelMeta = useCallback((channelKey: string) => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { PublicKey, type Connection } from '@solana/web3.js';
 import type { LoaderOptions } from './useMessageLoader';
 import { useMessageLoader } from './useMessageLoader';
@@ -66,7 +66,16 @@ export function useMessageIndexLoader({
     activeChannelKeyRef.current = channelKey;
   }, [channelKey]);
 
-  const [messages, setMessages] = useState<MessageRow[]>([]);
+  // Per-channel message storage - persists across room switches
+  const messagesPerChannelRef = useRef<Record<string, MessageRow[]>>({});
+  const [updateCounter, forceUpdate] = useReducer((x: number) => x + 1, 0);
+
+  // Derive current channel's messages (depends on updateCounter to trigger re-render)
+  const messages = useMemo(() => {
+    void updateCounter; // Consume to ensure re-computation on forceUpdate
+    if (!channelKey) return [];
+    return messagesPerChannelRef.current[channelKey] ?? [];
+  }, [channelKey, updateCounter]);
 
   const knownSignaturesRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -88,6 +97,7 @@ export function useMessageIndexLoader({
   const liveTaskRef = useRef<Record<string, Promise<void> | null>>({});
   const liveDirtyRef = useRef<Record<string, boolean>>({});
   const runLiveLatestRef = useRef<(channel: string, options?: LoaderOptions) => Promise<void> | null>(null);
+  const inFlightSignaturesRef = useRef<Set<string>>(new Set());
 
   const {
     loadMessages: loadChannelMessages,
@@ -111,12 +121,8 @@ export function useMessageIndexLoader({
 
   const resetChannelState = useCallback(
     (targetChannelKey: string | null, opts?: { resetMessages?: boolean }) => {
-      if (!targetChannelKey) {
-        if (opts?.resetMessages) {
-          setMessages([]);
-        }
-        return;
-      }
+      if (!targetChannelKey) return;
+
       signatureIndexRef.current[targetChannelKey] = [];
       signatureCursorRef.current[targetChannelKey] = null;
       signatureExhaustedRef.current[targetChannelKey] = false;
@@ -125,36 +131,40 @@ export function useMessageIndexLoader({
       backfillTaskRef.current[targetChannelKey] = null;
       liveTaskRef.current[targetChannelKey] = null;
       liveDirtyRef.current[targetChannelKey] = false;
-      if (opts?.resetMessages && activeChannelKeyRef.current === targetChannelKey) {
-        setMessages([]);
+
+      if (opts?.resetMessages) {
+        messagesPerChannelRef.current[targetChannelKey] = [];
+        if (activeChannelKeyRef.current === targetChannelKey) {
+          forceUpdate();
+        }
       }
     },
-    []
+    [forceUpdate]
   );
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      resetChannelState(channelKey, { resetMessages: true });
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [channelKey, resetChannelState]);
+  // NOTE: Removed auto-reset on channelKey change to preserve messages across room switches
 
   const upsertMessages = useCallback((incoming: MessageRow[], targetChannelKey?: string) => {
     if (!incoming.length) return;
     const activeKey = activeChannelKeyRef.current;
-    if (!activeKey || (targetChannelKey && targetChannelKey !== activeKey)) {
-      return;
-    }
-    setMessages((prev) => {
-      const map = new Map<string, MessageRow>();
-      [...prev, ...incoming].forEach((msg) => {
-        if (!msg) return;
-        const key = msg.id || msg.signature || `${msg.timestamp ?? 0}-${msg.sender ?? ''}`;
-        map.set(key, msg);
-      });
-      return Array.from(map.values()).sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+    const channel = targetChannelKey ?? activeKey;
+    if (!channel) return;
+
+    const prev = messagesPerChannelRef.current[channel] ?? [];
+    const map = new Map<string, MessageRow>();
+    [...prev, ...incoming].forEach((msg) => {
+      if (!msg) return;
+      const key = msg.id || msg.signature || `${msg.timestamp ?? 0}-${msg.sender ?? ''}`;
+      map.set(key, msg);
     });
-  }, []);
+    messagesPerChannelRef.current[channel] = Array.from(map.values())
+      .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+
+    // Force re-render only if it's the active channel
+    if (channel === activeKey) {
+      forceUpdate();
+    }
+  }, [forceUpdate]);
 
   const applyLoadedRows = useCallback(
     (targetChannelKey: string, rows: MessageRow[], mode: 'prepend' | 'append') => {
@@ -270,7 +280,12 @@ export function useMessageIndexLoader({
           await ensureSignatureIndex(channel, meta, { mode: 'initial' });
         }
         const index = signatureIndexRef.current[channel] || [];
-        const knownSet = new Set(knownSignaturesRef.current);
+        // Build knownSet from this channel's messages (not the active channel)
+        const channelMessages = messagesPerChannelRef.current[channel] ?? [];
+        const knownSet = new Set<string>();
+        channelMessages.forEach((msg) => {
+          if (msg.signature) knownSet.add(msg.signature);
+        });
         const start = decodeCursorRef.current[channel] ?? 0;
         let targetCount = Math.min(index.length, start + decodeWindow);
 
@@ -345,10 +360,20 @@ export function useMessageIndexLoader({
       }
 
       console.log(`[useMessageIndexLoader] triggerLiveLatest starting for ${meta.seedHex.slice(0, 8)}`);
+      const indexLengthBefore = signatureIndexRef.current[channel]?.length ?? 0;
       const task = (async () => {
+        // Check if we already have data for this channel (returning to a visited room)
+        const existingMessages = messagesPerChannelRef.current[channel] ?? [];
+        const existingIndex = signatureIndexRef.current[channel] ?? [];
+
+        if (existingMessages.length > 0 && existingIndex.length > 0) {
+          console.log(`[useMessageIndexLoader] Channel ${meta.seedHex.slice(0, 8)} already loaded (${existingMessages.length} messages), checking for new only`);
+          // We have data - only check for NEW signatures (refreshLatest mode)
+        }
+
         // Only fetch new signatures if we don't have any, or if explicitly requested
         // This prevents unnecessary RPC calls when messages haven't changed
-        const needsInitial = !signatureIndexRef.current[channel]?.length;
+        const needsInitial = !existingIndex.length;
         const index = await ensureSignatureIndex(channel, meta, {
           mode: needsInitial ? 'initial' : 'refreshLatest',
         });
@@ -356,8 +381,14 @@ export function useMessageIndexLoader({
           return;
         }
 
+        // Build knownSet from this channel's messages (not the active channel)
+        const channelMessages = messagesPerChannelRef.current[channel] ?? [];
+        const knownSet = new Set<string>();
+        channelMessages.forEach((msg) => {
+          if (msg.signature) knownSet.add(msg.signature);
+        });
+
         // If we already decoded all messages and index hasn't grown, skip
-        const knownSet = new Set(knownSignaturesRef.current);
         const decodeCursor = decodeCursorRef.current[channel] ?? 0;
         const allDecoded = decodeCursor >= index.length && index.length > 0;
         const noNewSignatures = index.every(sig => knownSet.has(sig));
@@ -408,12 +439,16 @@ export function useMessageIndexLoader({
         liveDirtyRef.current[channel] = false;
 
         if (shouldRerun) {
-          const rerun = runLiveLatestRef.current;
-          if (rerun) {
-            // Add a small delay to avoid immediate re-execution spam
-            setTimeout(() => {
-              void rerun(channel, { skipLoadingState: true });
-            }, 100);
+          // Only re-run if signature index actually grew (new data exists)
+          const indexLengthAfter = signatureIndexRef.current[channel]?.length ?? 0;
+          if (indexLengthAfter > indexLengthBefore) {
+            const rerun = runLiveLatestRef.current;
+            if (rerun) {
+              // Add a small delay to avoid immediate re-execution spam
+              setTimeout(() => {
+                void rerun(channel, { skipLoadingState: true });
+              }, 100);
+            }
           }
         }
       });
@@ -441,19 +476,36 @@ export function useMessageIndexLoader({
     async (targetChannelKey: string, signature: string) => {
       const meta = resolveChannelMeta(targetChannelKey);
       if (!meta) return;
-      const knownSet = new Set(knownSignaturesRef.current);
 
-      const rows = await loadChannelMessages(
-        targetChannelKey,
-        {
-          maxTx: 1,
-          signatures: [signature],
-          knownSignatures: knownSet,
-          onProgress: (partial) => applyLoadedRows(targetChannelKey, partial, 'append'),
-        } as FetchConfig,
-        { skipLoadingState: true }
-      );
-      applyLoadedRows(targetChannelKey, rows, 'append');
+      // Build knownSet from this channel's messages (not the active channel)
+      const channelMessages = messagesPerChannelRef.current[targetChannelKey] ?? [];
+      const knownSet = new Set<string>();
+      channelMessages.forEach((msg) => {
+        if (msg.signature) knownSet.add(msg.signature);
+      });
+
+      // Skip if already known or in-flight
+      if (knownSet.has(signature)) return;
+      if (inFlightSignaturesRef.current.has(signature)) return;
+
+      // Mark as in-flight
+      inFlightSignaturesRef.current.add(signature);
+
+      try {
+        const rows = await loadChannelMessages(
+          targetChannelKey,
+          {
+            maxTx: 1,
+            signatures: [signature],
+            knownSignatures: knownSet,
+            onProgress: (partial) => applyLoadedRows(targetChannelKey, partial, 'append'),
+          } as FetchConfig,
+          { skipLoadingState: true }
+        );
+        applyLoadedRows(targetChannelKey, rows, 'append');
+      } finally {
+        inFlightSignaturesRef.current.delete(signature);
+      }
     },
     [applyLoadedRows, loadChannelMessages, resolveChannelMeta]
   );
