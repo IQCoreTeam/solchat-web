@@ -5,7 +5,6 @@ type ScrollTrackerOptions = {
   listRef: RefObject<HTMLElement | null>;
   isAtBottomRef: RefObject<boolean>;
   setUiIsAtBottom: (isAtBottom: boolean) => void;
-  setHasNewMessages: (hasNewMessages: boolean) => void;
   selectedChannelKey: string | null;
   clearMarker: (channelKey: string | null) => void;
   markerClearTimeoutRef: RefObject<NodeJS.Timeout | null>;
@@ -18,7 +17,6 @@ export function useScrollTracker({
   listRef,
   isAtBottomRef,
   setUiIsAtBottom,
-  setHasNewMessages,
   selectedChannelKey,
   clearMarker,
   markerClearTimeoutRef,
@@ -35,7 +33,7 @@ export function useScrollTracker({
     isAtBottomRef.current = atBottom;
     setUiIsAtBottom(atBottom);
     if (atBottom) {
-      setHasNewMessages(false);
+      // hasNewMessages is now derived, no need to set
       if (selectedChannelKey && onMarkRead) {
         onMarkRead(selectedChannelKey);
       }
@@ -81,7 +79,6 @@ export function useScrollTracker({
     onMarkRead,
     onNearTop,
     selectedChannelKey,
-    setHasNewMessages,
     setUiIsAtBottom,
   ]);
 

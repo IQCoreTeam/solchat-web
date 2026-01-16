@@ -13,7 +13,7 @@ import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
 import { usePendingMessages } from '@/lib/shared/use-pending-messages';
 import { useMessageChannel } from '@/lib/shared/use-message-channel';
-import { useOnAccountChange } from '@/lib/shared/useOnAccountChange';
+import { useAccountSubscription } from '@/lib/shared/use-account-subscription';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
 import { makeRoomTimestampKey, setLastMessageTimestamp, getLastMessageTimestamp } from '@/lib/cache/message-timestamp-cache';
 import { RpcConfigPrompt } from '@/components/ui/rpc-config-prompt';
@@ -94,10 +94,7 @@ export function ChatClient() {
     const [disconnectingPrivy, setDisconnectingPrivy] = useState(false);
     const [roomNotificationsEnabled, setRoomNotificationsEnabled] = useState(true);
     const [roomAlerts, setRoomAlerts] = useState<Record<string, boolean>>({});
-    const [slowRpcMode, setSlowRpcMode] = useState(endpointSource === 'default');
     const [toast, setToast] = useState<ToastState | null>(null);
-    const [hasNewMessages, setHasNewMessages] = useState(false);
-    const [newMarkerId, setNewMarkerId] = useState<string | null>(null);
     const [uiIsAtBottom, setUiIsAtBottom] = useState(true);
 
     // Refs
@@ -105,7 +102,6 @@ export function ChatClient() {
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
     const isAtBottomRef = useRef(true);
-    const lastAccountRefreshRef = useRef<number>(0);
     const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const newMarkerByChannelRef = useRef<Record<string, string | null>>({});
     const prevMessageCountRef = useRef<number>(0);
@@ -173,16 +169,17 @@ export function ChatClient() {
     const selectedChannelKey = useMemo(() => (selectedSeed ? makeChannelKey(selectedSeed) : null), [selectedSeed]);
     const latestRoomsRef = useRef<RoomMeta[]>(rooms);
     const latestSelectedRoomRef = useRef<RoomMeta | null>(selectedRoom);
-    useEffect(() => {
-        latestRoomsRef.current = rooms;
-    }, [rooms]);
-    useEffect(() => {
-        latestSelectedRoomRef.current = selectedRoom;
-    }, [selectedRoom]);
+    // Sync refs inline where needed instead of useEffect
+    latestRoomsRef.current = rooms;
+    latestSelectedRoomRef.current = selectedRoom;
 
-    const walletAddress = useMemo(() => wallet.publicKey?.toBase58() || '', [wallet.publicKey]);
+    // Derived values (no useState needed)
+    const walletAddress = wallet.publicKey?.toBase58() ?? '';
     const hasWallet = Boolean(wallet.publicKey);
     const canWrite = Boolean(signer && isUserInitialized);
+    const slowRpcMode = endpointSource === 'default';
+    const newMarkerId = selectedChannelKey ? (newMarkerByChannelRef.current[selectedChannelKey] ?? null) : null;
+    const hasNewMessages = Boolean(newMarkerId);
 
     const showToast = useCallback((text: string, tone: ToastTone = 'info') => {
         if (toastTimeoutRef.current) {
@@ -194,11 +191,8 @@ export function ChatClient() {
 
     const setChannelMarker = useCallback((channelKey: string, markerId: string | null) => {
         newMarkerByChannelRef.current[channelKey] = markerId;
-        if (selectedChannelKey === channelKey) {
-            setNewMarkerId(markerId);
-            setHasNewMessages(Boolean(markerId));
-        }
-    }, [selectedChannelKey]);
+        // newMarkerId and hasNewMessages are derived from the ref, no need to set state
+    }, []);
 
     const clearChannelMarker = useCallback((channelKey: string | null) => {
         if (!channelKey) return;
@@ -224,9 +218,8 @@ export function ChatClient() {
                 walletAddress,
                 endpointSource,
                 rooms,
-                setSlowRpcMode,
             }),
-        [walletAddress, endpointSource, rooms, setSlowRpcMode]
+        [walletAddress, endpointSource, rooms]
     );
 
     const resolveChannelMeta = useCallback((channelKey: string) => {
@@ -328,18 +321,13 @@ export function ChatClient() {
             },
         },
     });
+    // Update latest message timestamp ref (pure ref update, kept for scroll/read tracking)
     useEffect(() => {
         const latestTimestamp = allMessages[allMessages.length - 1]?.timestamp ?? 0;
         latestMessageTimestampRef.current = latestTimestamp || 0;
     }, [allMessages]);
-    useEffect(() => {
-        if (!selectedChannelKey) {
-            setNewMarkerId(null);
-            return;
-        }
-        setNewMarkerId(newMarkerByChannelRef.current[selectedChannelKey] ?? null);
-        setHasNewMessages(Boolean(newMarkerByChannelRef.current[selectedChannelKey]));
-    }, [selectedChannelKey]);
+
+    // Sync cached timestamp to ref on channel switch
     useEffect(() => {
         if (!selectedChannelKey) return;
         const seedHex = channelKeyToSeed(selectedChannelKey);
@@ -391,9 +379,7 @@ export function ChatClient() {
         }
     }, [rooms, showToast, selectedSeed]);
 
-    useEffect(() => {
-        setSlowRpcMode(endpointSource === 'default');
-    }, [endpointSource]);
+    // slowRpcMode is now a derived value, no effect needed
 
     /* --------------------------------------------------------------------------
      * WebSocket Connection
@@ -428,24 +414,7 @@ export function ChatClient() {
             invalidateSignatureCache(roomMeta.tableAddress);
         }
 
-        // Signature-targeted refresh path
-        if (signature) {
-            try {
-                await targetedDecode(channelKey, signature);
-                if (DEBUG_WS) {
-                    console.log('[WS] signature-targeted append', {
-                        channelKey,
-                        signature,
-                    });
-                }
-                if (selectedChannelKey === channelKey) {
-                    return;
-                }
-            } catch (error) {
-                console.error('[ChatClient] Failed to load targeted signature', signature.slice(0, 8), error);
-            }
-        }
-
+        // Update room timestamps
         setRooms((prev) => {
             let changed = false;
             const updated = prev.map((room) => {
@@ -463,9 +432,37 @@ export function ChatClient() {
         });
 
         const currentRoom = latestSelectedRoomRef.current;
-        if (currentRoom?.seedHex === seedHex) {
+        const isCurrentRoom = currentRoom?.seedHex === seedHex;
+
+        // Signature-targeted refresh path (efficient)
+        if (signature) {
+            try {
+                await targetedDecode(channelKey, signature);
+                if (DEBUG_WS) {
+                    console.log('[WS] signature-targeted decode success', {
+                        channelKey,
+                        signature: signature.slice(0, 8),
+                        isCurrentRoom,
+                    });
+                }
+                // For non-current rooms, set alert
+                if (!isCurrentRoom) {
+                    setRoomAlerts((prev) => ({ ...prev, [channelKey]: true, [seedHex]: true }));
+                }
+                return; // Successfully handled with signature
+            } catch (error) {
+                console.error('[ChatClient] Targeted decode failed, falling back to full refresh', signature.slice(0, 8), error);
+                // Fall through to full refresh as fallback
+            }
+        }
+
+        // Fallback: full refresh (only when signature is missing or failed)
+        if (isCurrentRoom) {
             try {
                 await triggerLiveLatest(channelKey, { skipLoadingState: true });
+                if (DEBUG_WS) {
+                    console.log('[WS] full refresh completed (no signature or decode failed)');
+                }
             } catch (error) {
                 console.error('[ChatClient] Failed to refresh room after notification', error);
             }
@@ -510,21 +507,16 @@ export function ChatClient() {
         roomSubscribedIdsRef.current = desired;
   }, [rooms, roomWsConnected]);
 
-    // Wrapper for current room
-    const loadMessages = useCallback(async () => {
-        if (!selectedChannelKey) return;
-        await triggerLiveLatest(selectedChannelKey);
-    }, [selectedChannelKey, triggerLiveLatest]);
-
+    // Load messages when channel or wallet changes
     useEffect(() => {
         if (!walletAddress || !selectedChannelKey) return;
-        loadMessages();
-    }, [walletAddress, selectedChannelKey, loadMessages]);
+        void triggerLiveLatest(selectedChannelKey);
+    }, [walletAddress, selectedChannelKey, triggerLiveLatest]);
 
     useEffect(() => {
         if (!pendingMessages.length) return;
         pruneConfirmedMessages(messages);
-    }, [messages, pendingMessages.length, pruneConfirmedMessages]);
+    }, [messages, pendingMessages, pruneConfirmedMessages]);
 
     useEffect(() => {
         return () => {
@@ -535,36 +527,33 @@ export function ChatClient() {
     }, []);
 
     /* --------------------------------------------------------------------------
-     * Effects: Account Change Subscriptions
+     * Effects: Account Change Subscriptions (CLI pattern - signature-based)
      * -------------------------------------------------------------------------- */
-    const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-    const refreshMessagesFromAccount = useCallback(() => {
+    const handleNewSignatures = useCallback(async (signatures: string[]) => {
         if (!selectedChannelKey) return;
 
-        if (refreshTimeoutRef.current) {
-            clearTimeout(refreshTimeoutRef.current);
+        console.log(`[ChatClient] Processing ${signatures.length} new signatures via RPC subscription`);
+
+        // Try to decode each signature and append to messages
+        for (const signature of signatures) {
+            try {
+                await targetedDecode(selectedChannelKey, signature);
+            } catch (error) {
+                console.error('[ChatClient] Failed to decode signature', signature.slice(0, 8), error);
+            }
         }
+    }, [selectedChannelKey, targetedDecode]);
 
-        const now = Date.now();
-        if (now - lastAccountRefreshRef.current < 1000) {
-            return;
-        }
-        lastAccountRefreshRef.current = now;
-
-        refreshTimeoutRef.current = setTimeout(() => {
-            void triggerLiveLatest(selectedChannelKey, { skipLoadingState: true });
-        }, 150);
-    }, [selectedChannelKey, triggerLiveLatest]);
-
-    useOnAccountChange({
+    useAccountSubscription({
         connection,
         account: selectedRoom ? new PublicKey(selectedRoom.tableAddress) : null,
-        handler: refreshMessagesFromAccount,
-        commitment: 'processed',
+        onNewSignatures: handleNewSignatures,
+        commitment: 'confirmed',
         enabled:
             !roomWsConnected &&
             (typeof document === 'undefined' || document.visibilityState === 'visible'),
+        fetchLimit: 10,
+        logPrefix: 'ChatClient',
     });
 
     /* --------------------------------------------------------------------------
@@ -578,18 +567,18 @@ export function ChatClient() {
     const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
         messagesEndRef.current?.scrollIntoView({ behavior });
         isAtBottomRef.current = true;
-        setHasNewMessages(false);
         setUiIsAtBottom(true);
         if (selectedChannelKey) {
             markMessagesRead(selectedChannelKey);
+            // Clear marker when scrolling to bottom
+            clearChannelMarker(selectedChannelKey);
         }
-    }, [markMessagesRead, selectedChannelKey]);
+    }, [markMessagesRead, selectedChannelKey, clearChannelMarker]);
 
     const { updateIsAtBottom } = useScrollTracker({
         listRef,
         isAtBottomRef,
         setUiIsAtBottom,
-        setHasNewMessages,
         selectedChannelKey,
         clearMarker: clearChannelMarker,
         markerClearTimeoutRef,
@@ -630,18 +619,16 @@ export function ChatClient() {
                 const delta = nextHeight - prevHeight;
                 el.scrollTop = prevTop + delta;
                 isAtBottomRef.current = false;
-                setHasNewMessages(false);
             }
         } else if (mode === 'append') {
             if (isAtBottomRef.current) {
                 scrollToBottom('auto');
-                setHasNewMessages(false);
                 isAtBottomRef.current = true;
                 if (latestTimestamp) {
                     markMessagesRead(selectedChannelKey, latestTimestamp);
                 }
             } else if (latestTimestamp > lastSeenTimestamp) {
-                setHasNewMessages(true);
+                // Set marker for new messages (hasNewMessages is derived from this)
                 if (!newMarkerByChannelRef.current[selectedChannelKey]) {
                     const latestSender = latest?.sender;
                     const viewer = walletAddress;
@@ -660,11 +647,9 @@ export function ChatClient() {
         prevMessageCountRef.current = nextCount;
     }, [allMessages, markMessagesRead, selectedChannelKey, scrollToBottom, lastInsertModeRef, setChannelMarker, walletAddress]);
 
-    // Reset scroll indicators when switching rooms
+    // Reset scroll position when switching rooms
     useEffect(() => {
         isAtBottomRef.current = true;
-        setHasNewMessages(Boolean(newMarkerByChannelRef.current[selectedChannelKey ?? '']));
-        setNewMarkerId(newMarkerByChannelRef.current[selectedChannelKey ?? ''] ?? null);
         scrollToBottom('auto');
     }, [selectedChannelKey, scrollToBottom]);
 
