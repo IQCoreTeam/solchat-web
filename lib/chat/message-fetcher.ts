@@ -1,6 +1,7 @@
 import iqlabs from 'iqlabs-sdk/src';
 import { rowToMessage, type MessageRow } from '@/lib/shared/message-helpers';
 import { channelKeyToSeed } from '@/lib/shared/channel-utils';
+import { getCacheManager } from '@/lib/cache';
 import type { FetchConfig } from '@/lib/shared/useMessageIndexLoader';
 
 type RoomLookup = {
@@ -14,10 +15,12 @@ type MessageFetcherOptions = {
   rooms: RoomLookup[];
 };
 
-// Global deduplication - stores promises for in-flight decodes
-type DecodeResult = { data: string | null; metadata: string } | null;
-const globalDecodePromises = new Map<string, Promise<DecodeResult>>();
-const globalDecodedCache = new Map<string, DecodeResult>();
+// In-flight promise tracking for deduplication (prevents duplicate concurrent requests)
+const inFlightDecodes = new Map<string, Promise<{ data: string | null; metadata: string } | null>>();
+
+// Fast in-memory cache layer (instant access, survives IndexedDB write race conditions)
+// IndexedDB writes are async - this prevents duplicate fetches while write is pending
+const memoryCache = new Map<string, { data: string | null; metadata: string } | null>();
 
 export function createRoomFetcher({
   walletAddress,
@@ -29,6 +32,7 @@ export function createRoomFetcher({
     const seedHex = channelKeyToSeed(channelKey);
     const room = rooms.find((r) => r.seedHex === seedHex);
     if (!room) return [];
+    const roomId = `room:${seedHex}`;
     const baseMaxTx = endpointSource === 'default' ? 20 : 40;
     const maxTx = fetchConfig?.maxTx ?? baseMaxTx;
     const targetSignatures = fetchConfig?.signatures?.length
@@ -36,45 +40,71 @@ export function createRoomFetcher({
       : (await iqlabs.reader.fetchAccountTransactions(room.tableAddress, { limit: maxTx }))
           .map((sig) => sig.signature);
 
-    // Helper to decode a single signature with deduplication
-    const decodeSingleSignature = async (signature: string): Promise<DecodeResult> => {
-      // Check cache first
-      if (globalDecodedCache.has(signature)) {
-        return globalDecodedCache.get(signature)!;
+    const cacheManager = getCacheManager();
+
+    // Decode a single signature using multi-layer cache (memory -> IndexedDB -> network)
+    const decodeSingleSignature = async (signature: string): Promise<{ data: string | null; metadata: string } | null> => {
+      // L1: Fast memory cache (instant, synchronous)
+      if (memoryCache.has(signature)) {
+        return memoryCache.get(signature) ?? null;
       }
 
-      // Check if already in-flight - wait for it instead of making duplicate request
-      const inFlight = globalDecodePromises.get(signature);
+      // Check if request is already in-flight (deduplication)
+      const inFlight = inFlightDecodes.get(signature);
       if (inFlight) {
         return inFlight;
       }
 
-      // Start new decode and track the promise
-      const decodePromise = (async (): Promise<DecodeResult> => {
+      // Create the decode promise
+      const decodePromise = (async () => {
         try {
-          const result = await iqlabs.reader.readCodeIn(signature);
-          globalDecodedCache.set(signature, result);
+          // L2: IndexedDB cache, L3: Network fetch
+          const { data: cachedData, fromCache } = await cacheManager.loadTransaction(
+            signature,
+            roomId,
+            async () => {
+              try {
+                const result = await iqlabs.reader.readCodeIn(signature);
+                return result;
+              } catch (err) {
+                if (err instanceof Error && err.message.includes('user_inventory_code_in instruction not found')) {
+                  return null;
+                }
+                throw err;
+              }
+            }
+          );
+
+          const result = cachedData as { data: string | null; metadata: string } | null;
+
+          // Populate memory cache immediately (before async IndexedDB write completes)
+          memoryCache.set(signature, result);
+
           return result;
         } catch (err) {
           if (err instanceof Error && err.message.includes('user_inventory_code_in instruction not found')) {
-            globalDecodedCache.set(signature, null);
+            memoryCache.set(signature, null);
             return null;
           }
           throw err;
-        } finally {
-          globalDecodePromises.delete(signature);
         }
       })();
 
-      globalDecodePromises.set(signature, decodePromise);
-      return decodePromise;
+      // Track in-flight request
+      inFlightDecodes.set(signature, decodePromise);
+
+      try {
+        return await decodePromise;
+      } finally {
+        inFlightDecodes.delete(signature);
+      }
     };
 
     const decodeRowsFromSignatures = async (
       signatures: string[],
       onProgress?: (rows: MessageRow[]) => void
     ) => {
-      // Filter out already-known signatures to avoid redundant RPC calls
+      // Filter out already-known signatures to avoid redundant decodes
       const knownSet = fetchConfig?.knownSignatures instanceof Set
         ? fetchConfig.knownSignatures
         : new Set(fetchConfig?.knownSignatures ?? []);
@@ -114,7 +144,6 @@ export function createRoomFetcher({
 
     const messages = await decodeRowsFromSignatures(targetSignatures, (partial) => {
       fetchConfig?.onProgress?.(partial);
-      // slowRpcMode is derived from endpointSource in the component, no need to set
     });
     return messages;
   };
