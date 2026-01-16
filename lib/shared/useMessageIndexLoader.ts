@@ -192,8 +192,10 @@ export function useMessageIndexLoader({
     ) => {
       const mode = opts?.mode ?? (signatureIndexRef.current[targetChannelKey]?.length ? 'refreshLatest' : 'initial');
 
-      const baseLimit = 1000;
-      const latestLimit = 1000;
+      // Use conservative limits to avoid RPC rate limiting
+      // Public RPC can handle ~5 req/sec, so we limit signature fetching
+      const baseLimit = endpointSource === 'default' ? 100 : 500;  // Reduced from 1000
+      const latestLimit = endpointSource === 'default' ? 50 : 200;  // Reduced from 1000
       const limit =
         opts?.limit ??
         (mode === 'refreshLatest'
@@ -338,17 +340,33 @@ export function useMessageIndexLoader({
       const existingTask = liveTaskRef.current[channel];
       if (existingTask) {
         liveDirtyRef.current[channel] = true;
+        console.log(`[useMessageIndexLoader] triggerLiveLatest called while task running, marking dirty for ${meta.seedHex.slice(0, 8)}`);
         return existingTask;
       }
 
+      console.log(`[useMessageIndexLoader] triggerLiveLatest starting for ${meta.seedHex.slice(0, 8)}`);
       const task = (async () => {
+        // Only fetch new signatures if we don't have any, or if explicitly requested
+        // This prevents unnecessary RPC calls when messages haven't changed
+        const needsInitial = !signatureIndexRef.current[channel]?.length;
         const index = await ensureSignatureIndex(channel, meta, {
-          mode: 'refreshLatest',
+          mode: needsInitial ? 'initial' : 'refreshLatest',
         });
         if (!index.length) {
           return;
         }
+
+        // If we already decoded all messages and index hasn't grown, skip
         const knownSet = new Set(knownSignaturesRef.current);
+        const decodeCursor = decodeCursorRef.current[channel] ?? 0;
+        const allDecoded = decodeCursor >= index.length && index.length > 0;
+        const noNewSignatures = index.every(sig => knownSet.has(sig));
+
+        if (allDecoded && noNewSignatures) {
+          console.log(`[useMessageIndexLoader] All messages already decoded for ${meta.seedHex.slice(0, 8)}, skipping refresh`);
+          return;
+        }
+
         const targetCount = Math.min(index.length, decodeWindow);
         if (targetCount === 0) {
           return;
@@ -384,11 +402,18 @@ export function useMessageIndexLoader({
         if (liveTaskRef.current[channel] === task) {
           liveTaskRef.current[channel] = null;
         }
-        if (liveDirtyRef.current[channel]) {
-          liveDirtyRef.current[channel] = false;
+        // Only re-run if dirty flag was set AND there are actually new messages
+        // This prevents infinite loops when repeatedly called with no new data
+        const shouldRerun = liveDirtyRef.current[channel];
+        liveDirtyRef.current[channel] = false;
+
+        if (shouldRerun) {
           const rerun = runLiveLatestRef.current;
           if (rerun) {
-            void rerun(channel, { skipLoadingState: true });
+            // Add a small delay to avoid immediate re-execution spam
+            setTimeout(() => {
+              void rerun(channel, { skipLoadingState: true });
+            }, 100);
           }
         }
       });

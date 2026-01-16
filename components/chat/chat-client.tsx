@@ -7,7 +7,6 @@ import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk/src';
 import idl from 'iqlabs-sdk/idl/code_in.json';
 import type { SignerInput } from 'iqlabs-sdk/src/sdk/utils/wallet';
-import { invalidateSignatureCache } from '@/lib/rpc/cache';
 import { useUserInit } from '@/lib/iqlabs/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
@@ -301,7 +300,8 @@ export function ChatClient() {
                     },
                 ], 'append');
                 removePendingMessage(payload.id);
-                invalidateSignatureCache(selectedRoom.tableAddress);
+                // Don't invalidate - signature cache has no TTL now
+                // invalidateSignatureCache(selectedRoom.tableAddress);
                 const timestamp = payload.timestamp ?? 0;
                 notifyRoomMessageSent(selectedRoom.seedHex, timestamp, signature);
                 // Scroll after DOM updates on next frame
@@ -409,10 +409,11 @@ export function ChatClient() {
             });
         }
 
-        const roomMeta = latestRoomsRef.current.find((room) => room.seedHex === seedHex);
-        if (roomMeta?.tableAddress) {
-            invalidateSignatureCache(roomMeta.tableAddress);
-        }
+        // Don't invalidate signature cache - it has no TTL now, and we use targeted decode with signature
+        // const roomMeta = latestRoomsRef.current.find((room) => room.seedHex === seedHex);
+        // if (roomMeta?.tableAddress) {
+        //     invalidateSignatureCache(roomMeta.tableAddress);
+        // }
 
         // Update room timestamps
         setRooms((prev) => {
@@ -511,7 +512,8 @@ export function ChatClient() {
     useEffect(() => {
         if (!walletAddress || !selectedChannelKey) return;
         void triggerLiveLatest(selectedChannelKey);
-    }, [walletAddress, selectedChannelKey, triggerLiveLatest]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [walletAddress, selectedChannelKey]);
 
     useEffect(() => {
         if (!pendingMessages.length) return;
