@@ -4,6 +4,7 @@ import type { LoaderOptions } from './useMessageLoader';
 import { useMessageLoader } from './useMessageLoader';
 import type { MessageRow } from './message-helpers';
 import { getCachedSignatures } from '@/lib/rpc/cache';
+import { getCacheManager } from '@/lib/cache';
 
 export type FetchConfig = {
   maxTx?: number;
@@ -66,13 +67,14 @@ export function useMessageIndexLoader({
     activeChannelKeyRef.current = channelKey;
   }, [channelKey]);
 
-  // Per-channel message storage - persists across room switches
+  // Per-channel message storage (in-memory for fast access, synced with IndexedDB)
   const messagesPerChannelRef = useRef<Record<string, MessageRow[]>>({});
   const [updateCounter, forceUpdate] = useReducer((x: number) => x + 1, 0);
+  const cacheLoadedRef = useRef<Set<string>>(new Set());
 
-  // Derive current channel's messages (depends on updateCounter to trigger re-render)
+  // Derive current channel's messages
   const messages = useMemo(() => {
-    void updateCounter; // Consume to ensure re-computation on forceUpdate
+    void updateCounter;
     if (!channelKey) return [];
     return messagesPerChannelRef.current[channelKey] ?? [];
   }, [channelKey, updateCounter]);
@@ -97,7 +99,6 @@ export function useMessageIndexLoader({
   const liveTaskRef = useRef<Record<string, Promise<void> | null>>({});
   const liveDirtyRef = useRef<Record<string, boolean>>({});
   const runLiveLatestRef = useRef<(channel: string, options?: LoaderOptions) => Promise<void> | null>(null);
-  const inFlightSignaturesRef = useRef<Set<string>>(new Set());
 
   const {
     loadMessages: loadChannelMessages,
@@ -119,6 +120,42 @@ export function useMessageIndexLoader({
     return out;
   }, []);
 
+  // Load cached messages from IndexedDB for a channel
+  const loadCachedMessages = useCallback(async (targetChannelKey: string) => {
+    if (cacheLoadedRef.current.has(targetChannelKey)) {
+      return; // Already loaded from cache
+    }
+
+    const meta = resolveChannelMeta(targetChannelKey);
+    if (!meta) return;
+
+    const roomId = `room:${meta.seedHex}`;
+    const cacheManager = getCacheManager();
+
+    try {
+      const cachedMessages = await cacheManager.getCachedRoomMessages(roomId);
+      if (cachedMessages.length > 0) {
+        console.log(`[useMessageIndexLoader] Loaded ${cachedMessages.length} messages from IndexedDB for ${meta.seedHex.slice(0, 8)}`);
+        messagesPerChannelRef.current[targetChannelKey] = cachedMessages;
+        cacheLoadedRef.current.add(targetChannelKey);
+        if (activeChannelKeyRef.current === targetChannelKey) {
+          forceUpdate();
+        }
+      }
+    } catch (error) {
+      console.warn('[useMessageIndexLoader] Failed to load cached messages:', error);
+    }
+
+    cacheLoadedRef.current.add(targetChannelKey);
+  }, [resolveChannelMeta]);
+
+  // Load cached messages when channel changes
+  useEffect(() => {
+    if (channelKey) {
+      loadCachedMessages(channelKey);
+    }
+  }, [channelKey, loadCachedMessages]);
+
   const resetChannelState = useCallback(
     (targetChannelKey: string | null, opts?: { resetMessages?: boolean }) => {
       if (!targetChannelKey) return;
@@ -134,16 +171,16 @@ export function useMessageIndexLoader({
 
       if (opts?.resetMessages) {
         messagesPerChannelRef.current[targetChannelKey] = [];
+        cacheLoadedRef.current.delete(targetChannelKey);
         if (activeChannelKeyRef.current === targetChannelKey) {
           forceUpdate();
         }
       }
     },
-    [forceUpdate]
+    []
   );
 
-  // NOTE: Removed auto-reset on channelKey change to preserve messages across room switches
-
+  // Upsert messages and save to IndexedDB
   const upsertMessages = useCallback((incoming: MessageRow[], targetChannelKey?: string) => {
     if (!incoming.length) return;
     const activeKey = activeChannelKeyRef.current;
@@ -157,14 +194,24 @@ export function useMessageIndexLoader({
       const key = msg.id || msg.signature || `${msg.timestamp ?? 0}-${msg.sender ?? ''}`;
       map.set(key, msg);
     });
-    messagesPerChannelRef.current[channel] = Array.from(map.values())
-      .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+    const merged = Array.from(map.values()).sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+    messagesPerChannelRef.current[channel] = merged;
+
+    // Save to IndexedDB in background
+    const meta = resolveChannelMeta(channel);
+    if (meta) {
+      const roomId = `room:${meta.seedHex}`;
+      const cacheManager = getCacheManager();
+      cacheManager.updateRoomCache(roomId, merged).catch((error) => {
+        console.warn('[useMessageIndexLoader] Failed to save messages to IndexedDB:', error);
+      });
+    }
 
     // Force re-render only if it's the active channel
     if (channel === activeKey) {
       forceUpdate();
     }
-  }, [forceUpdate]);
+  }, [resolveChannelMeta]);
 
   const applyLoadedRows = useCallback(
     (targetChannelKey: string, rows: MessageRow[], mode: 'prepend' | 'append') => {
@@ -202,10 +249,8 @@ export function useMessageIndexLoader({
     ) => {
       const mode = opts?.mode ?? (signatureIndexRef.current[targetChannelKey]?.length ? 'refreshLatest' : 'initial');
 
-      // Use conservative limits to avoid RPC rate limiting
-      // Public RPC can handle ~5 req/sec, so we limit signature fetching
-      const baseLimit = endpointSource === 'default' ? 100 : 500;  // Reduced from 1000
-      const latestLimit = endpointSource === 'default' ? 50 : 200;  // Reduced from 1000
+      const baseLimit = endpointSource === 'default' ? 100 : 500;
+      const latestLimit = endpointSource === 'default' ? 50 : 200;
       const limit =
         opts?.limit ??
         (mode === 'refreshLatest'
@@ -280,7 +325,7 @@ export function useMessageIndexLoader({
           await ensureSignatureIndex(channel, meta, { mode: 'initial' });
         }
         const index = signatureIndexRef.current[channel] || [];
-        // Build knownSet from this channel's messages (not the active channel)
+        // Build knownSet from this channel's messages
         const channelMessages = messagesPerChannelRef.current[channel] ?? [];
         const knownSet = new Set<string>();
         channelMessages.forEach((msg) => {
@@ -362,17 +407,14 @@ export function useMessageIndexLoader({
       console.log(`[useMessageIndexLoader] triggerLiveLatest starting for ${meta.seedHex.slice(0, 8)}`);
       const indexLengthBefore = signatureIndexRef.current[channel]?.length ?? 0;
       const task = (async () => {
-        // Check if we already have data for this channel (returning to a visited room)
+        // Check if we already have data for this channel
         const existingMessages = messagesPerChannelRef.current[channel] ?? [];
         const existingIndex = signatureIndexRef.current[channel] ?? [];
 
         if (existingMessages.length > 0 && existingIndex.length > 0) {
           console.log(`[useMessageIndexLoader] Channel ${meta.seedHex.slice(0, 8)} already loaded (${existingMessages.length} messages), checking for new only`);
-          // We have data - only check for NEW signatures (refreshLatest mode)
         }
 
-        // Only fetch new signatures if we don't have any, or if explicitly requested
-        // This prevents unnecessary RPC calls when messages haven't changed
         const needsInitial = !existingIndex.length;
         const index = await ensureSignatureIndex(channel, meta, {
           mode: needsInitial ? 'initial' : 'refreshLatest',
@@ -381,7 +423,7 @@ export function useMessageIndexLoader({
           return;
         }
 
-        // Build knownSet from this channel's messages (not the active channel)
+        // Build knownSet from this channel's messages
         const channelMessages = messagesPerChannelRef.current[channel] ?? [];
         const knownSet = new Set<string>();
         channelMessages.forEach((msg) => {
@@ -433,18 +475,14 @@ export function useMessageIndexLoader({
         if (liveTaskRef.current[channel] === task) {
           liveTaskRef.current[channel] = null;
         }
-        // Only re-run if dirty flag was set AND there are actually new messages
-        // This prevents infinite loops when repeatedly called with no new data
         const shouldRerun = liveDirtyRef.current[channel];
         liveDirtyRef.current[channel] = false;
 
         if (shouldRerun) {
-          // Only re-run if signature index actually grew (new data exists)
           const indexLengthAfter = signatureIndexRef.current[channel]?.length ?? 0;
           if (indexLengthAfter > indexLengthBefore) {
             const rerun = runLiveLatestRef.current;
             if (rerun) {
-              // Add a small delay to avoid immediate re-execution spam
               setTimeout(() => {
                 void rerun(channel, { skipLoadingState: true });
               }, 100);
@@ -477,19 +515,15 @@ export function useMessageIndexLoader({
       const meta = resolveChannelMeta(targetChannelKey);
       if (!meta) return;
 
-      // Build knownSet from this channel's messages (not the active channel)
+      // Build knownSet from this channel's messages
       const channelMessages = messagesPerChannelRef.current[targetChannelKey] ?? [];
       const knownSet = new Set<string>();
       channelMessages.forEach((msg) => {
         if (msg.signature) knownSet.add(msg.signature);
       });
 
-      // Skip if already known or in-flight
+      // Skip if already known
       if (knownSet.has(signature)) return;
-      if (inFlightSignaturesRef.current.has(signature)) return;
-
-      // Mark as in-flight
-      inFlightSignaturesRef.current.add(signature);
 
       try {
         const rows = await loadChannelMessages(
@@ -503,8 +537,8 @@ export function useMessageIndexLoader({
           { skipLoadingState: true }
         );
         applyLoadedRows(targetChannelKey, rows, 'append');
-      } finally {
-        inFlightSignaturesRef.current.delete(signature);
+      } catch (error) {
+        console.error('[useMessageIndexLoader] Failed targeted decode for', signature.slice(0, 8), error);
       }
     },
     [applyLoadedRows, loadChannelMessages, resolveChannelMeta]
