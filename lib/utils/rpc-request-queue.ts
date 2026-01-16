@@ -48,6 +48,19 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const queues: Record<string, Promise<unknown>> = {};
 const timestampsMap: Record<string, number[]> = {};
 
+const RPC_ERROR_EVENT = 'solchat:rpc-error';
+
+function notifyRpcError(error: unknown, endpoint?: string) {
+  if (typeof window === 'undefined') return;
+  const message = error instanceof Error ? error.message : String(error);
+  if (!message.includes('401')) return;
+  window.dispatchEvent(
+    new CustomEvent(RPC_ERROR_EVENT, {
+      detail: { message, endpoint },
+    })
+  );
+}
+
 async function waitForSlot(key: string, maxPerSecond: number, windowMs: number) {
   if (!timestampsMap[key]) {
     timestampsMap[key] = [];
@@ -106,7 +119,12 @@ export async function runWithRpcRateLimit<T>(
   
   const task = currentQueue.then(async () => {
     await waitForSlot(queueKey, maxPerSecond!, windowMs!);
-    return fn();
+    try {
+      return await fn();
+    } catch (error) {
+      notifyRpcError(error, endpoint);
+      throw error;
+    }
   });
 
   // Append to queue but swallow errors so the queue chain doesn't break

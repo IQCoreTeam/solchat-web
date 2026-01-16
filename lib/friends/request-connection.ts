@@ -32,9 +32,7 @@ export function buildRequestConnectionInstruction(
   } = params;
 
   const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programId);
-  const requesterBase58 = requester.toBase58();
-  const receiverBase58 = receiver.toBase58();
-  const connectionSeed = iqlabs.utils.deriveDmSeed(requesterBase58, receiverBase58);
+  const connectionSeed = iqlabs.utils.deriveDmSeed(requester.toBase58(), receiver.toBase58());
   const connectionSeedBuf = Buffer.from(connectionSeed);
   const connectionTable = iqlabs.contract.getConnectionTablePda(
     dbRoot,

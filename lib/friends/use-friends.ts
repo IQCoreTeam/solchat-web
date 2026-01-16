@@ -13,7 +13,6 @@ import iqlabs from 'iqlabs-sdk/src';
 import idl from 'iqlabs-sdk/idl/code_in.json';
 import type { Friend } from './types';
 import { STATUS_LABELS } from './types';
-import { bytesToHex } from './utils';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
 
 export interface UseFriendsParams {
@@ -92,7 +91,7 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
             continue;
           }
 
-          const dmSeedHex = bytesToHex(dmSeed);
+          const dmSeedHex = Buffer.from(dmSeed).toString('hex');
 
           const status = STATUS_LABELS[decoded.status] || 'pending';
           const lastTimestampRaw = (decoded as any).last_timestamp ?? (decoded as any).lastTimestamp ?? 0;

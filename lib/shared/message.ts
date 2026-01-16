@@ -23,18 +23,6 @@ export function mergeMessages(
   return Array.from(byId.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 }
 
-export function createPendingMessage(payload: MessagePayload): MessageRow {
-  return {
-    id: payload.id,
-    text: payload.text,
-    sender: payload.sender,
-    timestamp: payload.timestamp,
-    file: payload.file,
-    room: payload.room,
-    status: 'pending',
-  };
-}
-
 export function prunePendingMessages(
   pending: MessageRow[],
  confirmed: MessageRow[]

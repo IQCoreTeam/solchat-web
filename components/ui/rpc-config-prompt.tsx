@@ -5,6 +5,7 @@ import {Button, Frame, TextInput, WindowContent, WindowHeader} from 'react95';
 
 const HIDE_STORAGE_KEY = 'solchat:rpc-modal-hide-until';
 const HIDE_DURATION_DAYS = 7;
+const RPC_ERROR_EVENT = 'solchat:rpc-error';
 
 interface RpcConfigPromptProps {
     endpointSource: 'custom' | 'provider' | 'default';
@@ -39,6 +40,28 @@ export function RpcConfigPrompt({endpointSource, setCustomRpcEndpoint}: RpcConfi
             setOpen(false);
         }
     }, [shouldShow]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        const handleRpcError = (event: Event) => {
+            const detail = (event as CustomEvent<{ message?: string }>).detail;
+            try {
+                window.localStorage.removeItem(HIDE_STORAGE_KEY);
+            } catch {
+                // ignore
+            }
+            if (detail?.message) {
+                setError(detail.message);
+            }
+            setOpen(true);
+        };
+
+        window.addEventListener(RPC_ERROR_EVENT, handleRpcError);
+        return () => {
+            window.removeEventListener(RPC_ERROR_EVENT, handleRpcError);
+        };
+    }, []);
 
     const validateEndpoint = useCallback(async (endpoint: string) => {
         try {
@@ -93,6 +116,13 @@ export function RpcConfigPrompt({endpointSource, setCustomRpcEndpoint}: RpcConfi
         }
         setOpen(false);
     }, []);
+
+    const handleClearSavedRpc = useCallback(() => {
+        setCustomRpcEndpoint(null);
+        setValue('');
+        setError(null);
+        setOpen(false);
+    }, [setCustomRpcEndpoint]);
 
     const handleClose = useCallback(() => {
         setOpen(false);
@@ -152,6 +182,12 @@ export function RpcConfigPrompt({endpointSource, setCustomRpcEndpoint}: RpcConfi
                             onClick={handleClose}
                         >
                             Maybe Later
+                        </Button>
+                        <Button
+                            type="button"
+                            onClick={handleClearSavedRpc}
+                        >
+                            Clear saved RPC
                         </Button>
                         <Button
                             type="button"

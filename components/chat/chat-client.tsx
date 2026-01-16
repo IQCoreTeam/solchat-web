@@ -1,64 +1,35 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
-import type { AccountInfo } from '@solana/web3.js';
-import { PublicKey, SystemProgram } from '@solana/web3.js';
+import { PublicKey } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk/src';
 import idl from 'iqlabs-sdk/idl/code_in.json';
 import type { SignerInput } from 'iqlabs-sdk/src/sdk/utils/wallet';
-import { sendTx } from 'iqlabs-sdk/src/sdk/writer/writer_utils';
-import { getCachedAccountInfo, invalidateSignatureCache } from '@/lib/rpc/cache';
+import { invalidateSignatureCache } from '@/lib/rpc/cache';
 import { useUserInit } from '@/lib/iqlabs/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
-import { normalizeFileUrl } from '@/lib/utils/message-utils';
-import {
-    bytesToHex,
-    normalizeBytes,
-    decodeBytes,
-    rowToMessage,
-    type MessageRow,
-} from '@/lib/shared/message-helpers';
-import { mergeMessages, type MessagePayload } from '@/lib/shared/message';
 import { usePendingMessages } from '@/lib/shared/use-pending-messages';
+import { useMessageChannel } from '@/lib/shared/use-message-channel';
 import { useOnAccountChange } from '@/lib/shared/useOnAccountChange';
-import { useMessageIndexLoader, type FetchConfig } from '@/lib/shared/useMessageIndexLoader';
-import { ROOT_ID, MESSAGE_COLUMNS } from '@/lib/iqlabs/constants';
+import { ROOT_ID } from '@/lib/iqlabs/constants';
 import { makeRoomTimestampKey, setLastMessageTimestamp, getLastMessageTimestamp } from '@/lib/cache/message-timestamp-cache';
 import { RpcConfigPrompt } from '@/components/ui/rpc-config-prompt';
 import { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
+import { makeChannelKey, channelKeyToSeed, roomIdToChannelKey } from '@/lib/shared/channel-utils';
+import { useWebSocketChannel } from '@/lib/shared/use-websocket-channel';
+import { useScrollTracker } from '@/lib/shared/use-scroll-tracker';
+import { createRoomFetcher } from '@/lib/chat/message-fetcher';
+import { useRootAccount } from '@/lib/chat/use-root-account';
+import { useRooms, type RoomMeta } from '@/lib/chat/use-rooms';
 
 // Import new components
 import { ChatHeader } from './chat-header';
 import { RoomSidebar } from './room-sidebar';
 import { MessageList } from './message-list';
 import { MessageInputForm } from './message-input-form';
-
-type Row = Record<string, unknown>;
-type RootAccountData = {
-    table_seeds?: unknown[];
-    tableSeeds?: unknown[];
-    global_table_seeds?: unknown[];
-    globalTableSeeds?: unknown[];
-};
-type TableAccountData = {
-    name?: Uint8Array | string | null;
-    columnNames?: Array<Uint8Array | string> | null;
-    column_names?: Array<Uint8Array | string> | null;
-};
-
-type RoomMeta = {
-    seedHex: string;
-    seedBytes: Uint8Array;
-    name: string;
-    tableAddress: string;
-    instructionAddress: string;
-    columns: string[];
-    lastTimestamp: number;
-};
 
 type ToastTone = 'info' | 'error';
 type ToastState = {
@@ -67,11 +38,7 @@ type ToastState = {
 };
 
 const DEBUG_WS = true;
-
-const makeChannelKey = (seedHex: string) => `chat:${seedHex}`;
-const channelKeyToSeed = (channelKey: string) => channelKey.replace(/^chat:/, '');
 const channelKeyToRoomId = (channelKey: string) => makeRoomTimestampKey(channelKeyToSeed(channelKey));
-const roomIdToChannelKey = (roomId: string) => `chat:${roomId.replace(/^room:/, '')}`;
 
 export function ChatClient() {
     /* --------------------------------------------------------------------------
@@ -102,29 +69,18 @@ export function ChatClient() {
     /* --------------------------------------------------------------------------
      * Local State
      * -------------------------------------------------------------------------- */
-    // Root state
-    const [rootStatus, setRootStatus] = useState<'checking' | 'missing' | 'creating' | 'ready' | 'error'>('checking');
-    const [rootAccount, setRootAccount] = useState<AccountInfo<Buffer> | null>(null);
-    const [, setRootError] = useState<string | null>(null);
-
     // Rooms state
-    const [rooms, setRooms] = useState<RoomMeta[]>([]);
-    const [roomsLoading, setRoomsLoading] = useState(false);
-    const [roomsError, setRoomsError] = useState<string | null>(null);
     const [selectedSeed, setSelectedSeed] = useState<string | null>(null);
 
     // Messages state
+    const pendingState = usePendingMessages();
     const {
         pendingMessages,
-        addPendingMessage,
         pruneConfirmedMessages,
         removePendingMessage,
-    } = usePendingMessages();
+    } = pendingState;
 
-    // Room creation state
-    const [newRoomName, setNewRoomName] = useState('');
-    const [creatingRoom, setCreatingRoom] = useState(false);
-    const [newRoomGateMint, setNewRoomGateMint] = useState('');
+    // Room creation state (handled in useRooms)
 
     // Message input state
     const [messageInput, setMessageInput] = useState('');
@@ -138,7 +94,6 @@ export function ChatClient() {
     const [disconnectingPrivy, setDisconnectingPrivy] = useState(false);
     const [roomNotificationsEnabled, setRoomNotificationsEnabled] = useState(true);
     const [roomAlerts, setRoomAlerts] = useState<Record<string, boolean>>({});
-    const [roomWsConnected, setRoomWsConnected] = useState(false);
     const [slowRpcMode, setSlowRpcMode] = useState(endpointSource === 'default');
     const [toast, setToast] = useState<ToastState | null>(null);
     const [hasNewMessages, setHasNewMessages] = useState(false);
@@ -150,18 +105,13 @@ export function ChatClient() {
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
     const isAtBottomRef = useRef(true);
-    const roomSocketRef = useRef<WebSocket | null>(null);
-    const roomSubscribedIdsRef = useRef<Set<string>>(new Set());
     const lastAccountRefreshRef = useRef<number>(0);
-    const roomWsBackoffRef = useRef<number>(0);
-    const roomPingIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const newMarkerByChannelRef = useRef<Record<string, string | null>>({});
     const prevMessageCountRef = useRef<number>(0);
     const lastSeenTimestampRef = useRef<Record<string, number>>({});
     const latestMessageTimestampRef = useRef<number>(0);
     const markerClearTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const roomLastPongRef = useRef<number>(Date.now());
 
     const signer = useMemo<SignerInput | null>(() => {
         if (!wallet.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) {
@@ -181,6 +131,42 @@ export function ChatClient() {
         return [...list].sort((a, b) => (b.lastTimestamp || 0) - (a.lastTimestamp || 0));
     }, []);
 
+    const { rootStatus, rootAccount, handleCreateRoot } = useRootAccount({
+        connection,
+        rootPubkey,
+        isUserInitialized,
+        isUserInitializing,
+        builder,
+        dbRootId,
+        signer,
+        runWithRpcRateLimit,
+    });
+
+    const {
+        rooms,
+        setRooms,
+        roomsLoading,
+        roomsError,
+        newRoomName,
+        setNewRoomName,
+        newRoomGateMint,
+        setNewRoomGateMint,
+        creatingRoom,
+        handleCreateRoom,
+    } = useRooms({
+        rootStatus,
+        rootAccount,
+        coder,
+        connection,
+        rootPubkey,
+        programId,
+        sortRoomsByTimestamp,
+        runWithRpcRateLimit,
+        signer,
+        builder,
+        dbRootId,
+    });
+
     const selectedRoom = useMemo(() => {
         return rooms.find((r) => r.seedHex === selectedSeed) || null;
     }, [rooms, selectedSeed]);
@@ -193,7 +179,6 @@ export function ChatClient() {
     useEffect(() => {
         latestSelectedRoomRef.current = selectedRoom;
     }, [selectedRoom]);
-    const tableAccount = useMemo(() => (selectedRoom ? new PublicKey(selectedRoom.tableAddress) : null), [selectedRoom]);
 
     const walletAddress = useMemo(() => wallet.publicKey?.toBase58() || '', [wallet.publicKey]);
     const hasWallet = Boolean(wallet.publicKey);
@@ -233,67 +218,16 @@ export function ChatClient() {
         setRoomAlerts((prev) => ({ ...prev, [channel]: false, [seedHex]: false }));
     }, [selectedChannelKey, setRoomAlerts]);
 
-
-  const decodeRowsFromSignatures = useCallback(
-    async (signatures: string[], onProgress?: (rows: MessageRow[]) => void) => {
-      const messages: MessageRow[] = [];
-      for (const signature of signatures) {
-        let result: { data: string | null; metadata: string };
-        try {
-          result = await iqlabs.reader.readCodeIn(signature);
-        } catch (err) {
-          if (err instanceof Error && err.message.includes('user_inventory_code_in instruction not found')) {
-            continue;
-          }
-          throw err;
-        }
-        const { data, metadata } = result;
-        let row: Row;
-        if (!data) {
-          row = { signature, metadata, data: null };
-        } else {
-          try {
-            const parsed = JSON.parse(data) as Record<string, unknown>;
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-              row = { ...parsed, __txSignature: signature };
-            } else {
-              row = { signature, metadata, data };
-            }
-          } catch {
-            row = { signature, metadata, data };
-          }
-        }
-        const message = rowToMessage(row);
-        if (message.text || message.file) {
-          messages.push(message);
-          onProgress?.([...messages]);
-        }
-      }
-      return messages;
-    },
-    []
-  );
-
-  const fetcher = useCallback(async (channelKey: string, fetchConfig?: FetchConfig) => {
-    if (!walletAddress) return [];
-    const seedHex = channelKeyToSeed(channelKey);
-    const room = rooms.find((r) => r.seedHex === seedHex);
-    if (!room) return [];
-    const baseMaxTx = endpointSource === 'default' ? 20 : 40;
-    const maxTx = fetchConfig?.maxTx ?? baseMaxTx;
-    const targetSignatures = fetchConfig?.signatures?.length
-      ? fetchConfig.signatures
-      : (await iqlabs.reader.fetchAccountTransactions(room.tableAddress, { limit: maxTx }))
-          .map((sig) => sig.signature);
-
-    const messages = await decodeRowsFromSignatures(targetSignatures, (partial) => {
-      fetchConfig?.onProgress?.(partial);
-      if (endpointSource === 'default') {
-        setSlowRpcMode(true);
-      }
-    });
-    return messages;
-  }, [walletAddress, rooms, endpointSource, setSlowRpcMode, decodeRowsFromSignatures]);
+    const fetcher = useMemo(
+        () =>
+            createRoomFetcher({
+                walletAddress,
+                endpointSource,
+                rooms,
+                setSlowRpcMode,
+            }),
+        [walletAddress, endpointSource, rooms, setSlowRpcMode]
+    );
 
     const resolveChannelMeta = useCallback((channelKey: string) => {
         const seedHex = channelKeyToSeed(channelKey);
@@ -316,24 +250,84 @@ export function ChatClient() {
         triggerLiveLatest,
         targetedDecode,
         applyLocalRows,
-    } = useMessageIndexLoader({
-        channelKey: selectedChannelKey,
-        resolveChannelMeta,
-        fetcher,
-        connection,
-        endpointSource,
-        onRowsApplied: ({ channelKey, seedHex, rows }) => {
-            const latestTimestamp = rows.reduce((max, msg) => Math.max(max, msg.timestamp ?? 0), 0);
-            if (latestTimestamp) {
-                setLastMessageTimestamp(makeRoomTimestampKey(seedHex), latestTimestamp);
-                setRoomAlerts((prev) => ({ ...prev, [channelKey]: false, [seedHex]: false }));
-            }
+        mergedMessages: allMessages,
+        sendMessage: handleSendMessage,
+    } = useMessageChannel({
+        reader: {
+            channelKey: selectedChannelKey,
+            resolveChannelMeta,
+            fetcher,
+            connection,
+            endpointSource,
+            onRowsApplied: ({ channelKey, seedHex, rows }) => {
+                const latestTimestamp = rows.reduce((max, msg) => Math.max(max, msg.timestamp ?? 0), 0);
+                if (latestTimestamp) {
+                    setLastMessageTimestamp(makeRoomTimestampKey(seedHex), latestTimestamp);
+                    setRoomAlerts((prev) => ({ ...prev, [channelKey]: false, [seedHex]: false }));
+                }
+            },
+            decodeWindow: endpointSource === 'default' ? 20 : 40,
+            runWithRpcRateLimit,
         },
-        decodeWindow: endpointSource === 'default' ? 20 : 40,
-        runWithRpcRateLimit,
+        pending: pendingState,
+        sender: {
+            messageInput,
+            attachmentUrl,
+            setMessageInput,
+            setAttachmentUrl,
+            setAttachmentError,
+            setShowAttachmentInput,
+            getSender: () => signer?.publicKey.toBase58() || '',
+            getMessageId: () => crypto.randomUUID?.() || Math.random().toString(36).slice(2, 10),
+            canSend: () => {
+                if (!signer || !selectedRoom) {
+                    return { ok: false };
+                }
+                return { ok: true };
+            },
+            writeMessage: (payload) =>
+                iqlabs.writer.writeRow(
+                    connection,
+                    signer!,
+                    dbRootId,
+                    selectedRoom!.seedBytes,
+                    JSON.stringify(payload)
+                ),
+            onAfterSuccess: (payload, signature) => {
+                if (!selectedRoom) return;
+                // Optimistically mark this message as confirmed locally so we don't stay in "processing"
+                applyLocalRows(makeChannelKey(selectedRoom.seedHex), [
+                    {
+                        id: payload.id,
+                        text: payload.text,
+                        sender: payload.sender,
+                        timestamp: payload.timestamp,
+                        file: payload.file,
+                        status: 'confirmed',
+                        room: selectedRoom.seedHex,
+                    },
+                ], 'append');
+                removePendingMessage(payload.id);
+                invalidateSignatureCache(selectedRoom.tableAddress);
+                const timestamp = payload.timestamp ?? 0;
+                notifyRoomMessageSent(selectedRoom.seedHex, timestamp, signature);
+                // Scroll after DOM updates on next frame
+                requestAnimationFrame(() => scrollToBottom('smooth'));
+            },
+            onAfterError: (err, payload) => {
+                console.error('[ChatClient] Send message error:', err);
+                const errorMessage = err instanceof Error ? err.message : 'Failed to send message';
+                showToast(errorMessage, 'error');
+                removePendingMessage(payload.id);
+            },
+            onAfterAttempt: (payload) => {
+                if (selectedRoom) {
+                    const channelKey = makeChannelKey(selectedRoom.seedHex);
+                    markMessagesRead(channelKey, payload.timestamp ?? 0);
+                }
+            },
+        },
     });
-
-    const allMessages = useMemo(() => mergeMessages(messages, pendingMessages), [messages, pendingMessages]);
     useEffect(() => {
         const latestTimestamp = allMessages[allMessages.length - 1]?.timestamp ?? 0;
         latestMessageTimestampRef.current = latestTimestamp || 0;
@@ -402,188 +396,10 @@ export function ChatClient() {
     }, [endpointSource]);
 
     /* --------------------------------------------------------------------------
-     * Effects: Root Lifecycle
+     * WebSocket Connection
      * -------------------------------------------------------------------------- */
-    // Check root account
-    useEffect(() => {
-        let mounted = true;
-        (async () => {
-            try {
-                const acc = await getCachedAccountInfo(connection, rootPubkey);
-                if (!mounted) return;
-                if (acc) {
-                    setRootStatus('ready');
-                    setRootAccount(acc);
-                } else {
-                    setRootStatus('missing');
-                }
-            } catch (err) {
-                if (!mounted) return;
-                console.error('[ChatClient] Failed to check root:', err);
-                setRootStatus('error');
-                setRootError(err instanceof Error ? err.message : 'Unknown error');
-            }
-        })();
-        return () => {
-            mounted = false;
-        };
-    }, [connection, rootPubkey, isUserInitialized, isUserInitializing]);
-
-    // Create root if missing
-    const handleCreateRoot = useCallback(async () => {
-        if (!signer) return;
-        setRootStatus('creating');
-        try {
-            const ix = iqlabs.contract.initializeDbRootInstruction(
-                builder,
-                {
-                    db_root: rootPubkey,
-                    signer: signer.publicKey,
-                    system_program: SystemProgram.programId,
-                },
-                { db_root_id: dbRootId }
-            );
-            await sendTx(connection, signer, ix);
-            const acc = await runWithRpcRateLimit(
-                () => connection.getAccountInfo(rootPubkey),
-                { endpoint: connection.rpcEndpoint }
-            );
-            setRootAccount(acc);
-            setRootStatus('ready');
-        } catch (err) {
-            console.error('[ChatClient]Create root error:', err);
-            setRootStatus('error');
-            setRootError(err instanceof Error ? err.message : 'Failed to create root');
-        }
-    }, [signer, builder, connection, rootPubkey, dbRootId]);
-
-    /* --------------------------------------------------------------------------
-     * Data Loading Helpers
-     * -------------------------------------------------------------------------- */
-    // Load rooms
-    const loadRooms = useCallback(async () => {
-        if (rootStatus !== 'ready' || !rootAccount) return;
-        setRoomsLoading(true);
-        setRoomsError(null);
-        try {
-            const decoded = coder.decode('DbRoot', rootAccount.data) as RootAccountData | null;
-            if (!decoded) throw new Error('Failed to decode root account');
-
-            // Use table_seeds from the root account; exclude global tables
-            const seedsRaw = decoded.table_seeds ?? decoded.tableSeeds ?? [];
-
-            const uniqueSeeds = Array.from(
-                new Map(
-                    seedsRaw
-                        .map((entry) => normalizeBytes(entry))
-                        .filter((seed) => seed.length)
-                        .map((seed) => [bytesToHex(seed), seed] as const)
-                ).values()
-            );
-
-            if (uniqueSeeds.length === 0) {
-                setRooms([]);
-                return;
-            }
-
-            // Pre-compute all PDAs
-            const seedsWithPdas = uniqueSeeds.map((seed) => ({
-                seed,
-                seedHex: bytesToHex(seed),
-                tablePda: iqlabs.contract.getTablePda(rootPubkey, seed, programId),
-                instrPda: iqlabs.contract.getInstructionTablePda(rootPubkey, seed, programId),
-            }));
-
-            // Batch fetch all table accounts using getMultipleAccountsInfo
-            const tablePdas = seedsWithPdas.map((s) => s.tablePda);
-            const tableAccounts = await runWithRpcRateLimit(
-                () => connection.getMultipleAccountsInfo(tablePdas),
-                { endpoint: connection.rpcEndpoint }
-            );
-
-            const roomList: RoomMeta[] = [];
-            for (let i = 0; i < seedsWithPdas.length; i++) {
-                const { seed, seedHex, tablePda, instrPda } = seedsWithPdas[i];
-                const tableAcc = tableAccounts[i];
-                if (!tableAcc) continue;
-                const tableDecoded = coder.decode('Table', tableAcc.data) as TableAccountData | null;
-                if (!tableDecoded) continue;
-                const name = decodeBytes(tableDecoded.name);
-                const columnSource = tableDecoded.columnNames ?? tableDecoded.column_names ?? [];
-                const columns = columnSource.map((value) => decodeBytes(value));
-                const decodedRecord = tableDecoded as Record<string, unknown>;
-                const lastTimestampRaw =
-                    (decodedRecord.last_timestamp as number | string | undefined)
-                    ?? (decodedRecord.lastTimestamp as number | string | undefined)
-                    ?? 0;
-                const lastTimestamp = typeof lastTimestampRaw === 'number'
-                    ? lastTimestampRaw
-                    : Number(lastTimestampRaw || 0);
-                roomList.push({
-                    seedHex,
-                    seedBytes: seed,
-                    name,
-                    tableAddress: tablePda.toBase58(),
-                    instructionAddress: instrPda.toBase58(),
-                    columns,
-                    lastTimestamp,
-                });
-            }
-            setRooms(sortRoomsByTimestamp(roomList));
-
-
-        } catch (err) {
-            console.error('[ChatClient] Load rooms error:', err);
-            setRoomsError(err instanceof Error ? err.message : 'Failed to load rooms');
-        } finally {
-            setRoomsLoading(false);
-        }
-    }, [rootStatus, rootAccount, coder, connection, rootPubkey, programId, sortRoomsByTimestamp]);
-
-    /* --------------------------------------------------------------------------
-     * Effects: Room & Message Loading
-     * -------------------------------------------------------------------------- */
-    const lastRootAccountRef = useRef<AccountInfo<Buffer> | null>(null);
-    useEffect(() => {
-        if (rootStatus !== 'ready' || !rootAccount) {
-            lastRootAccountRef.current = null;
-            return;
-        }
-        if (lastRootAccountRef.current === rootAccount) {
-            return;
-        }
-        lastRootAccountRef.current = rootAccount;
-        loadRooms();
-    }, [rootStatus, rootAccount, loadRooms]);
-
-    useEffect(() => {
-        if (!roomWsConnected || !roomSocketRef.current) return;
-        if (roomSocketRef.current.readyState !== WebSocket.OPEN) {
-            console.warn('[ChatClient] WS not ready for subscribe, state =', roomSocketRef.current.readyState);
-            return;
-        }
-        const socket = roomSocketRef.current;
-        const desired = new Set(rooms.map((room) => makeChannelKey(room.seedHex)));
-        const current = roomSubscribedIdsRef.current;
-
-        for (const id of desired) {
-            if (!current.has(id)) {
-                socket.send(JSON.stringify({ type: 'subscribe', roomId: channelKeyToRoomId(id) }));
-                current.add(id);
-            }
-        }
-
-        for (const id of Array.from(current)) {
-            if (!desired.has(id)) {
-                socket.send(JSON.stringify({ type: 'unsubscribe', roomId: channelKeyToRoomId(id) }));
-                current.delete(id);
-            }
-        }
-
-        roomSubscribedIdsRef.current = desired;
-  }, [rooms, roomWsConnected]);
-
-    const handleRoomSocketPayload = useCallback(async (payload: { type?: string; roomId?: string; lastTimestamp?: number; timestamp?: number; signature?: string }) => {
+    const handleRoomSocketPayload = useCallback(async (data: unknown) => {
+        const payload = data as { type?: string; roomId?: string; lastTimestamp?: number; timestamp?: number; signature?: string };
         const roomId = payload?.roomId;
         if (!roomId || !roomId.startsWith('room:')) {
             return;
@@ -658,124 +474,41 @@ export function ChatClient() {
         }
     }, [triggerLiveLatest, sortRoomsByTimestamp, targetedDecode, selectedChannelKey]);
 
-    const roomSocketHandlerRef = useRef<typeof handleRoomSocketPayload | null>(null);
-    useEffect(() => {
-        roomSocketHandlerRef.current = handleRoomSocketPayload;
-    }, [handleRoomSocketPayload]);
+    const roomWs = useWebSocketChannel({
+        onMessage: handleRoomSocketPayload,
+        logPrefix: 'ChatClient',
+    });
+
+    const roomSocketRef = roomWs.socketRef;
+    const roomSubscribedIdsRef = roomWs.subscribedIdsRef;
+    const roomWsConnected = roomWs.isConnected;
 
     useEffect(() => {
-        if (typeof window === 'undefined') return;
-        const url = process.env.NEXT_PUBLIC_NOTI_WS_URL || 'ws://localhost:8080';
-        let active = true;
+        if (!roomWsConnected || !roomSocketRef.current) return;
+        if (roomSocketRef.current.readyState !== WebSocket.OPEN) {
+            console.warn('[ChatClient] WS not ready for subscribe, state =', roomSocketRef.current.readyState);
+            return;
+        }
+        const socket = roomSocketRef.current;
+        const desired = new Set(rooms.map((room) => makeChannelKey(room.seedHex)));
+        const current = roomSubscribedIdsRef.current;
 
-        const clearPing = () => {
-            if (roomPingIntervalRef.current) {
-                clearInterval(roomPingIntervalRef.current);
-                roomPingIntervalRef.current = null;
+        for (const id of desired) {
+            if (!current.has(id)) {
+                socket.send(JSON.stringify({ type: 'subscribe', roomId: channelKeyToRoomId(id) }));
+                current.add(id);
             }
-        };
+        }
 
-        const scheduleReconnect = () => {
-            setRoomWsConnected(false);
-            clearPing();
-            roomSubscribedIdsRef.current.clear();
-            roomSocketRef.current = null;
-            if (!active) return;
-            roomWsBackoffRef.current = Math.min(
-                roomWsBackoffRef.current ? roomWsBackoffRef.current * 2 : 2000,
-                30000
-            );
-            setTimeout(connect, roomWsBackoffRef.current);
-        };
-
-        const connect = () => {
-            if (!active) return;
-            try {
-                const socket = new WebSocket(url);
-                roomSocketRef.current = socket;
-
-                socket.addEventListener('open', () => {
-                    if (!active) return;
-                    console.log('[ChatClient] WS connected to', url);
-                    roomWsBackoffRef.current = 0;
-                    roomLastPongRef.current = Date.now();
-                    setRoomWsConnected(true);
-                    clearPing();
-                    
-                    // Ping every 15 seconds
-                    roomPingIntervalRef.current = setInterval(() => {
-                        if (socket.readyState === WebSocket.OPEN) {
-                            // Check if we got a pong recently (within 45 seconds)
-                            if (Date.now() - roomLastPongRef.current > 45000) {
-                                console.warn('[ChatClient] WS no pong in 45s, forcing reconnect');
-                                socket.close();
-                                return;
-                            }
-                            socket.send(JSON.stringify({ type: 'ping' }));
-                            console.log('[ChatClient] WS ping sent');
-                        }
-                    }, 15000);
-                });
-
-                const handleMessage = (event: MessageEvent) => {
-                    try {
-                        const data = JSON.parse(event.data);
-                        if (data?.type === 'pong') {
-                            roomLastPongRef.current = Date.now();
-                            return;
-                        }
-                        console.log('[ChatClient] WS message:', data);
-                        if (data && (data.type === 'roomUpdated' || data.type === 'roomSnapshot' || data.type === 'messageSent')) {
-                            const handler = roomSocketHandlerRef.current;
-                            if (handler) {
-                                void handler(data);
-                            }
-                        }
-                    } catch (error) {
-                        console.warn('[ChatClient] Failed to parse notification payload', error);
-                    }
-                };
-
-                socket.addEventListener('message', handleMessage);
-
-                socket.addEventListener('close', () => {
-                    console.log('[ChatClient] WS connection closed');
-                    scheduleReconnect();
-                });
-
-                socket.addEventListener('error', (error) => {
-                    console.warn('[ChatClient] WS error', error);
-                });
-            } catch (error) {
-                console.warn('[ChatClient] Failed to connect notification socket', error);
-                scheduleReconnect();
+        for (const id of Array.from(current)) {
+            if (!desired.has(id)) {
+                socket.send(JSON.stringify({ type: 'unsubscribe', roomId: channelKeyToRoomId(id) }));
+                current.delete(id);
             }
-        };
+        }
 
-        connect();
-
-        const handleVisibilityChange = () => {
-            if (document.visibilityState === 'visible') {
-                const socket = roomSocketRef.current;
-                if (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) {
-                    console.log('[ChatClient] Tab visible, reconnecting WS...');
-                    scheduleReconnect();
-                }
-            }
-        };
-
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-
-        return () => {
-            active = false;
-            clearPing();
-            roomSubscribedIdsRef.current.clear();
-            roomSocketRef.current?.close();
-            roomSocketRef.current = null;
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
-        };
-        // We intentionally avoid including handleRoomSocketPayload in deps to keep the socket alive.
-    }, []);
+        roomSubscribedIdsRef.current = desired;
+  }, [rooms, roomWsConnected]);
 
     // Wrapper for current room
     const loadMessages = useCallback(async () => {
@@ -826,7 +559,7 @@ export function ChatClient() {
 
     useOnAccountChange({
         connection,
-        account: tableAccount,
+        account: selectedRoom ? new PublicKey(selectedRoom.tableAddress) : null,
         handler: refreshMessagesFromAccount,
         commitment: 'processed',
         enabled:
@@ -852,36 +585,17 @@ export function ChatClient() {
         }
     }, [markMessagesRead, selectedChannelKey]);
 
-    const updateIsAtBottom = useCallback(() => {
-        const el = listRef.current;
-        if (!el) return;
-        const threshold = 80;
-        const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-        const atBottom = distance < threshold;
-        isAtBottomRef.current = atBottom;
-        setUiIsAtBottom(atBottom);
-        if (atBottom) {
-            setHasNewMessages(false);
-            if (selectedChannelKey) {
-                markMessagesRead(selectedChannelKey);
-            }
-            if (markerClearTimeoutRef.current) {
-                clearTimeout(markerClearTimeoutRef.current);
-            }
-            markerClearTimeoutRef.current = setTimeout(() => {
-                if (selectedChannelKey) {
-                    clearChannelMarker(selectedChannelKey);
-                }
-                markerClearTimeoutRef.current = null;
-            }, 250);
-        }
-
-        // Trigger backfill when user scrolls near the top; runs independently of live path.
-        const nearTop = el.scrollTop < 120;
-        if (nearTop && selectedChannelKey) {
-            void triggerBackfill(selectedChannelKey);
-        }
-    }, [clearChannelMarker, markMessagesRead, selectedChannelKey, triggerBackfill]);
+    const { updateIsAtBottom } = useScrollTracker({
+        listRef,
+        isAtBottomRef,
+        setUiIsAtBottom,
+        setHasNewMessages,
+        selectedChannelKey,
+        clearMarker: clearChannelMarker,
+        markerClearTimeoutRef,
+        onMarkRead: markMessagesRead,
+        onNearTop: triggerBackfill,
+    });
 
     useEffect(() => {
         const el = listRef.current;
@@ -962,60 +676,6 @@ export function ChatClient() {
     /* --------------------------------------------------------------------------
      * Event Handlers
      * -------------------------------------------------------------------------- */
-    // Handle create room
-    const handleCreateRoom = useCallback(async (e: FormEvent) => {
-        e.preventDefault();
-        if (!signer || !newRoomName.trim()) return;
-
-        setCreatingRoom(true);
-        setRoomsError(null);
-
-        try {
-            const gateMintPubkey = newRoomGateMint?.trim()
-                ? new PublicKey(newRoomGateMint.trim())
-                : undefined;
-            const trimmedName = newRoomName.trim();
-            const tableSeed = iqlabs.utils.toSeedBytes(trimmedName);
-            const table = iqlabs.contract.getTablePda(rootPubkey, tableSeed, programId);
-            const instructionTable = iqlabs.contract.getInstructionTablePda(
-                rootPubkey,
-                tableSeed,
-                programId
-            );
-            const ix = iqlabs.contract.createTableInstruction(
-                builder,
-                {
-                    db_root: rootPubkey,
-                    receiver: new PublicKey(iqlabs.constants.DEFAULT_WRITE_FEE_RECEIVER),
-                    signer: signer.publicKey,
-                    table,
-                    instruction_table: instructionTable,
-                    system_program: SystemProgram.programId,
-                },
-                {
-                    db_root_id: dbRootId,
-                    table_seed: Buffer.from(tableSeed),
-                    table_name: Buffer.from(trimmedName, 'utf8'),
-                    column_names: MESSAGE_COLUMNS.map((name) => Buffer.from(name, 'utf8')),
-                    id_col: Buffer.from('id', 'utf8'),
-                    ext_keys: [],
-                    gate_mint_opt: gateMintPubkey ?? null,
-                    writers_opt: null,
-                }
-            );
-            await sendTx(connection, signer, ix);
-
-            setNewRoomName('');
-            setNewRoomGateMint('');
-            await loadRooms();
-        } catch (err) {
-            console.error('[ChatClient] Create room error:', err);
-            setRoomsError(err instanceof Error ? err.message : 'Failed to create room');
-        } finally {
-            setCreatingRoom(false);
-        }
-    }, [signer, newRoomName, newRoomGateMint, connection, loadRooms, rootPubkey, programId, builder, dbRootId]);
-
     const notifyRoomMessageSent = useCallback((seedHex: string, ts: number, signature?: string) => {
         const socket = roomSocketRef.current;
         if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -1037,75 +697,6 @@ export function ChatClient() {
             console.warn('[ChatClient] Failed to emit room notification', error);
         }
     }, []);
-
-    // Handle send message
-    const handleSendMessage = useCallback(async (e?: FormEvent) => {
-        e?.preventDefault();
-        if (!signer || !selectedRoom || !messageInput.trim()) return;
-
-        const messageId = crypto.randomUUID?.() || Math.random().toString(36).slice(2, 10);
-        const timestamp = Date.now();
-        const userAddr = signer.publicKey.toBase58();
-        const fileUrl = normalizeFileUrl(attachmentUrl);
-        if (attachmentUrl.trim() && !fileUrl) {
-            setAttachmentError('Invalid attachment URL. Must be a valid https:// link.');
-            return;
-        }
-
-        const payload: MessagePayload = {
-            id: messageId,
-            text: messageInput.trim(),
-            sender: userAddr,
-            timestamp,
-        };
-
-        if (fileUrl) {
-            payload.file = fileUrl;
-        }
-
-        setMessageInput('');
-        setAttachmentUrl('');
-        setAttachmentError(null);
-        setShowAttachmentInput(false);
-
-        addPendingMessage(payload);
-
-        try {
-            const signature = await iqlabs.writer.writeRow(
-                connection,
-                signer,
-                dbRootId,
-                selectedRoom.seedBytes,
-                JSON.stringify(payload)
-            );
-            // Optimistically mark this message as confirmed locally so we don't stay in "processing"
-            applyLocalRows(makeChannelKey(selectedRoom.seedHex), [
-                {
-                    id: payload.id,
-                    text: payload.text,
-                    sender: payload.sender,
-                    timestamp: payload.timestamp,
-                    file: payload.file,
-                    status: 'confirmed',
-                    room: selectedRoom.seedHex,
-                },
-            ], 'append');
-            removePendingMessage(messageId);
-            invalidateSignatureCache(selectedRoom.tableAddress);
-            notifyRoomMessageSent(selectedRoom.seedHex, timestamp, signature);
-            // Scroll after DOM updates on next frame
-            requestAnimationFrame(() => scrollToBottom('smooth'));
-        } catch (err) {
-            console.error('[ChatClient] Send message error:', err);
-            const errorMessage = err instanceof Error ? err.message : 'Failed to send message';
-            showToast(errorMessage, 'error');
-            removePendingMessage(messageId);
-        }
-        if (selectedRoom) {
-            const channelKey = makeChannelKey(selectedRoom.seedHex);
-            markMessagesRead(channelKey, timestamp);
-        }
-    }, [signer, selectedRoom, messageInput, attachmentUrl, connection, addPendingMessage, removePendingMessage, notifyRoomMessageSent, showToast, applyLocalRows, scrollToBottom, markMessagesRead, dbRootId]);
 
     // Handle disconnect
     const handleDisconnectPrivy = useCallback(async () => {
