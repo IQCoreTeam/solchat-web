@@ -9,7 +9,7 @@
 import { useEffect, useRef } from 'react';
 import { PublicKey, type Connection } from '@solana/web3.js';
 import iqlabs from 'iqlabs-sdk/src';
-import { invalidateSignatureCache, updateAccountCache } from '@/lib/rpc/cache';
+import { updateAccountCache } from '@/lib/rpc/cache';
 
 export interface UseAccountSubscriptionParams {
   /**
@@ -74,6 +74,8 @@ export function useAccountSubscription({
   const seenSignaturesRef = useRef<Set<string>>(new Set());
   const handlerRef = useRef(onNewSignatures);
   const accountKey = account?.toBase58() ?? null;
+  const lastFetchRef = useRef<number>(0);
+  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Update handler ref when it changes
   useEffect(() => {
@@ -103,43 +105,62 @@ export function useAccountSubscription({
         // Subscribe to account changes
         const id = connection.onAccountChange(
           account,
-          async (info, context) => {
+          async (info) => {
             if (!isActive) return;
 
             // Update cache
             updateAccountCache(accountKey, info);
-            invalidateSignatureCache(accountKey);
+            // Don't invalidate signature cache - we're using seen signatures tracking instead
+            // invalidateSignatureCache(accountKey);
 
-            console.log(`[${logPrefix}] Account changed, fetching new signatures...`);
-
-            try {
-              // Fetch recent signatures
-              const signatures = await iqlabs.reader.fetchAccountTransactions(account, {
-                limit: fetchLimit,
-              });
-
-              // Filter out already-seen signatures
-              const fresh = signatures.filter((sig) => !seenSignaturesRef.current.has(sig.signature));
-
-              if (fresh.length === 0) {
-                console.log(`[${logPrefix}] No new signatures found`);
-                return;
-              }
-
-              console.log(`[${logPrefix}] Found ${fresh.length} new signatures`);
-
-              // Mark as seen and reverse to get chronological order (oldest first)
-              const newSigs: string[] = [];
-              for (const sig of fresh.reverse()) {
-                seenSignaturesRef.current.add(sig.signature);
-                newSigs.push(sig.signature);
-              }
-
-              // Call handler with new signatures
-              await handlerRef.current(newSigs);
-            } catch (error) {
-              console.error(`[${logPrefix}] Failed to process account change:`, error);
+            // Debounce: prevent RPC spam from rapid account changes
+            const now = Date.now();
+            if (now - lastFetchRef.current < 1000) {
+              console.log(`[${logPrefix}] Account changed, but debouncing (< 1s since last fetch)`);
+              return;
             }
+
+            // Clear any pending timeout
+            if (fetchTimeoutRef.current) {
+              clearTimeout(fetchTimeoutRef.current);
+            }
+
+            // Delay fetch slightly to batch rapid changes
+            fetchTimeoutRef.current = setTimeout(async () => {
+              if (!isActive) return;
+
+              lastFetchRef.current = Date.now();
+              console.log(`[${logPrefix}] Account changed, fetching new signatures...`);
+
+              try {
+                // Fetch recent signatures
+                const signatures = await iqlabs.reader.fetchAccountTransactions(account, {
+                  limit: fetchLimit,
+                });
+
+                // Filter out already-seen signatures
+                const fresh = signatures.filter((sig) => !seenSignaturesRef.current.has(sig.signature));
+
+                if (fresh.length === 0) {
+                  console.log(`[${logPrefix}] No new signatures found`);
+                  return;
+                }
+
+                console.log(`[${logPrefix}] Found ${fresh.length} new signatures`);
+
+                // Mark as seen and reverse to get chronological order (oldest first)
+                const newSigs: string[] = [];
+                for (const sig of fresh.reverse()) {
+                  seenSignaturesRef.current.add(sig.signature);
+                  newSigs.push(sig.signature);
+                }
+
+                // Call handler with new signatures
+                await handlerRef.current(newSigs);
+              } catch (error) {
+                console.error(`[${logPrefix}] Failed to process account change:`, error);
+              }
+            }, 150);
           },
           commitment
         );
@@ -156,6 +177,10 @@ export function useAccountSubscription({
 
     return () => {
       isActive = false;
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+        fetchTimeoutRef.current = null;
+      }
       if (subscriptionId !== null) {
         console.log(`[${logPrefix}] Unsubscribing from ${accountKey.slice(0, 8)}... (id: ${subscriptionId})`);
         connection.removeAccountChangeListener(subscriptionId).catch(() => undefined);
