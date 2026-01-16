@@ -6,8 +6,6 @@ import { Buffer } from 'buffer';
 import iqlabs from 'iqlabs-sdk/src';
 import { deriveAvatarHue } from '@/lib/utils/message-utils';
 
-export type Row = Record<string, unknown>;
-
 const DECODER = new TextDecoder();
 const PRINTABLE_ASCII = /^[\x20-\x7E]+$/;
 
@@ -23,10 +21,6 @@ export type MessageRow = {
   status?: 'pending' | 'sent' | 'confirmed' | 'failed';
   room?: string;
 };
-
-export function bytesToHex(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString('hex');
-}
 
 export function normalizeBytes(value: any): Uint8Array {
   if (!value) return new Uint8Array();
@@ -46,19 +40,13 @@ export function decodeBytes(value: any): string {
     if (decoded && PRINTABLE_ASCII.test(decoded)) {
       return decoded;
     }
-    return bytesToHex(bytes);
+    return Buffer.from(bytes).toString('hex');
   } catch {
     return '';
   }
 }
 
-export function deriveDmSeedPair(a: string, b: string) {
-  const [userA, userB] = iqlabs.utils.sortPubkeys(a, b);
-  const seedBytes = iqlabs.utils.deriveDmSeed(userA, userB);
-  return { userA, userB, seedBytes, seedHex: bytesToHex(seedBytes) };
-}
-
-export function rowToMessage(row: Row): MessageRow {
+export function rowToMessage(row: Record<string, unknown>): MessageRow {
   const record = row ?? {};
   const idCandidate =
     (record as any).id ??

@@ -9,7 +9,7 @@ import { useAppConnection } from '@/lib/wallet/use-app-wallet';
 import { PublicKey } from '@solana/web3.js';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
 import { getCachedAccountInfo } from '@/lib/rpc/cache';
-import type { UserProfile } from './user-profile-manager';
+import type { UserProfile } from './types';
 import iqlabs from 'iqlabs-sdk/src';
 
 // Global cache to prevent redundant fetches across components

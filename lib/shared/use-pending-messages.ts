@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { MessageRow } from './message-helpers';
-import { createPendingMessage, prunePendingMessages, type MessagePayload } from './message';
+import { prunePendingMessages, type MessagePayload } from './message';
 
 type PendingMessagesHookReturn = {
     pendingMessages: MessageRow[];
@@ -14,7 +14,7 @@ export function usePendingMessages(): PendingMessagesHookReturn {
     const [pendingMessages, setPendingMessages] = useState<MessageRow[]>([]);
 
     const addPendingMessage = useCallback((payload: MessagePayload) => {
-        setPendingMessages((prev) => [...prev, createPendingMessage(payload)]);
+        setPendingMessages((prev) => [...prev, { ...payload, status: 'pending' as const }]);
     }, []);
 
     const pruneConfirmedMessages = useCallback((confirmed: MessageRow[]) => {

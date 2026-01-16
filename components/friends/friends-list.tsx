@@ -8,12 +8,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PublicKey } from '@solana/web3.js';
 import { Buffer } from 'buffer';
-import type { FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { useFriends } from '@/lib/friends/use-friends';
-import { FriendCard } from './friend-card';
-import { AddFriendForm } from './add-friend-form';
+import { FriendsListView } from './friends-list-view';
+import { DmChatModal } from './dm-chat-modal';
+import { AddFriendModal } from './add-friend-modal';
+import { BlockConfirmModal } from './block-confirm-modal';
 import iqlabs from 'iqlabs-sdk/src';
 import idl from 'iqlabs-sdk/idl/code_in.json';
 import type { SignerInput } from 'iqlabs-sdk/src/sdk/utils/wallet';
@@ -22,33 +23,28 @@ import { shortenAddress } from '@/lib/friends/utils';
 import { buildRequestConnectionInstruction } from '@/lib/friends/request-connection';
 import { DM_STATUS } from '@/lib/friends/types';
 import type { Friend } from '@/lib/friends/types';
+import { useFriendAlerts } from '@/lib/friends/use-friend-alerts';
 import { Idl } from '@coral-xyz/anchor';
-import { Window, WindowHeader, WindowContent, Button, Cutout } from 'react95';
-import { MessageBubble } from '@/components/ui/message-bubble';
-import { MessageInputForm } from '@/components/chat/message-input-form';
-import { normalizeFileUrl } from '@/lib/utils/message-utils';
 import { GlobalStyles } from './theme';
 import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
-import { rowToMessage } from '@/lib/shared/message-helpers';
-import { mergeMessages, type MessagePayload } from '@/lib/shared/message';
 import { usePendingMessages } from '@/lib/shared/use-pending-messages';
-import { useMessageIndexLoader, type FetchConfig } from '@/lib/shared/useMessageIndexLoader';
+import { useMessageChannel } from '@/lib/shared/use-message-channel';
 import { useOnAccountChange } from '@/lib/shared/useOnAccountChange';
-import { makeDmTimestampKey, setLastMessageTimestamp, getLastMessageTimestamp } from '@/lib/cache/message-timestamp-cache';
-import { NotificationToggle } from '@/components/ui/notification-toggle';
+import { makeDmTimestampKey, setLastMessageTimestamp } from '@/lib/cache/message-timestamp-cache';
 import { RpcConfigPrompt } from '@/components/ui/rpc-config-prompt';
 import { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
 import { invalidateSignatureCache } from '@/lib/rpc/cache';
 import { useUserInit } from '@/lib/iqlabs/use-user-init';
+import { makeDmChannelKey, dmChannelKeyToSeed, dmRoomIdToChannelKey } from '@/lib/shared/channel-utils';
+import { extractErrorLogs } from '@/lib/utils/error-utils';
+import { createDmFetcher } from '@/lib/friends/dm-fetcher';
+import { useWebSocketChannel } from '@/lib/shared/use-websocket-channel';
+import { useScrollTracker } from '@/lib/shared/use-scroll-tracker';
 type Tab = 'all' | 'pending' | 'blocked';
 
 type FriendsListProps = {
     dmQueryAddress?: string;
 };
-
-const makeDmChannelKey = (seedHex: string) => `dm:${seedHex}`;
-const dmChannelKeyToSeed = (channelKey: string) => channelKey.replace(/^dm:/, '');
-const dmRoomIdToChannelKey = (roomId: string) => `dm:${roomId.replace(/^dm:/, '')}`;
 
 export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     /* --------------------------------------------------------------------------
@@ -57,7 +53,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     const { connection, endpointSource, setCustomRpcEndpoint } = useAppConnection();
     const wallet = useAppWallet();
     const router = useRouter();
-    const userAddress = wallet?.publicKey?.toBase58();
+    const userAddress = wallet?.publicKey?.toBase58() ?? null;
     const {
         isInitialized: isUserInitialized,
         error: userInitError,
@@ -87,13 +83,13 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     // DM state
     const [chatFriend, setChatFriend] = useState<Friend | null>(null);
     const [chatOpen, setChatOpen] = useState(false);
+    const chatPendingState = usePendingMessages();
     const {
         pendingMessages: chatPendingMessages,
-        addPendingMessage: addChatPendingMessage,
         pruneConfirmedMessages: pruneChatPendingMessages,
         removePendingMessage: removeChatPendingMessage,
         resetPendingMessages: resetChatPendingMessages,
-    } = usePendingMessages();
+    } = chatPendingState;
     const [chatActionError, setChatActionError] = useState<string | null>(null);
     const [chatMessageInput, setChatMessageInput] = useState('');
 
@@ -102,15 +98,8 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     const [attachmentUrl, setAttachmentUrl] = useState('');
     const [attachmentError, setAttachmentError] = useState<string | null>(null);
     const [dmNotificationsEnabled, setDmNotificationsEnabled] = useState(true);
-    const [friendTimestamps, setFriendTimestamps] = useState<Record<string, number>>({});
-    const [dmAlerts, setDmAlerts] = useState<Record<string, boolean>>({});
-    const [dmWsConnected, setDmWsConnected] = useState(false);
     const DM_RATE_LIMIT = 3;
     const [chatSlowRpcMode, setChatSlowRpcMode] = useState(endpointSource === 'default');
-    const dmWsBackoffRef = useRef<number>(0);
-    const dmPingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-    const [toastMessage, setToastMessage] = useState<string | null>(null);
-    const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const [dmHasNewMessages, setDmHasNewMessages] = useState(false);
     const [dmNewMarkerId, setDmNewMarkerId] = useState<string | null>(null);
     const [dmUiIsAtBottom, setDmUiIsAtBottom] = useState(true);
@@ -128,12 +117,9 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     const chatMessagesEndRef = useRef<HTMLDivElement>(null);
     const chatListRef = useRef<HTMLDivElement>(null);
     const chatInputRef = useRef<HTMLInputElement>(null);
-    const dmSocketRef = useRef<WebSocket | null>(null);
-    const dmSubscribedIdsRef = useRef<Set<string>>(new Set());
     const dmIsAtBottomRef = useRef(true);
     const dmMarkerElRef = useRef<HTMLDivElement | null>(null);
     const dmMarkerClearTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const dmLastPongRef = useRef<number>(Date.now());
 
     const signer = useMemo<SignerInput | null>(() => {
         if (!wallet?.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) {
@@ -188,44 +174,18 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         [chatFriend?.dmSeedHex]
     );
 
-    useEffect(() => {
-        setFriendTimestamps((prev) => {
-            const next: Record<string, number> = { ...prev };
-            friends.forEach((friend) => {
-                if (!friend.dmSeedHex) return;
-                const candidate = friend.lastTimestamp ?? 0;
-                if (!(friend.dmSeedHex in next) || candidate > next[friend.dmSeedHex]) {
-                    next[friend.dmSeedHex] = candidate;
-                }
-            });
-            // Remove entries for friends that no longer exist
-            Object.keys(next).forEach((key) => {
-                if (!friends.some((friend) => friend.dmSeedHex === key)) {
-                    delete next[key];
-                }
-            });
-            return next;
-        });
-    }, [friends]);
-
-    useEffect(() => {
-        const alerts: Record<string, boolean> = {};
-        friends.forEach((friend) => {
-            if (!friend.dmSeedHex) return;
-            const latest = friendTimestamps[friend.dmSeedHex] ?? friend.lastTimestamp ?? 0;
-            const cached = getLastMessageTimestamp(makeDmTimestampKey(friend.dmSeedHex)) ?? 0;
-            alerts[friend.dmSeedHex] = Boolean(latest && latest > cached);
-        });
-        setDmAlerts(alerts);
-    }, [friends, friendTimestamps]);
-
-    const showToast = useCallback((text: string) => {
-        if (toastTimeoutRef.current) {
-            clearTimeout(toastTimeoutRef.current);
-        }
-        setToastMessage(text);
-        toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 1000);
-    }, []);
+    const {
+        friendTimestamps,
+        setFriendTimestamps,
+        dmAlerts,
+        setDmAlerts,
+        toastMessage,
+        showToast,
+    } = useFriendAlerts({
+        friends,
+        chatOpen,
+        activeChatSeedHex: chatFriend?.dmSeedHex ?? null,
+    });
 
     const setDmMarker = useCallback((channelKey: string, markerId: string | null) => {
         dmMarkerByChannelRef.current[channelKey] = markerId;
@@ -239,20 +199,6 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         if (!channelKey) return;
         setDmMarker(channelKey, null);
     }, [setDmMarker]);
-
-    useEffect(() => {
-        for (const friend of friends) {
-            if (chatOpen && chatFriend?.dmSeedHex === friend.dmSeedHex) continue;
-            if (!friend.dmSeedHex) continue;
-            const latest = friendTimestamps[friend.dmSeedHex] ?? friend.lastTimestamp ?? 0;
-            const cached = getLastMessageTimestamp(makeDmTimestampKey(friend.dmSeedHex)) ?? 0;
-            if (latest && latest > cached) {
-                const label = shortenAddress(friend.address, 6);
-                showToast(`New message available from ${label}`);
-                break;
-            }
-        }
-    }, [friends, friendTimestamps, showToast, chatOpen, chatFriend?.dmSeedHex]);
 
     useEffect(() => {
         setChatSlowRpcMode(endpointSource === 'default');
@@ -283,59 +229,16 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         resetChatPendingMessages();
     }, [chatFriend?.dmSeedHex, resetChatPendingMessages]);
 
-    useEffect(() => {
-        return () => {
-            if (toastTimeoutRef.current) {
-                clearTimeout(toastTimeoutRef.current);
-            }
-        };
-    }, []);
-
-    const updateDmIsAtBottom = useCallback(() => {
-        const el = chatListRef.current;
-        if (!el) return;
-        const threshold = 80;
-        const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-        const atBottom = distance < threshold;
-        dmIsAtBottomRef.current = atBottom;
-        setDmUiIsAtBottom(atBottom);
-        if (atBottom) {
-            setDmHasNewMessages(false);
-            if (dmMarkerClearTimeoutRef.current) {
-                clearTimeout(dmMarkerClearTimeoutRef.current);
-            }
-            dmMarkerClearTimeoutRef.current = setTimeout(() => {
-                if (selectedDmChannelKey) {
-                    clearDmMarker(selectedDmChannelKey);
-                }
-                dmMarkerClearTimeoutRef.current = null;
-            }, 250);
-        }
-
-        const markerEl = dmMarkerElRef.current;
-        if (markerEl) {
-            const markerRect = markerEl.getBoundingClientRect();
-            const listRect = el.getBoundingClientRect();
-            const markerVisible = markerRect.top >= listRect.top && markerRect.top <= listRect.bottom;
-            const markerAbove = markerRect.top < listRect.top;
-            if (markerVisible || markerAbove) {
-                if (selectedDmChannelKey) {
-                    clearDmMarker(selectedDmChannelKey);
-                }
-                dmMarkerElRef.current = null;
-            }
-        }
-    }, [clearDmMarker, selectedDmChannelKey]);
-
-    const chatFriendTable = useMemo(() => {
-        if (!chatFriend) return null;
-        try {
-            return new PublicKey(chatFriend.tableAddress);
-        } catch (error) {
-            console.warn('[FriendsList] Invalid chat table address:', error);
-            return null;
-        }
-    }, [chatFriend]);
+    const { updateIsAtBottom: updateDmIsAtBottom } = useScrollTracker({
+        listRef: chatListRef,
+        isAtBottomRef: dmIsAtBottomRef,
+        setUiIsAtBottom: setDmUiIsAtBottom,
+        setHasNewMessages: setDmHasNewMessages,
+        selectedChannelKey: selectedDmChannelKey,
+        clearMarker: clearDmMarker,
+        markerClearTimeoutRef: dmMarkerClearTimeoutRef,
+        markerElRef: dmMarkerElRef,
+    });
 
     /* --------------------------------------------------------------------------
      * Data Loading Helpers (DM)
@@ -351,71 +254,16 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         };
     }, [friendMapBySeedHex]);
 
-    const fetcher = useCallback(async (channelKey: string, fetchConfig?: FetchConfig) => {
-        if (!userAddress) return [];
-        const seedHex = dmChannelKeyToSeed(channelKey);
-        const friend = friendMapBySeedHex[seedHex];
-        if (!friend) return [];
-
-        const baseMaxTx = endpointSource === 'default' ? 40 : 200;
-        const maxTx = fetchConfig?.maxTx ?? baseMaxTx;
-        const targetSignatures = fetchConfig?.signatures?.length
-            ? fetchConfig.signatures
-            : (await iqlabs.reader.fetchAccountTransactions(friend.tableAddress, { limit: maxTx }))
-                .map((sig) => sig.signature);
-
-        const decodeRowsFromSignatures = async (
-            signatures: string[],
-            onProgress?: (rows: MessageRow[]) => void
-        ) => {
-            const messages: MessageRow[] = [];
-            for (const signature of signatures) {
-                let result: { data: string | null; metadata: string };
-                try {
-                    result = await iqlabs.reader.readCodeIn(signature);
-                } catch (err) {
-                    if (
-                        err instanceof Error &&
-                        err.message.includes('user_inventory_code_in instruction not found')
-                    ) {
-                        continue;
-                    }
-                    throw err;
-                }
-                const { data, metadata } = result;
-                let row: Record<string, unknown>;
-                if (!data) {
-                    row = { signature, metadata, data: null };
-                } else {
-                    try {
-                        const parsed = JSON.parse(data) as Record<string, unknown>;
-                        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                            row = { ...parsed, __txSignature: signature };
-                        } else {
-                            row = { signature, metadata, data };
-                        }
-                    } catch {
-                        row = { signature, metadata, data };
-                    }
-                }
-                const message = rowToMessage(row);
-                if (message.text || message.file) {
-                    messages.push(message);
-                    onProgress?.([...messages]);
-                }
-            }
-            return messages;
-        };
-
-        const messages = await decodeRowsFromSignatures(targetSignatures, (partial) => {
-            fetchConfig?.onProgress?.(partial);
-            if (endpointSource === 'default') {
-                setChatSlowRpcMode(true);
-            }
-        });
-
-        return messages;
-    }, [userAddress, endpointSource, friendMapBySeedHex, setChatSlowRpcMode]);
+    const fetcher = useMemo(
+        () =>
+            createDmFetcher({
+                userAddress,
+                endpointSource,
+                friendMapBySeedHex,
+                setChatSlowRpcMode,
+            }),
+        [userAddress, endpointSource, friendMapBySeedHex, setChatSlowRpcMode]
+    );
 
     const {
         messages: dmMessages,
@@ -427,22 +275,86 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         applyLocalRows,
         resetChannelState,
         lastInsertModeRef,
-    } = useMessageIndexLoader({
-        channelKey: selectedDmChannelKey,
-        resolveChannelMeta,
-        fetcher,
-        connection,
-        endpointSource,
-        roomRateLimit: DM_RATE_LIMIT,
-        onRowsApplied: ({ channelKey, seedHex, rows }) => {
-            const latestTimestamp = rows.reduce((max, msg) => Math.max(max, msg.timestamp ?? 0), 0);
-            if (latestTimestamp) {
-                setLastMessageTimestamp(makeDmTimestampKey(seedHex), latestTimestamp);
-                setFriendTimestamps((prev) => ({ ...prev, [seedHex]: latestTimestamp }));
-                setDmAlerts((prev) => ({ ...prev, [channelKey]: false, [seedHex]: false }));
-            }
+        mergedMessages: orderedChatMessages,
+        sendMessage: handleSendChatMessage,
+    } = useMessageChannel({
+        reader: {
+            channelKey: selectedDmChannelKey,
+            resolveChannelMeta,
+            fetcher,
+            connection,
+            endpointSource,
+            roomRateLimit: DM_RATE_LIMIT,
+            onRowsApplied: ({ channelKey, seedHex, rows }) => {
+                const latestTimestamp = rows.reduce((max, msg) => Math.max(max, msg.timestamp ?? 0), 0);
+                if (latestTimestamp) {
+                    setLastMessageTimestamp(makeDmTimestampKey(seedHex), latestTimestamp);
+                    setFriendTimestamps((prev) => ({ ...prev, [seedHex]: latestTimestamp }));
+                    setDmAlerts((prev) => ({ ...prev, [channelKey]: false, [seedHex]: false }));
+                }
+            },
+            runWithRpcRateLimit,
         },
-        runWithRpcRateLimit,
+        pending: chatPendingState,
+        sender: {
+            messageInput: chatMessageInput,
+            attachmentUrl,
+            setMessageInput: setChatMessageInput,
+            setAttachmentUrl,
+            setAttachmentError,
+            setShowAttachmentInput,
+            setActionError: setChatActionError,
+            getSender: () => userAddress ?? '',
+            getMessageId: () =>
+                typeof crypto !== 'undefined' && crypto.randomUUID
+                    ? crypto.randomUUID().slice(0, 12)
+                    : Math.random().toString(36).slice(2, 10),
+            canSend: () => {
+                if (!chatFriend || !signer || !userAddress) {
+                    return { ok: false };
+                }
+                if (!canSendChatToFriend(chatFriend)) {
+                    return { ok: false, errorMessage: 'Approve the request to continue this conversation.' };
+                }
+                return { ok: true };
+            },
+            writeMessage: (payload) =>
+                iqlabs.writer.writeConnectionRow(
+                    connection,
+                    signer!,
+                    dbRootId,
+                    chatFriend!.dmSeed,
+                    JSON.stringify(payload)
+                ),
+            onBeforeSend: (_payload, timestamp) => {
+                if (chatFriend?.dmSeedHex) {
+                    const dmKey = chatFriend.dmSeedHex;
+                    setLastMessageTimestamp(makeDmTimestampKey(dmKey), timestamp);
+                    setFriendTimestamps((prev) => ({ ...prev, [dmKey]: timestamp }));
+                    setDmAlerts((prev) => ({ ...prev, [dmKey]: false }));
+                }
+            },
+            onAfterSuccess: (payload, signature) => {
+                if (chatFriend?.dmSeedHex) {
+                    const timestamp = payload.timestamp ?? 0;
+                    notifyDmMessageSent(chatFriend.dmSeedHex, timestamp, signature);
+                    const channelKey = makeDmChannelKey(chatFriend.dmSeedHex);
+                    applyLocalRows(channelKey, [
+                        {
+                            ...payload,
+                            status: 'confirmed',
+                            room: chatFriend.dmSeedHex,
+                        },
+                    ]);
+                    removeChatPendingMessage(payload.id);
+                }
+            },
+            onAfterError: (err, payload) => {
+                removeChatPendingMessage(payload.id);
+                const message = err instanceof Error ? err.message : 'Failed to send DM';
+                setChatActionError(message);
+            },
+        },
     });
 
     useEffect(() => {
@@ -454,11 +366,6 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         setDmNewMarkerId(dmMarkerByChannelRef.current[selectedDmChannelKey] ?? null);
         setDmHasNewMessages(Boolean(dmMarkerByChannelRef.current[selectedDmChannelKey]));
     }, [selectedDmChannelKey]);
-
-    const orderedChatMessages = useMemo(
-        () => mergeMessages(dmMessages, chatPendingMessages),
-        [dmMessages, chatPendingMessages]
-    );
 
     useEffect(() => {
         if (!selectedDmChannelKey) return;
@@ -500,7 +407,8 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         [triggerLiveLatest]
     );
 
-    const handleDmSocketPayload = useCallback(async (payload: { type?: string; roomId?: string; lastTimestamp?: number; timestamp?: number; signature?: string }) => {
+    const handleDmSocketPayload = useCallback(async (data: unknown) => {
+        const payload = data as { type?: string; roomId?: string; lastTimestamp?: number; timestamp?: number; signature?: string };
         const roomId = payload?.roomId;
         if (!roomId || !roomId.startsWith('dm:')) {
             return;
@@ -552,10 +460,14 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         }
     }, [chatFriend, chatOpen, friendMapBySeedHex, showToast, targetedDecode, triggerLiveLatest]);
 
-    const dmSocketHandlerRef = useRef<typeof handleDmSocketPayload | null>(null);
-    useEffect(() => {
-        dmSocketHandlerRef.current = handleDmSocketPayload;
-    }, [handleDmSocketPayload]);
+    const dmWs = useWebSocketChannel({
+        onMessage: handleDmSocketPayload,
+        logPrefix: 'FriendsList DM',
+    });
+
+    const dmSocketRef = dmWs.socketRef;
+    const dmSubscribedIdsRef = dmWs.subscribedIdsRef;
+    const dmWsConnected = dmWs.isConnected;
 
     const handleOpenChat = useCallback(async (friend: Friend) => {
         setChatFriend(friend);
@@ -625,129 +537,26 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         pruneChatPendingMessages(dmMessages);
     }, [dmMessages, chatPendingMessages.length, pruneChatPendingMessages]);
 
+    // Account change subscription for chat friend table
+    const getChatFriendTableAccount = () => {
+        if (!chatFriend) return null;
+        try {
+            return new PublicKey(chatFriend.tableAddress);
+        } catch (error) {
+            console.warn('[FriendsList] Invalid chat table address:', error);
+            return null;
+        }
+    };
+
     useOnAccountChange({
         connection,
-        account: chatFriendTable,
+        account: getChatFriendTableAccount(),
         handler: () => {
             void handleDmLogs();
         },
         commitment: 'processed',
         enabled: !dmWsConnected,
     });
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-        const url = process.env.NEXT_PUBLIC_NOTI_WS_URL || 'ws://localhost:8080';
-        let active = true;
-
-        const clearPing = () => {
-            if (dmPingIntervalRef.current) {
-                clearInterval(dmPingIntervalRef.current);
-                dmPingIntervalRef.current = null;
-            }
-        };
-
-        const scheduleReconnect = () => {
-            setDmWsConnected(false);
-            clearPing();
-            dmSubscribedIdsRef.current.clear();
-            dmSocketRef.current = null;
-            if (!active) return;
-            dmWsBackoffRef.current = Math.min(
-                dmWsBackoffRef.current ? dmWsBackoffRef.current * 2 : 2000,
-                30000
-            );
-            setTimeout(connect, dmWsBackoffRef.current);
-        };
-
-        const connect = () => {
-            if (!active) return;
-            try {
-                const socket = new WebSocket(url);
-                dmSocketRef.current = socket;
-
-                socket.addEventListener('open', () => {
-                    if (!active) return;
-                    console.log('[FriendsList] DM WS connected to', url);
-                    dmWsBackoffRef.current = 0;
-                    dmLastPongRef.current = Date.now();
-                    setDmWsConnected(true);
-                    clearPing();
-                    
-                    // Ping every 15 seconds
-                    dmPingIntervalRef.current = setInterval(() => {
-                        if (socket.readyState === WebSocket.OPEN) {
-                            // Check if we got a pong recently (within 45 seconds)
-                            if (Date.now() - dmLastPongRef.current > 45000) {
-                                console.warn('[FriendsList] DM WS no pong in 45s, forcing reconnect');
-                                socket.close();
-                                return;
-                            }
-                            socket.send(JSON.stringify({ type: 'ping' }));
-                            console.log('[FriendsList] DM WS ping sent');
-                        }
-                    }, 15000);
-                });
-
-                const handleMessage = (event: MessageEvent) => {
-                    try {
-                        const data = JSON.parse(event.data);
-                        if (data?.type === 'pong') {
-                            dmLastPongRef.current = Date.now();
-                            return;
-                        }
-                        console.log('[FriendsList] DM WS message:', data);
-                        if (data && (data.type === 'roomUpdated' || data.type === 'roomSnapshot' || data.type === 'messageSent')) {
-                            const handler = dmSocketHandlerRef.current;
-                            if (handler) {
-                                void handler(data);
-                            }
-                        }
-                    } catch (error) {
-                        console.warn('[FriendsList] Failed to parse DM notification payload', error);
-                    }
-                };
-
-                socket.addEventListener('message', handleMessage);
-
-                socket.addEventListener('close', () => {
-                    console.log('[FriendsList] DM WS closed');
-                    scheduleReconnect();
-                });
-
-                socket.addEventListener('error', (error) => {
-                    console.warn('[FriendsList] DM WS error', error);
-                });
-            } catch (error) {
-                console.warn('[FriendsList] Failed to connect DM notifications', error);
-                scheduleReconnect();
-            }
-        };
-
-        connect();
-
-        const handleVisibilityChange = () => {
-            if (document.visibilityState === 'visible') {
-                const socket = dmSocketRef.current;
-                if (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) {
-                    console.log('[FriendsList] Tab visible, reconnecting DM WS...');
-                    scheduleReconnect();
-                }
-            }
-        };
-
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-
-        return () => {
-            active = false;
-            clearPing();
-            dmSubscribedIdsRef.current.clear();
-            dmSocketRef.current?.close();
-            dmSocketRef.current = null;
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
-        };
-        // Keep socket alive; handler is updated via ref.
-    }, []);
 
     useEffect(() => {
         if (!dmWsConnected || !dmSocketRef.current) return;
@@ -971,82 +780,6 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         }
     }, []);
 
-    const handleSendChatMessage = async (event?: FormEvent) => {
-        event?.preventDefault();
-        if (!chatFriend || !signer || !userAddress) return;
-        const text = chatMessageInput.trim();
-        if (!text) return;
-        if (!canSendChatToFriend(chatFriend)) {
-            setChatActionError('Approve the request to continue this conversation.');
-            return;
-        }
-
-        const fileUrl = normalizeFileUrl(attachmentUrl);
-        if (attachmentUrl.trim() && !fileUrl) {
-            setAttachmentError('Invalid attachment URL. Must be a valid https:// link.');
-            return;
-        }
-
-        const messageId =
-            typeof crypto !== 'undefined' && crypto.randomUUID
-                ? crypto.randomUUID().slice(0, 12)
-                : Math.random().toString(36).slice(2, 10);
-
-        const timestamp = Date.now();
-
-        const payload: MessagePayload = {
-            id: messageId,
-            text,
-            sender: userAddress,
-            timestamp,
-        };
-
-        if (fileUrl) {
-            payload.file = fileUrl;
-        }
-
-        setChatMessageInput('');
-        setAttachmentUrl('');
-        setAttachmentError(null);
-        setShowAttachmentInput(false);
-        setChatActionError(null);
-
-        if (chatFriend?.dmSeedHex) {
-            const dmKey = chatFriend.dmSeedHex;
-            setLastMessageTimestamp(makeDmTimestampKey(dmKey), timestamp);
-            setFriendTimestamps((prev) => ({ ...prev, [dmKey]: timestamp }));
-            setDmAlerts((prev) => ({ ...prev, [dmKey]: false }));
-        }
-
-        addChatPendingMessage(payload);
-
-        try {
-            const signature = await iqlabs.writer.writeConnectionRow(
-                connection,
-                signer,
-                dbRootId,
-                chatFriend.dmSeed,
-                JSON.stringify(payload)
-            );
-            if (chatFriend.dmSeedHex) {
-                notifyDmMessageSent(chatFriend.dmSeedHex, timestamp, signature);
-                const channelKey = makeDmChannelKey(chatFriend.dmSeedHex);
-                applyLocalRows(channelKey, [
-                    {
-                        ...payload,
-                        status: 'confirmed',
-                        room: chatFriend.dmSeedHex,
-                    },
-                ]);
-                removeChatPendingMessage(messageId);
-            }
-        } catch (err) {
-            removeChatPendingMessage(messageId);
-            const message = err instanceof Error ? err.message : 'Failed to send DM';
-            setChatActionError(message);
-        }
-    };
-
     const closeChatModal = () => {
         setChatOpen(false);
         setChatFriend(null);
@@ -1071,6 +804,17 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         window.open(url, '_blank');
     }, []);
 
+    const handleDmScrollToBottom = useCallback(() => {
+        chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        dmIsAtBottomRef.current = true;
+        setDmUiIsAtBottom(true);
+        setDmHasNewMessages(false);
+        clearDmMarker(selectedDmChannelKey);
+    }, [clearDmMarker, selectedDmChannelKey]);
+
+    const canWriteDm = !!signer && isUserInitialized && !!chatFriend && canSendChatToFriend(chatFriend);
+    const canSubmitDm = !!signer && isUserInitialized && !!chatMessageInput.trim() && !!chatFriend && canSendChatToFriend(chatFriend);
+
     return (
         <div>
             <RpcConfigPrompt
@@ -1079,318 +823,78 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             />
             <GlobalStyles />
             <div className="flex-1 p-4 md:p-6 max-w-4xl mx-auto w-full">
-                <Window style={{ width: '100%', marginBottom: '20px' }}>
-                    <WindowContent>
-                        <div style={{ padding: '8px' }}>
-                            {/* Error Banner */}
-                            {(error || friendsError) && (
-                                <Cutout style={{ padding: '8px', marginBottom: '16px', background: '#330000' }}>
-                                    <p style={{ color: '#ff0000', fontSize: '12px', }}>
-                                        ERROR: {error || friendsError}
-                                    </p>
-                                </Cutout>
-                            )}
-
-                            {/* Tabs and Add Friend Button */}
-                            <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                marginBottom: '16px',
-                                gap: '12px',
-                                flexWrap: 'wrap'
-                            }}>
-                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                    {([
-                                        { value: 'all', label: '[FRIENDS]' },
-                                        { value: 'pending', label: '[REQUESTS]' },
-                                        { value: 'blocked', label: '[BLOCKED]' }
-                                    ] as const).map(({ value, label }) => (
-                                        <button
-                                            key={value}
-                                            type="button"
-                                            onClick={() => setActiveTab(value)}
-                                            style={{
-                                                padding: '6px 14px',
-                                                fontSize: '12px',
-                                                fontWeight: 700,
-                                                letterSpacing: '0.05em',
-                                                border: '2px solid',
-                                                borderColor: activeTab === value ? '#4ade80' : '#16a34a',
-                                                backgroundColor: activeTab === value ? 'rgba(74, 222, 128, 0.15)' : 'rgba(0,0,0,0.6)',
-                                                color: activeTab === value ? '#4ade80' : '#d1fae5',
-                                                boxShadow: activeTab === value ? '0 0 10px rgba(74, 222, 128, 0.35)' : 'none',
-                                                cursor: 'pointer',
-                                                transition: 'border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease',
-                                            }}
-                                        >
-                                            {label}
-                                        </button>
-                                    ))}
-                                </div>
-                                <Button
-                                    onClick={() => setAddFriendModalOpen(true)}
-                                    disabled={!userAddress}
-                                    primary
-                                    style={{ fontSize: '11px', marginLeft: '12px' }}
-                                >
-                                    [ADD FRIEND]
-                                </Button>
-                            </div>
-
-                            <div style={{ marginTop: '16px', minHeight: '300px' }}>
-                                {/* Loading state */}
-                                {loading && (
-                                    <div style={{ textAlign: 'center', padding: '48px 0' }}>
-                                        <p style={{ color: '#00ff00', }}>[LOADING...]</p>
-                                    </div>
-                                )}
-
-                                {/* Empty state */}
-                                {!loading && filteredFriends.length === 0 && (
-                                    <Cutout style={{ padding: '48px 16px', textAlign: 'center' }}>
-                                        <p style={{ color: '#00ff00', fontSize: '12px' }}>
-                                            {activeTab === 'all' && '> NO FRIENDS YET. ADD SOMEONE ABOVE!'}
-                                            {activeTab === 'pending' && '> NO PENDING REQUESTS'}
-                                            {activeTab === 'blocked' && '> NO BLOCKED USERS'}
-                                        </p>
-                                    </Cutout>
-                                )}
-
-                                {/* Friends list */}
-                                {!loading && filteredFriends.length > 0 && (
-                                    <div style={{ display: 'grid', gap: '12px' }}>
-                                        {filteredFriends.map((friend) => (
-                                            <FriendCard
-                                                key={friend.tableAddress}
-                                                friend={friend}
-                                                currentUser={userAddress || ''}
-                                                onApprove={handleApproveFriend}
-                                                onBlock={showBlockConfirm}
-                                                onUnblock={handleUnblockFriend}
-                                                onOpenChat={handleOpenChat}
-                                                hasUnread={Boolean(friend.dmSeedHex && dmAlerts[friend.dmSeedHex])}
-                                            />
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </WindowContent>
-                </Window>
+                <FriendsListView
+                    error={error}
+                    friendsError={friendsError}
+                    activeTab={activeTab}
+                    setActiveTab={setActiveTab}
+                    onOpenAddFriend={() => setAddFriendModalOpen(true)}
+                    userAddress={userAddress}
+                    loading={loading}
+                    filteredFriends={filteredFriends}
+                    dmAlerts={dmAlerts}
+                    onApprove={handleApproveFriend}
+                    onBlock={showBlockConfirm}
+                    onUnblock={handleUnblockFriend}
+                    onOpenChat={handleOpenChat}
+                />
             </div>
-            {chatOpen && chatFriend && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6">
-                    <div
-                        className="bg-black border-2 border-green-700 rounded-xl w-full max-w-4xl h-[85vh] flex flex-col">
-                        {/* Header */}
-                        <div
-                            className="border-b border-green-700/50 px-4 py-3 flex items-center justify-between flex-shrink-0">
-                            <h3 className="text-green-400 font-bold">
-                                DM with {shortenAddress(chatFriend.address)}
-                            </h3>
-                            <div className="flex items-center gap-3">
-                                <NotificationToggle
-                                    enabled={dmNotificationsEnabled}
-                                    onToggle={() => setDmNotificationsEnabled((prev) => !prev)}
-                                    label="NOTI"
-                                    size="sm"
-                                />
-                                <Button onClick={closeChatModal} size="sm" style={{ fontSize: '11px' }}>
-                                    X
-                                </Button>
-                            </div>
-                        </div>
+            <DmChatModal
+                open={chatOpen}
+                chatFriend={chatFriend}
+                dmNotificationsEnabled={dmNotificationsEnabled}
+                onToggleNotifications={() => setDmNotificationsEnabled((prev) => !prev)}
+                onClose={closeChatModal}
+                isRequesterForFriend={isRequesterForFriend}
+                chatSlowRpcMode={chatSlowRpcMode}
+                chatListRef={chatListRef}
+                chatMessagesEndRef={chatMessagesEndRef}
+                dmMarkerElRef={dmMarkerElRef}
+                orderedChatMessages={orderedChatMessages}
+                showChatLoadingSpinner={showChatLoadingSpinner}
+                chatError={chatError}
+                chatLoading={chatLoading}
+                dmNewMarkerId={dmNewMarkerId}
+                userAddress={userAddress}
+                copiedMessageId={copiedMessageId}
+                onCopyAddress={handleCopyAddress}
+                onDownloadAttachment={handleDownloadAttachment}
+                dmUiIsAtBottom={dmUiIsAtBottom}
+                dmHasNewMessages={dmHasNewMessages}
+                onScrollToBottomClick={handleDmScrollToBottom}
+                chatMessageInput={chatMessageInput}
+                setChatMessageInput={setChatMessageInput}
+                attachmentUrl={attachmentUrl}
+                setAttachmentUrl={setAttachmentUrl}
+                showAttachmentInput={showAttachmentInput}
+                setShowAttachmentInput={setShowAttachmentInput}
+                attachmentError={attachmentError}
+                setAttachmentError={setAttachmentError}
+                onSubmitMessage={handleSendChatMessage}
+                hasWallet={hasWallet}
+                canWrite={canWriteDm}
+                canSubmit={canSubmitDm}
+                isUserInitialized={isUserInitialized}
+                userInitError={userInitError}
+                inputRef={chatInputRef}
+            />
 
-                        {/* Info banner */}
-                        <div
-                            className="border-b border-green-700/30 bg-black/60 px-4 py-2 text-xs text-green-600 flex-shrink-0">
-                            <div className="mb-1">
-                                <span className="text-green-500">Table:</span> {shortenAddress(chatFriend.tableAddress)}
-                            </div>
-                            <div className="mb-1 break-all">
-                                <span className="text-green-500">Seed:</span> {chatFriend.dmSeedHex}
-                            </div>
-                            <div>
-                                <span className="text-green-500">Status:</span>{' '}
-                                <span className="uppercase">{chatFriend.status}</span>
-                                {chatFriend.status === 'pending' &&
-                                    (isRequesterForFriend(chatFriend)
-                                        ? ' (waiting for approval)'
-                                        : ' (approve to reply)')}
-                                {chatFriend.status === 'blocked' && ' (unblock to continue)'}
-                            </div>
-                        </div>
+            <AddFriendModal
+                open={addFriendModalOpen}
+                onClose={() => setAddFriendModalOpen(false)}
+                onSubmit={handleAddFriend}
+                disabled={!userAddress}
+            />
 
-                        {chatSlowRpcMode && (
-                            <div className="border-b border-yellow-700/40 bg-yellow-900/20 px-4 py-2 text-xs text-amber-200 flex-shrink-0">
-                                Using public RPC — slow load mode (1 tx/sec). Messages will appear as they arrive.
-                            </div>
-                        )}
-
-                        {/* Messages */}
-                        <div className="relative flex-1 overflow-y-auto px-4 py-3 space-y-2 min-h-0" ref={chatListRef}>
-                            {showChatLoadingSpinner && orderedChatMessages.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center h-full px-8">
-                                    <p className="text-green-400 text-sm mb-4">Loading messages...</p>
-                                    <div style={{ width: '100%', maxWidth: '400px' }}>
-                                        <div style={{
-                                            height: '24px',
-                                            background: '#000000',
-                                            border: '2px solid #00ff00',
-                                            borderRadius: '4px',
-                                            overflow: 'hidden',
-                                            position: 'relative',
-                                            boxShadow: '0 0 10px rgba(0, 255, 0, 0.3)'
-                                        }}>
-                                            <div style={{
-                                                position: 'absolute',
-                                                top: 0,
-                                                left: 0,
-                                                height: '100%',
-                                                width: '25%',
-                                                background: 'linear-gradient(90deg, rgba(0, 255, 0, 0) 0%, rgba(0, 255, 0, 0.6) 50%, rgba(0, 255, 0, 0) 100%)',
-                                                animation: 'slide 2s linear infinite',
-                                                willChange: 'transform'
-                                            }}></div>
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : chatError ? (
-                                <p className="text-red-400 text-sm">Error: {chatError}</p>
-                            ) : !chatLoading && orderedChatMessages.length === 0 && !chatError ? (
-                                <p className="text-green-600 text-sm">No messages yet. Start the conversation!</p>
-                            ) : null}
-                            {orderedChatMessages.map((message, index) => {
-                                const senderAddress = message.sender || userAddress || '';
-                                const displaySender = shortenAddress(senderAddress, 6);
-                                const key = message.id || `chat-row-${index}`;
-                                return (
-                                    <div key={key} className="space-y-3">
-                                        {dmNewMarkerId && message.id === dmNewMarkerId && (
-                                            <div className="flex items-center gap-2 text-xs text-emerald-200/80">
-                                                <div className="flex-1 h-px bg-emerald-500/40" />
-                                                <div
-                                                    className="px-3 py-1 rounded-full bg-emerald-900/60 border border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.35)]"
-                                                    ref={dmMarkerElRef}
-                                                >
-                                                    New messages
-                                                </div>
-                                                <div className="flex-1 h-px bg-emerald-500/40" />
-                                            </div>
-                                        )}
-                                        <MessageBubble
-                                            id={message.id || key}
-                                            text={message.text || ''}
-                                            sender={displaySender}
-                                            senderAddress={senderAddress}
-                                            displayName={message.displayName || displaySender}
-                                            timestamp={message.timestamp}
-                                            status={message.status}
-                                            signature={message.signature}
-                                            file={message.file}
-                                            isOwn={senderAddress === userAddress}
-                                            viewerAddress={userAddress || ''}
-                                            mode="friend"
-                                            onCopyAddress={handleCopyAddress}
-                                            onDownloadAttachment={handleDownloadAttachment}
-                                            copiedMessageId={copiedMessageId}
-                                        />
-                                    </div>
-                                );
-                            })}
-                            <div ref={chatMessagesEndRef} />
-                        </div>
-                        {!dmUiIsAtBottom && orderedChatMessages.length > 0 && (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-                                    dmIsAtBottomRef.current = true;
-                                    setDmUiIsAtBottom(true);
-                                    setDmHasNewMessages(false);
-                                    clearDmMarker(selectedDmChannelKey);
-                                }}
-                                className={`absolute bottom-24 right-6 z-10 flex items-center justify-center rounded-full text-black shadow-lg w-10 h-10 ${
-                                    dmHasNewMessages
-                                        ? 'bg-red-500 hover:bg-red-400'
-                                        : 'bg-emerald-500 hover:bg-emerald-400'
-                                }`}
-                            >
-                                <span className="text-2xl leading-none font-black">▼</span>
-                            </button>
-                        )}
-
-                        {/* Input form */}
-                        <div className="rounded-b-xl overflow-hidden">
-                            <MessageInputForm
-                                messageInput={chatMessageInput}
-                                setMessageInput={setChatMessageInput}
-                                attachmentUrl={attachmentUrl}
-                                setAttachmentUrl={setAttachmentUrl}
-                                showAttachmentInput={showAttachmentInput}
-                                setShowAttachmentInput={setShowAttachmentInput}
-                                attachmentError={attachmentError}
-                                setAttachmentError={setAttachmentError}
-                                onSubmit={handleSendChatMessage}
-                                hasWallet={hasWallet}
-                                canWrite={!!signer && isUserInitialized && !!chatFriend && canSendChatToFriend(chatFriend)}
-                                canSubmit={!!signer && isUserInitialized && !!chatMessageInput.trim() && !!chatFriend && canSendChatToFriend(chatFriend)}
-                                isUserInitialized={isUserInitialized}
-                                userInitError={userInitError}
-                                inputRef={chatInputRef}
-                            />
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Add Friend Modal */}
-            {addFriendModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6">
-                    <Window style={{ width: '100%', maxWidth: '500px' }}>
-                        <WindowHeader style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <span>[ADD FRIEND]</span>
-                            <Button onClick={() => setAddFriendModalOpen(false)} size="sm"
-                                    style={{ padding: '2px 8px', fontSize: '10px' }}>
-                                X
-                            </Button>
-                        </WindowHeader>
-                        <WindowContent>
-                            <AddFriendForm onSubmit={handleAddFriend} disabled={!userAddress} />
-                        </WindowContent>
-                    </Window>
-                </div>
-            )}
-
-            {/* Block Confirmation Modal */}
-            {blockConfirmOpen && friendToBlock && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6">
-                    <Window style={{ width: '100%', maxWidth: '400px' }}>
-                        <WindowHeader>
-                            <span>[CONFIRM BLOCK]</span>
-                        </WindowHeader>
-                        <WindowContent>
-                            <div style={{ padding: '16px' }}>
-                                <p style={{ color: '#00ff00', fontSize: '12px', marginBottom: '16px' }}>
-                                    Are you sure you want to block {shortenAddress(friendToBlock.address, 6)}?
-                                </p>
-                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                                    <Button onClick={() => {
-                                        setBlockConfirmOpen(false);
-                                        setFriendToBlock(null);
-                                    }}>
-                                        Cancel
-                                    </Button>
-                                    <Button onClick={handleBlockFriend} primary>
-                                        Block
-                                    </Button>
-                                </div>
-                            </div>
-                        </WindowContent>
-                    </Window>
-                </div>
-            )}
+            <BlockConfirmModal
+                open={blockConfirmOpen}
+                friend={friendToBlock}
+                onCancel={() => {
+                    setBlockConfirmOpen(false);
+                    setFriendToBlock(null);
+                }}
+                onConfirm={handleBlockFriend}
+            />
             {toastMessage && (
                 <div className="fixed bottom-4 right-4 z-50 rounded bg-black/80 px-4 py-2 text-xs text-amber-200 border border-amber-400/60 shadow-lg">
                     {toastMessage}
@@ -1398,22 +902,4 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             )}
         </div>
     );
-}
-
-function extractErrorLogs(error: unknown): string[] | undefined {
-    if (typeof error !== 'object' || !error) {
-        return undefined;
-    }
-    const candidate = error as {
-        logs?: unknown;
-        simulationResponse?: { logs?: unknown };
-    };
-    if (Array.isArray(candidate.logs)) {
-        return candidate.logs as string[];
-    }
-    const simLogs = candidate.simulationResponse?.logs;
-    if (Array.isArray(simLogs)) {
-        return simLogs as string[];
-    }
-    return undefined;
 }

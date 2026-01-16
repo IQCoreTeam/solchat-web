@@ -6,7 +6,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { UserProfile } from './user-profile-manager';
+import type { UserProfile } from './types';
 import { shorten } from '@/lib/utils/message-utils';
 import { DefaultProfileAvatar } from '@/components/ui/default-profile-avatar';
 

@@ -6,7 +6,7 @@
 'use client';
 
 import { useState, useEffect, type FormEvent } from 'react';
-import type { UserProfile } from './user-profile-manager';
+import type { UserProfile } from './types';
 import { DefaultProfileAvatar } from '@/components/ui/default-profile-avatar';
 
 interface ProfileEditorProps {
