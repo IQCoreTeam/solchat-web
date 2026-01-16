@@ -12,14 +12,12 @@ type MessageFetcherOptions = {
   walletAddress: string;
   endpointSource: string;
   rooms: RoomLookup[];
-  setSlowRpcMode: (value: boolean) => void;
 };
 
 export function createRoomFetcher({
   walletAddress,
   endpointSource,
   rooms,
-  setSlowRpcMode,
 }: MessageFetcherOptions) {
   return async (channelKey: string, fetchConfig?: FetchConfig): Promise<MessageRow[]> => {
     if (!walletAddress) return [];
@@ -75,9 +73,7 @@ export function createRoomFetcher({
 
     const messages = await decodeRowsFromSignatures(targetSignatures, (partial) => {
       fetchConfig?.onProgress?.(partial);
-      if (endpointSource === 'default') {
-        setSlowRpcMode(true);
-      }
+      // slowRpcMode is derived from endpointSource in the component, no need to set
     });
     return messages;
   };
