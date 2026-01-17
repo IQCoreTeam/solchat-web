@@ -68,6 +68,9 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
 
           const partyA = new PublicKey(decoded.party_a).toBase58();
           const partyB = new PublicKey(decoded.party_b).toBase58();
+          const dbRootId = decoded.db_root_id
+            ? Buffer.from(decoded.db_root_id).toString('utf8')
+            : '';
 
           // Only include if user is one of the parties
           if (partyA !== userAddress && partyB !== userAddress) {
@@ -109,6 +112,7 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
             tableAddress: actualAddress,
             partyA,
             partyB,
+            dbRootId,
             lastTimestamp,
           });
         } catch (decodeErr) {

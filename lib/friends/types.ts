@@ -24,6 +24,8 @@ export interface Friend {
   partyA: string;
   /** Party B wallet */
   partyB: string;
+  /** DB Root ID (which app this connection belongs to) */
+  dbRootId?: string;
   /** Optional display name */
   name?: string;
   /** Last timestamp tracked on-chain */
