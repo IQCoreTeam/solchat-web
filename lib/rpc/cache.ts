@@ -11,11 +11,11 @@ interface CacheEntry<T> {
   timestamp: number
 }
 
-// Signature cache: address -> signatures (no TTL - we use seen signatures tracking for new messages)
+// Signature cache: address -> signatures (5s TTL for room switching)
 const signatureCache = new Map<string, CacheEntry<ConfirmedSignatureInfo[]>>()
-// Removed TTL - signatures are tracked via useAccountSubscription's seenSignatures instead
-// This prevents unnecessary re-fetching when user stays in the same room
-// const SIGNATURE_CACHE_TTL = 30_000
+// TTL ensures we refetch when switching back to a room after 5 seconds
+// WebSocket/account subscription handles real-time updates while in a room
+const SIGNATURE_CACHE_TTL = 5_000 // 5 seconds
 
 // Transaction cache: signature -> transaction (no TTL, transactions are immutable)
 const transactionCache = new Map<string, VersionedTransactionResponse | null>()
@@ -45,9 +45,9 @@ export async function getCachedSignatures(
 ): Promise<ConfirmedSignatureInfo[]> {
   const cacheKey = `${address.toBase58()}:${limit}:${before || 'none'}`
 
-  // Check cache (no TTL - cache persists until invalidated)
+  // Check cache with TTL
   const cached = signatureCache.get(cacheKey)
-  if (cached) {
+  if (cached && Date.now() - cached.timestamp < SIGNATURE_CACHE_TTL) {
     return cached.data
   }
 
@@ -88,9 +88,9 @@ export async function getCachedSignaturesPaginated(
 ): Promise<ConfirmedSignatureInfo[]> {
   const cacheKey = `${address.toBase58()}:${limit}:paginated`
 
-  // Check cache (no TTL - cache persists until invalidated)
+  // Check cache with TTL
   const cached = signatureCache.get(cacheKey)
-  if (cached) {
+  if (cached && Date.now() - cached.timestamp < SIGNATURE_CACHE_TTL) {
     return cached.data
   }
 
