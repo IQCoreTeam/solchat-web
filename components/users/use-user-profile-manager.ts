@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { getCachedAccountInfo } from '@/lib/rpc/cache';
-import { PublicKey, SystemProgram, type AccountInfo } from '@solana/web3.js';
+import { PublicKey, SystemProgram, type AccountInfo, type Signer } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import type { Idl } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk/src';
@@ -285,7 +285,7 @@ export function useUserProfileManager() {
             const rowData = JSON.stringify({ pubkeyString: userAddress });
             await iqlabs.writer.writeRow(
               connection,
-              signer,
+              signer as Signer,
               dbRootId,
               tableSeed,
               rowData
