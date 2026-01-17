@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { PublicKey } from '@solana/web3.js';
+import { PublicKey, type Signer } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk/src';
@@ -281,7 +281,7 @@ export function ChatClient() {
             writeMessage: (payload) =>
                 iqlabs.writer.writeRow(
                     connection,
-                    signer!,
+                    signer! as Signer,
                     dbRootId,
                     selectedRoom!.seedBytes,
                     JSON.stringify(payload)

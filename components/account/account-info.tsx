@@ -143,7 +143,6 @@ export function AccountInfo() {
       const walletExecutor: WalletExecutor = {
         publicKey: wallet.publicKey,
         signTransaction: wallet.signTransaction ?? undefined,
-        sendTransaction: wallet.sendTransaction ?? undefined,
       };
 
       const txid = await sendSol(connection, walletExecutor, new PublicKey(sendAddress), parseFloat(sendAmount));

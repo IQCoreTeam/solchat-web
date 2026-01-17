@@ -6,7 +6,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PublicKey } from '@solana/web3.js';
+import { PublicKey, type Signer } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import { useRouter } from 'next/navigation';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
@@ -233,7 +233,6 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         listRef: chatListRef,
         isAtBottomRef: dmIsAtBottomRef,
         setUiIsAtBottom: setDmUiIsAtBottom,
-        setHasNewMessages: setDmHasNewMessages,
         selectedChannelKey: selectedDmChannelKey,
         clearMarker: clearDmMarker,
         markerClearTimeoutRef: dmMarkerClearTimeoutRef,
@@ -321,7 +320,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             writeMessage: (payload) =>
                 iqlabs.writer.writeConnectionRow(
                     connection,
-                    signer!,
+                    signer! as Signer,
                     dbRootId,
                     chatFriend!.dmSeed,
                     JSON.stringify(payload)
