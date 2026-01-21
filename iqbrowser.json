@@ -1,0 +1,9 @@
+{
+  "name": "solchat-web",
+  "version": "1.0.0",
+  "description": "this is the first solchat ",
+  "root": "solchat-root",
+  "runtime": "node",
+  "install": "npm install",
+  "start": "npm run dev"
+}
