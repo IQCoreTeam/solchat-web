@@ -63,7 +63,7 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
           blocker,
           dmSeed,
           dmSeedHex,
-          tableAddress: '', // SDK doesn't return this
+          tableAddress: conn.connectionPda,
           partyA: conn.partyA,
           partyB: conn.partyB,
           dbRootId: conn.dbRootId,
