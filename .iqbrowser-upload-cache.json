@@ -1,0 +1,583 @@
+{
+  "solchat-root/solchat-web": {
+    "version": "1.0.0",
+    "files": {
+      ".env.example": {
+        "txId": "5qjRTaidXgEwMGiHdfWDc6AkAHtWFrd7QDfxVjv91tDqt6pBxpLHF4fBMiQoQcwKD9DsEX4q2xdQtGZBR49MnYH9",
+        "hash": "77ca3c855f79d42bddf1646c4a38c48215e555827130ab8f15d392b40a233282"
+      },
+      ".gitignore": {
+        "txId": "4ErihU3kj1aaaMafGUxH4jkY357uqDa9K8NJRE1n85hoiC9vJWVAH2tg6kbZKqUZup5vRggGWbBTmjzBjofaK3WD",
+        "hash": "95252fbd52d0528f3edb4bc6c92428f669a3874ba05c9637dc3e5982a46f3e06"
+      },
+      ".iqbrowser-upload-cache.json": {
+        "txId": "58PnJe8Encjhv2RtdZJYhfJ2SvyHn6rjw7JDEDyxSTKi8QR9Hn87juu2SCxAWzKn2ZEsuEuSnDQgABAaVJUoYNn8",
+        "hash": "a72aa043166500d32729cc2c3ba9e3ac2ddc7657573698d3a5179d50b246c193"
+      },
+      "AGENTS.md": {
+        "txId": "8ZrcE5xUjEigWphmMkmAgTy1MPFRPrCEVS84JeUxJGP9aUf5VsR1cj3cNzXxZibpJAoGJN2HESxvbwMs8Wv1WpR",
+        "hash": "91d46bb18092ec5a0761953a6c7ac7433a1ae0b2c2d7efef17c77942288245e3"
+      },
+      "README.md": {
+        "txId": "5rDiTA9aBd5XoCFD1jgrwwgcz1o8aCEfCMdAN95VaTRh5UqyrN8atUZCmXLCd1Fv5LUefBpV3ok52qpybErjXF9Q",
+        "hash": "49e8b5b2d9354cad2b8ec6ae35b5249785310c59c1f20817faeadaf6a197115e"
+      },
+      "app/account/page.tsx": {
+        "txId": "2otCrABmqCuzBTFSG93YSGrXefpoCBUdSrAZbjJH5PKYucPPrNRqRxEw3caUXQc1UHzCdzWNhKseLoeufFRDYYoe",
+        "hash": "67df7d974e075349e5a75cadd747d438cecd82684769b9a3fbc5eaf3c599328f"
+      },
+      "app/api/download/route.ts": {
+        "txId": "vH6G2VmsBBGd7zEvmmJjJqroQmQcQXY8A2jGdv4EmTQF1LGL6HuaZPknWPU1gBE8qUrSahvhoHz3eL5WkzzApxU",
+        "hash": "bc8db0fbd98efad4f1c5fe3fb66f4a6ac67b2f3cfbb743524b0ae1bb35065d13"
+      },
+      "app/apple-icon.svg": {
+        "txId": "46k7njzHMbxyZfqAN4Jtc5ctN9j2trUxFxgLQw571W6jvzJdg2r3RKj3ro9dbv3CDfpASR2YZKJjQmdXJRPgBYLY",
+        "hash": "783daf60a57a7c52550fdafcbb2fd33b5cb7a5a652886b256b1f35c118c5d887"
+      },
+      "app/chat/page.tsx": {
+        "txId": "518wcvSnxcX2fotDudzdWxmPnx3eRDJhdQLimZqoo8QWoouBcfdKUMwsAfD3RJCKA3vUzuUsvQJKfKmEhSy75Wb1",
+        "hash": "41ef874a7fe87a537e71acd989373ebe9b1979d682bceefe40c2577a282fd8d3"
+      },
+      "app/fonts/bitArray-A2.ttf": {
+        "txId": "5YbpUvCKxJK2Dha5MiBoiwnAuaxXiiFQ1yea3JwE5HsigqVMyCYMzH6Bp4RPbtpSWPBEDa5g3aLYJZ3WQWiebdE9",
+        "hash": "cb0e1977149715083dfedd5fc2cfb96f843eed4aaa8a5c09666a625adebdafad"
+      },
+      "app/friends/page.tsx": {
+        "txId": "2yVN9ZmGwkkPpHiweAC5nZjtQsSvhhAXSwQRsynykrT8BYStd41cuU68nqq2FhV6L6oDL3BPYhretgzEQMYJb9f7",
+        "hash": "89648fcf82eb116a752af5cb203fbfc504d3d598eb43d9f9e15c7ecceb631fea"
+      },
+      "app/globals.css": {
+        "txId": "5Nm28yNEdhzoWTGkHPRXsuJStHJF3ABHiBeGmKGScaFiqsi7oAL8PsfWb1MV9PvRpTktcgys9GY3yYNr9pcgv5mi",
+        "hash": "7783b69e264f13ade752f4ac977c8474b946703421272e52a5df5dfc3ecc9dc1"
+      },
+      "app/icon.svg": {
+        "txId": "5QmcKEhUx9vYGFe2j1KWNf6EY5GJPj9H5uzVtq1FB6VQys574GEApTUZFX5PemkGDemJTFFXDmpWCEFGyiwiciAx",
+        "hash": "705c63ad609980194bad4039b3c2134d2f10c4629499c6dd367984c506e221db"
+      },
+      "app/layout.tsx": {
+        "txId": "5HLphsan1XzyrFFNsU9HxSCYJPyLZ58xfakQxi9Qaps9CUTAqksdcKLj3m7yjuCN1RUYZtk1iu6iAMaZoQLZh81m",
+        "hash": "7cc780fbee55cb2c83fc2d576de4d101a15bdaf5b98cca23f0c4b567c4aa7cb4"
+      },
+      "app/opengraph-image.tsx": {
+        "txId": "xbdwgwLJjyEQ4mKH84o4Ma3N7d4KndbwXU9rADtPkMXATVjFq4YuQtPyrNf8sTkjPgkasBcAMCoSasWWyepKztP",
+        "hash": "88415efc81312494fc165f60e71c4b6625eac35ad9bcad59608a4343ad3ed906"
+      },
+      "app/page.tsx": {
+        "txId": "2EKE2f19zf7Bi1wDgXksxrv1FHkzgucoiM9v5arDESv7Hid6bxP2oyUvid7ejm7pXZRwFkQ5jxrzbGitJXJwyEG7",
+        "hash": "d7aab2e1ca176bf17bde1df3ce9e61b3d07ad09f27078620acb5a9ab7b8161fa"
+      },
+      "app/sitemap.ts": {
+        "txId": "52re8LaH6pXYicBGWDTUutWB5u3MveZDdW4M6jErrAWd3zt9FGStHv7UAtBMQLvMyWct8KLTicCTdbKwo9buktH7",
+        "hash": "c59e28f3919eec29120707587b9d145b997dc4efb8a6ad29c00de2856d264a77"
+      },
+      "app/social-image.tsx": {
+        "txId": "daNAiYfw9VDDhQHKRhKt5qTQD82Vb96XQq93kKogWnQRuEeEwGn6WuiMo2wQTKoopxwgSFrDfwtC1nwX2E3unr2",
+        "hash": "21813232f5c808c4ed111d331c1e01c9847e9b5ec3f0a1ef4db127353408268b"
+      },
+      "app/twitter-image.tsx": {
+        "txId": "4y52gpK1Zds46EDwj8NMwQhVoSLFSmiPxksWuo8WDEmkjNBYLdhByssiNaPy8WfjD3ruunkPxmbCjrpSXKPLphH1",
+        "hash": "88415efc81312494fc165f60e71c4b6625eac35ad9bcad59608a4343ad3ed906"
+      },
+      "app/users/page.tsx": {
+        "txId": "51LHax4q5CyhrxGE1RYucY7hBruHk9i6yRGcbNtHQbqCz9MT67No2s2QV4jzQLPgvftT394thwf44YHGPJzTFw8k",
+        "hash": "1b2015f2d2836ec6d474babe14074f353e8acb832e0f8e7669bbb527973be4dc"
+      },
+      "components/account/account-client.tsx": {
+        "txId": "3u8p1JeHF9C3VV1FuyoNv89tQawCWbd1mEqhBtwiFqo6xEkcyNY2L6uuFKcpbXU7VnzfaYnHm4Cp3jf1Yss98Edw",
+        "hash": "f195a58bd946b079001678b5b48d2a50b38620fa90996ae0b26195322c0bf3df"
+      },
+      "components/account/account-info.tsx": {
+        "txId": "4PVQ5Xh8A1mQAQognUkpJxN1o4Qun37pq5bjid3Jc29sGonTbXqwPLj5kN5j5GcKGQT6zh3QWv3XrrUpZ2MRQcZ3",
+        "hash": "3e1e3912c5ba01e014df760eeff11f0bbae7e5110b5c76e030aa35b68fccc28f"
+      },
+      "components/account/private-entry-card.tsx": {
+        "txId": "Unt2eGD2AaeQtMpP4Mrh2nCscxtiYWKixYEstKSwaqetRV8dxFg6oS6ncgFtRT2S3T1PsNfr32BggZetimwsFaf",
+        "hash": "f80e8ea44d7d614e1c36c72a9604e4fab99c1e68cfd3bfb6be022527bad8ee0c"
+      },
+      "components/account/private-exit-card.tsx": {
+        "txId": "388FJcxWyupkz43i7eExGDrFHctS1ZpAPnJVWV5tnsZEJRJE2oq8VxTPF5XbvadqvAd7bTn81x1s4jhkbVbT8KRK",
+        "hash": "b24ea44afd9539c11f9f46db3f25076e9f21f56fe67bcfe9d337edc8da7bb2cc"
+      },
+      "components/chat/chat-client.tsx": {
+        "txId": "2qwRynA7HNZv4QXaqc8JJeb7coi2AGbjNk8YXYz3Y7KyqfhkcjiUQWVoMs7xb4qSjStNkLzeMFgCbtaYXoLTKgjv",
+        "hash": "9b43e0cdbb7c79261a1563cb774583a2152e6f551172a5e35562f9090534a3b3"
+      },
+      "components/chat/chat-header.tsx": {
+        "txId": "121n3BpgXSWF4EjtYzszXQCVq5DpNaApWe46qt6UiBcH1fruUzX2ZnJukt2d4hyhhcHRx4vm4jCagfvrREPVrNS4",
+        "hash": "073e4cfeb6d2d85086bc50d45ac0c26bcf2bf7dded69f9756bf73e9f880795de"
+      },
+      "components/chat/message-input-form.tsx": {
+        "txId": "4FHXPUKabdmdhmw9k3nLUw4BwvtVJYKKFczWc7UJCZZvjeeSaS7EDcKt8AY4NZWmvLax5bAMeTMgSHEX5n6ujcT6",
+        "hash": "e709c2b49d6af780375dd608fc3757bba1191cd1eb559e304647e88a429e5145"
+      },
+      "components/chat/message-list.tsx": {
+        "txId": "2DQtu2Ghb4NJc64RWUhvVZPhQcK5YVngaCa9wwHHvoiyqybi4HpM3VbHKaJSDYmy9WPqJPwiTSjPzdBHBpm3E2in",
+        "hash": "e2ebc60016955550dd59cf69149e1fbc96d032aa86bf800b152d8d29e48efc42"
+      },
+      "components/chat/room-sidebar.tsx": {
+        "txId": "4Kj5V3KnhmVnDVSdfwmTJG8mHx44NV4MFDzdGb9E9ZRuFshHXrxDXso5pxAjMTgf1KYRfRkEK3Hdxw82RSeNAFTN",
+        "hash": "2be6059886b1a89f8a4d0974fb5b59d84fe6f6f00ea66651605dd6b5be680790"
+      },
+      "components/debug/privy-debug.tsx": {
+        "txId": "38VU6meKnArSRyaUHRSdeTMTWd1C4TtHokL5maFh8SDLekx6pYuxyGfGTZMtuKFELqhMVnEPZFqmMT3WzzXk3aNW",
+        "hash": "3e081f7946a8f802535f7553ab330ae89c84e93a9e38ae4a7c31dd0a7309c422"
+      },
+      "components/friends/add-friend-form.tsx": {
+        "txId": "SxDVh63xUkTUQbVzWPKuypA5WBacbEBn229n5bPcSfBzAeUrZBTgBxDqHFH534NyVU74vVGAm4bV54fdMSBtPWX",
+        "hash": "f1a3b00a737d11819a28ecd368f0e76c4718e7382d9fefc92a90452074a948c5"
+      },
+      "components/friends/add-friend-modal.tsx": {
+        "txId": "4rsYumKFvWJh13P8fANypyWwbSC1sqiubLWF4Fr67f3fqQ9rsNMXYkGWvGUe3r8jR1UK4FrZ6wZrvRLGaKQKkgs5",
+        "hash": "23db9807cc267eb2ea23aae94cffe54b25bb0bf8ec95bb5aeee7c33bb691c370"
+      },
+      "components/friends/block-confirm-modal.tsx": {
+        "txId": "z5zf3qH69XdTkbEM6C3G5Udqap7jU8ZSpXYZ1Jrejvwzpg5aLFsmECPN5r5h7dEjiEi5abYTFmB3vtwPQDG7xhR",
+        "hash": "f99215e80ecb0b3083e541d00e4d7199e211cdd8158691b95645265852f7e827"
+      },
+      "components/friends/dm-chat-modal.tsx": {
+        "txId": "3wghytXJpN1TGLawwfhvCKSevNZe7NduW8ujEGNcLR24HKk3pAzBZwrwTE6pGUA9YfwstPdEEhJEsgfAznQZrSSQ",
+        "hash": "609ad0de8fa7ca368e185484c8e4ec738f7e6a5adef56e5eb40a6100006e51cd"
+      },
+      "components/friends/friend-card.tsx": {
+        "txId": "3qRuLuYEy2wbap9YAVnAmtVyeSEu7ZynnL8FXYDMkoYeWkd16mHaep21pJ2P18HwP1UXTgDWqdyT8BLQrBLXBrHq",
+        "hash": "ca51247b50cc55dc6929cdd13a7716e7714a47854329df36c02c0bd5e2b3fb8d"
+      },
+      "components/friends/friends-list-view.tsx": {
+        "txId": "64XsYZk9cYcL7gshQozxqwe2dQUFZdG5YGrsubuB4fPpLCBPxZASeTsip31jgozFEDALZJJojmKKn8PdafLv5Fn7",
+        "hash": "146611304e143ebb317b22479e7a80541383b26edb3b944052a81931d0b5f6d4"
+      },
+      "components/friends/friends-list.tsx": {
+        "txId": "4dV5acZG8buiL59gyqg1PSArgq8emqvzPJW6vr81utPATVnWABXAbfL9JxUEqn4KEwHrBudX43WbdWjHWgqQiSBZ",
+        "hash": "79c70cdf6d2ac957d35259079be75e1058165644caf0f7de999fcb93e7eb9ebd"
+      },
+      "components/friends/theme.ts": {
+        "txId": "41QqhTxWc5F8gLgTMn6Ewr55w9on7EUqhQZuhduXD6yvQhnReAUiadEGZhG1XM9JbmNPGZ5ZfB3Woosq3HZgL8WF",
+        "hash": "ce57b440f3e8a2bf81715e4ac7e677a52ab884e93eb5b3ccb2dd84f6459634a6"
+      },
+      "components/home/home-styles.ts": {
+        "txId": "5aYvq6fQEH4xmoxxndnd1idp4xGojxhfuHuVhXrUsKhBVXDA71HF1NqrB4WwBV5szRUP6v7Y3PN5HBLGacj6QAwa",
+        "hash": "bfb50a5ef027a8fa0d9ec59c13ac2ae3b4d07ee00bd56c9c91485307ffb3cc7c"
+      },
+      "components/home/home-window.tsx": {
+        "txId": "2iqrTNicPP39yjkJzjXZiBMLRgEHncbAvQqBeFVEtYzXmNRiJ7vABCr5s7YhjEwUXZP5eeuHfNYHScLm6DaF1dXh",
+        "hash": "a6c6e26b3521f6cf707346628a931132c35d9103c5205f1957d95058f4e589d2"
+      },
+      "components/home/wallet-prompt.tsx": {
+        "txId": "b4spNMsshmAuba1ZhyiPjhs6nqFzMsKLBJEZHgarQUgoMrU34ueemCRaUnsDSmiBXxD3cEW13gmqYD8EQsVhRcz",
+        "hash": "d44436bb4843f1e45dd1d1a7ab67a9bb79bc278fef00ae2fa179d74ea49deed3"
+      },
+      "components/layout/footer.tsx": {
+        "txId": "39wfaqwn1dtkDmzNoW2evRffTJUHEG4Sy2vwQkBykF5pqnMqSjMYzB1TPvhddqSbKwsTHjUPwAaTKvxYo32FbrSi",
+        "hash": "da353ba6fd385351d71894bcff156187645f0e8dca2a9847812489a6dfcef776"
+      },
+      "components/layout/nav.tsx": {
+        "txId": "4Hrqbjc5s75aqDMvxpzFX1gbGoXNBBFeekjHx9TCeuBEYrWeCcXjDenbuVDaVKrQi9REyBhc9KH2bMJEXxS4DSK8",
+        "hash": "5a87d1b737c8b6ff7bbed26e73c0034ed7ba0683ed4d92086effc40859ebe056"
+      },
+      "components/mobile/mobile-wallet-banner.tsx": {
+        "txId": "4Cuoz385S6LjK7FWQ4QnMfqNvVYRbaGV1qEaqXmXveoFjT4iU9mUJy5KNfrFF2mtHcZRLFFuKTYoFWthx7ecLh1c",
+        "hash": "ecad7bc88ed713d731e5144e7019478dfe478db2c934a73a3c078411761065fb"
+      },
+      "components/providers/cache-provider.tsx": {
+        "txId": "4n7kriL8ensUDagdD5zmpCes16DFb2k36Fmd46jvx4nTzsJQaf6arKZW8AbtaF1deLAGdo1MDTGUEnTwWgohNCjr",
+        "hash": "82739d0a45b2c19f55f5b3d2e8ab5c57da9116c58772f70d425097ca3ef8d9f4"
+      },
+      "components/providers/index.tsx": {
+        "txId": "3dxtEkeRzCxZMsryXFQGRvQpKWeLEu3La22UtKP8yTYFa4woF3B44Fum499MDTYv7PjtReR1fUmLxzXxB8oxYJSn",
+        "hash": "58d9ac666be06433cbc0b602ee014e1f39fdd8e7c71ad44148d4087c380dc684"
+      },
+      "components/providers/privy-provider.tsx": {
+        "txId": "5fn89ns2RKcwmar22FWrZejz9C8QLjtY1mp2MpDqHX9yUfM1Su1DAV52SUzR6fxRSzdnKYJ3JXUZejABbAmYWvwR",
+        "hash": "b6d34be3b1893cb5b4fc09f673289fe1df24d1155917f1c98467fa6cbb8d26e2"
+      },
+      "components/providers/query-provider.tsx": {
+        "txId": "fzx1r76YckKDpwYAQ1JVBWsZjs81XpNsjTTLiWF8B2rtBuFk1hfyemhPyz181TFCvAtf7H47nU7qkzNrn25ttAw",
+        "hash": "72226f72933200ba535ec6335bad0e0debd701c1325781dacef8714577de09c0"
+      },
+      "components/providers/styled-components-registry.tsx": {
+        "txId": "3umBY7MSWcEVJYaM1bgrEi7awTBziyS6etd5gMzHqM1vEZCxJuBhav4WpYfJ9VUdUg2pzP2zwzwaxF8XvHVVdH76",
+        "hash": "66a3112406c6b30e68765efd3ef660d75a18097d49af50b7e3b9429b941872e7"
+      },
+      "components/providers/wallet-provider.tsx": {
+        "txId": "25ips5umLGL1pvJe9qdGsUXkYF7EGjMZgRVf5oNQDW77kbhUHtfYcdHDRJ1MLCUKwhbpHES7Smqnrv7Lbk7zEMcp",
+        "hash": "4ff4ef2e63bae6fae84998c253d3aac8cc78bdee6405f03b0d2bad514fff397a"
+      },
+      "components/styles/solchatTheme.ts": {
+        "txId": "23sKSHmzyCSH6GJegfDbBsW5aUTuj9MJkgAshXsaS3YBWSbq4PRBki86QDMkeE3tJz138e39TD6s9MxoRWEcwE1o",
+        "hash": "3ca8b5c52bb8092a0dbcef6f3f079d49da8ed7e33da17d28ba40c0bfeb5b14a3"
+      },
+      "components/ui/attachment-preview.tsx": {
+        "txId": "2ZhVLTawH7wsCwm1wdeaDxUjoDpKq7PB614ykj21AuTdsP5iCmNrC2DTSjTWyv52qM7W6EVq6WJtia1nGSoy9UE6",
+        "hash": "598d592b3ec6162a659b5d8033916ab3062c168531896a0d4391b9c445a19518"
+      },
+      "components/ui/confirmation-dialog.tsx": {
+        "txId": "mPpA7QLHwoBjosxf4yyWJ4BrqKC9qMNYjqhc3kFyp8LPHpj9LpNemeWdGGV99ZCFjAPnTHUJqj8GJ7MJDQz4svL",
+        "hash": "da0c8b7f832d5ac46e81839a37cab2eb22ded6af118836a6da0e56c55dead1b9"
+      },
+      "components/ui/default-profile-avatar.tsx": {
+        "txId": "24CVK9SQ15t2LcSx4N8dhRLndrHMbbXzymo6KobQ1LuzfuScBrBLHYU4VVuwyan67P3tPGDgnkJPu3i92ceFDgLb",
+        "hash": "db00a6473b5857e96c34358e51961c1a9397c75fc6403fa3fe17aaa26a4c66de"
+      },
+      "components/ui/loading-spinner.tsx": {
+        "txId": "3XpQzMQ85cYWZZ7dTEnEJGTwHxrWzpVznVf9ULMcm5KsJznAneEp4j2W6KJFRBWeRZExBMz9PXNYayXQMEct3o55",
+        "hash": "8adbcf4b0057435264af1db23713e4a8411c3131bcfee403b7fe4ddd5f4707cc"
+      },
+      "components/ui/message-bubble.tsx": {
+        "txId": "2h6K4VrBwQ19FguPA1ksm8u8T22Lg7bQ1CjCh4btLeDeprqHg6W6c7XMMy4A9b6Dg8sG21fXzcPu4PX1D5ZF85Vo",
+        "hash": "3b0ea4d44e7b3d10f051a1684a2a3ced3daadaa6082be71eaa354d654ff63d77"
+      },
+      "components/ui/mobile-menu-button.tsx": {
+        "txId": "56Wwp4wc9xU7oTEMyjVcaAKGG51JJRXcJBMn9m5sL8G2CAntzSHfatGFJVpyjDgPBQt6uTftfwJhfjhpccHYrtJh",
+        "hash": "deb848d58eabb95c19f9b9ef31726cc49df259f2df6f518cfef0f6d6a30efe38"
+      },
+      "components/ui/notification-toggle.tsx": {
+        "txId": "2Gaf3Xibyea622yU3DxKg9xpMiv8PTMrTGdnUqJZEPHP1a2Ygk2FL54sj7BBsro4QhCCRp1Maornwg3ULSjFPGou",
+        "hash": "dbebc6a399b71c1247d0ea8f76947c7869ff0ad6ffa5cfacc60238cc7c4fd8d6"
+      },
+      "components/ui/rpc-config-prompt.tsx": {
+        "txId": "3Kw1qUCjPBm2e5JJ7YwPqqpLkPLRcJ6WjkcobkpLAnjo45qBxTCZPpSkcURpxgMcQrF5pXtY4kDaaqwHgFgkUCn1",
+        "hash": "442bd4b77d73fd776eece6cce089719e157313949dc38ef697e2476584ada9ca"
+      },
+      "components/ui/status-badge.tsx": {
+        "txId": "4apHjr4hDqo7Ng9HbnxGrVN5SswBzDEhZh4bYWF7RFTaZAZUH434HXqkSsr4cwJMysQ9Bjfro5xctrixAjGWZj5B",
+        "hash": "171e43d9f1f2383b59781cdd2dc6131ef0b583399ccf671df17b4d0503c27181"
+      },
+      "components/ui/terminal-input.tsx": {
+        "txId": "xp8fdfVQMCC5s7kXi3QEr1msjzco5FR16ghuJrnSGr6K1tNfvPGy3RR2diqN7Nd46zKTtdgdCGwUj6NfRrpBDra",
+        "hash": "fe62703f5b54b4dc246291a893b95f84245d86af6b165b4ba12e470330e06fdc"
+      },
+      "components/ui/terminal.tsx": {
+        "txId": "5HRFXBg9vBeEBJ1hakqs78PD5ohadPGRx42Ak3yb7Q3w8gTh5yrnPxhigVgzmS4vCjYaaTALFH9QkYe4NsSehYLg",
+        "hash": "c100ccee0b7984d9ed9f6dc80d3647dd62b001c20d6bf871b7f11b486a617c25"
+      },
+      "components/ui/wallet-button.tsx": {
+        "txId": "5spoMJcJaZDRkbC92tmLY9LJ7QcG76dmFYsfTQWcqM68j4omxWuBygQnSGqfmVTbJGhc1wY74iZ6FRq3Xh2Y7n22",
+        "hash": "9236150ebbe34227d5e4ec9e23d00036b55c04809af4c2800380a9603af3bda3"
+      },
+      "components/users/profile-editor.tsx": {
+        "txId": "iMBJoqHLnoADjq9HyVgDzqBXK6DTuVHw4EX65ugMesFFxFizrJVZKazLtuNQmb7QTGuV4GAFaUwCh9uAhTa1gD2",
+        "hash": "cbfebcf12de8a34764736ff6e1176a70e65e30cfef9b3e98293f34e0af63f1ba"
+      },
+      "components/users/profile-modal.tsx": {
+        "txId": "3uwVRPjG6TMXBU8uEtQq53R9WBroGXyrBX1PWqLHrqiPUqboKSioaUaaqJ6NTvBacmVUZ4bwtoCR1RzXhBqQNykj",
+        "hash": "7eabea7a894f2d4f5d1b972884c1db82ecef91c84f66871d34d15058648773fd"
+      },
+      "components/users/types.ts": {
+        "txId": "4reFBGezEStst1auPEpoDzhfcgUDtFP2x3GHUFX6E9iV8DLSPyon2UgGWZPPQL5KLBiBrREw3Hj36M6fnSgY46u7",
+        "hash": "b1189781500520e69c22d7140b25590e66ece00115fd7110ec3de30f2f29e501"
+      },
+      "components/users/use-dm-relationship.ts": {
+        "txId": "2Y9S743w3XKPyL4SswfGpsZNbFepNwbV3z8gjM4PmWfAiDBryMLjWR35VABtGZR1nZnfuPYsQfxkWj986RtMEjoC",
+        "hash": "f3634e218757a7351145dc0d3b859b542e403d623518bb3ad3a601aa0bd81c35"
+      },
+      "components/users/use-user-profile-manager.ts": {
+        "txId": "4x7HZDTCAvJFCV2TU5YiVia6ctmrNvx64o5ve5x3rbaM3vrcbcTyY81oF4XfiVsbvpW8on63miw9jCEXmVzYefZH",
+        "hash": "b6279f5fe75a8c88a9c5290504d3fe28444643d6e458863d66c86b22f184e2a1"
+      },
+      "components/users/use-user-profile.ts": {
+        "txId": "1JgDvFAepJQHjCwJUxLgpM8RYDsUz5bKs8Eg1hSAgRpMWJdofLMZC5TyUL1TKAm1seMpPvPqfhoFXiqaMu14abq",
+        "hash": "72b9890f80966182135979c5d98d1f28442b60667785c228fb22fc1febfb4849"
+      },
+      "components/users/user-list.tsx": {
+        "txId": "4gigpCeUPXdaV7JeUu6dqeRsuTaCAtW6xe5c9zKrxK3tbF36txxBA5w5mQWBk4AG4VnR7fg1FnZFKnsfuuNzX5h8",
+        "hash": "538ccee0ff9fccd9062980f3a2ce73ae6f6b10793d29a13d3c36596c399f762b"
+      },
+      "components/users/user-profile-manager.tsx": {
+        "txId": "44WzGPyqDiqqjpwC8gSBpjZ1amEMvZp4hFN8xbF9ydxR7xVkxrAUhcjndo7szZ4saPyV7CqzRuURMguJ2XDATkg8",
+        "hash": "8bb73fb32a094c4b5fdf62348d4504f98ecc0b01be2adc37dbdc536f2e59ca72"
+      },
+      "docs/cache-refactor.md": {
+        "txId": "5RdUjxyk4Js7P3YiyVeHts1hdFXPdQ6dWt2ESJa3mdRxfCoUULSNGXyCSQpsxz1syoTEPMGf8LCUyo1XWVkNiLFQ",
+        "hash": "8f9222cd02591d08ab4d43b2a9dbdcf54c014544e2f84707872a61c4f6ac56a2"
+      },
+      "eslint.config.mjs": {
+        "txId": "4urrqbsqirG2haHM1TZXuHxbXXhQgfZ91RGTxVEf7xWQZMVd9TdpoHiwhu2JqJdij5fcXvv8bcYZqL6DaPqxuzVW",
+        "hash": "ba8f7a62cad4211a006b8f72b0e584c5a25d05bf28c0ddd4796f5ecdbefd837c"
+      },
+      "iqbrowser.json": {
+        "txId": "2cN2yqzrFB4UDs3Vya1qhn18KCastsJ6eRN7UMcasCD1XXBQyK2FrcDSmV3wRx7gMT4DMBfeKvKFsrPPUCSsCZfo",
+        "hash": "b966be6367d15d7414c7c7e6e85c95f6c0b4a03e82e507b1e68d8505271c58c5"
+      },
+      "lib/cache/README.md": {
+        "txId": "4uBu8NWUekuPh3RsmoXwrFSkg9PX181wxhooiooqBjkPYAMRgyT2zEnxKvG4HKD8iRBGf6o2ycFn9ZBN8aYtQGcJ",
+        "hash": "43351070d89b5a319460b8af93a4882f3f02e78f77d1ff631993dc5c7108cdfe"
+      },
+      "lib/cache/cache-manager.ts": {
+        "txId": "2AA9sJocYLLSwVTup4xgN12rpvpSqPR23UJujGN2iCq18ZQQcwyay74mSA6xw4A5aKXUzMAWetmrNJhHkdvTpjxL",
+        "hash": "c1210a11a9dd671866329ab7992a32ae242f6e21b94c10b94aaf33570c9f2f6f"
+      },
+      "lib/cache/cached-reader.ts": {
+        "txId": "34mdHabTEuydcyaiDpttQc3jtJMN3b5aNEBsz9Lku1xVqSHW9R54VADHtAzWWvfQYVC2CDo5UvjtYgqVajsEcu6M",
+        "hash": "9c562b96e367b24f2bf35c61d5316aa026c4ecf86d28783f77e0f404b7928c2f"
+      },
+      "lib/cache/db.ts": {
+        "txId": "5ezwn3f1ieXL64P3tYem9ey7g1unCXLMRuPw3aeYUoAP93QzbBQRdBEGoXGA3RGYyEn5tWh1bThZpRRaRHgqW25P",
+        "hash": "e7556c43735e1b3d909a15c3dc2f7f1c22d3c6bad326486cb53bf8b05a2c5384"
+      },
+      "lib/cache/index.ts": {
+        "txId": "UCmL2VftktE8ya5xpj1MvU6A6MZveb57YofkjhjC8bm9HjdYytqBF4AEHduJ64snGK1rJG2prrnQKBzb2zGUeNC",
+        "hash": "088d90460baaba6592642811f4f68e2301154712305a4240e520c36b79c42ed2"
+      },
+      "lib/cache/message-cache.ts": {
+        "txId": "xdd5RjkhjrRXooX5cAeABWU64BosTuHvDBHH2ePpH5oTHk5DYhC8GcsajTZ1L7pTQGE2bm1o3vLYWrK4j2o1DuM",
+        "hash": "db56790c58d1a0a34a1e9ebff1e58f822edea3f37a3f83dae25a5d83f6a02992"
+      },
+      "lib/cache/message-timestamp-cache.ts": {
+        "txId": "5w5w2YnJMp7ZYiwk5Tr51yFDHcYHaESxqBxtfepwinEfrYt65XZzrRhaDUneT7gg2cvxzkNimLoW1gFvJomaD3L6",
+        "hash": "d4f30eb4722361e412c92c86d2a6cbfcbe66522c77d7eb42210b3bc4f46780cd"
+      },
+      "lib/cache/use-cache.ts": {
+        "txId": "zTdXyJ23HscJ86fPpSjUpZHYiJgxCUJfSqyzMr7PAD7ZuxcKkq3LRhDXXhvsL6tt4sWXLKtBQuNcQLzUdbYZwHR",
+        "hash": "e3e604fe8de8d52a0ca745df90f17cae57f7109bd410e5ef4ccaf872b569f469"
+      },
+      "lib/chat/message-fetcher.ts": {
+        "txId": "5kxSkqEyusDn7R7nQG7im3ZrYY4kwZXMGgVgqpK9CP9ZB7ixhqFZFYMCWzUciQiLx5yq3QLBrxEQmJC79reqsaKg",
+        "hash": "7492e3afe40695b7b8e9af72a77906242de457fee67e9d42ff21eaf3dae092f9"
+      },
+      "lib/chat/use-rooms.ts": {
+        "txId": "5or6k3bKWUkFxY6UCC7ajvmu2D6ZapxWaEAjkvYtNSaPMceetjtTRMiDyRb923WF9FcwqYiszWY2cZsWw2Jb8bYU",
+        "hash": "73494f1fb26b64fcda4f9f7c5410dc2a058c81a71996ea2e74a72f9649e25130"
+      },
+      "lib/chat/use-root-account.ts": {
+        "txId": "4S1KPkjFLhVzW1vVXEhJTrqizhPmpN8QDQFhmaBBcfTM3fXG5KEmocCpmZ932Bj4DKLbyjiyCgWT8MnyBjS6SdWM",
+        "hash": "e3f558955523f8e933842a1a96447932df3f3fb0c8d0c5a0aa07a7de66270d03"
+      },
+      "lib/cloak/config.ts": {
+        "txId": "5i77RoF2YjpDQiDgsnHQs4amayoMRFrVxUoqrpRSZTWpfTGpfikpU6pzNon16tq9g6JCZ8odXAJ7CTvjRKsfGakk",
+        "hash": "61807559db0fcb84fc6aa7fe82d0c6ea5924da666bf4b387aee0757494269449"
+      },
+      "lib/cloak/initialization-storage.ts": {
+        "txId": "5b774CqU7NikYtBU23URdac48jpJ5XW8o6C49Xyv68MnkyEVd6PXRKHaTzbNL1AKoqSGr5L67iXtwikoJzaooL51",
+        "hash": "d6b1c129e07df078ab425ce201253efbdfc09dd8fcf1fb710a2c2b09ffd1426c"
+      },
+      "lib/cloak/privy-wallet-signer.ts": {
+        "txId": "7UMTFEUX6DeKUCTKhtKjoJExzN4qoyHkGGW6ZyAbJAycRxk4cPqG5ZD4QL9eirj8onAk5FasEegBTt5ii8hHSVG",
+        "hash": "608a431d4e7a494c106f130dfa47a48027ec84da94c5b4936fc47c85b02fb446"
+      },
+      "lib/cloak/storage.ts": {
+        "txId": "32GFY7b558vdiV8ChT7NWBsyoDL2Tmk5U6jNYtweRc67SKfExaUJsB1GTY7yUpwgMdJXA3ax6xGDU6jUQzWCx9yF",
+        "hash": "6b2851e8fa3f0f3d98207a582ccd34eac28cd638533f131e4b6d071dfe2f2f7d"
+      },
+      "lib/cloak/use-cloak-sdk.ts": {
+        "txId": "5fyXuJ7tzAHJ5kcj8dRzQNRbJkTJMMfMLECJxyKTvG2zcdoque3G3Rca8NTf8y4GzK96xD5oxvyZ8Kb185ezfimq",
+        "hash": "f2bb640abe8790b69139f7da58f2dd373fb741e41f29d046dc6c948b7dbe8ff5"
+      },
+      "lib/cloak/wallet-signer.ts": {
+        "txId": "2iEt7sc2PGQixENCe1qiv9B3ZBbK1BrkforaJy1UKMVzePJPBxf3ZFoFmfkWeGM5BSEkFTFKGd7a4gtY4uMoiNyM",
+        "hash": "018939dfbcc0156b16d38c99f916cb92c0f2c7db9e637b07d11a1a747c20b275"
+      },
+      "lib/constants/README.md": {
+        "txId": "CBqd8jezVtxnnYtj2pqMAYBFWmsBisSYLBEK29ds9FELydpc8JVobQSyJhuGzZH4pKt7sRBvfU4MdBeW9BDkv2Z",
+        "hash": "fe8d0ee42d3ed4057fc55a7a7b8d4e393d3f7f0b5f1274550b2a4b471469f083"
+      },
+      "lib/constants/colors.ts": {
+        "txId": "3rDyAc2zLMAfpwKsqJ4vdWFCwSYfwkyRaTvDMzE4FqHVrxxJKXRoGTZttVc4VezTpD1w1YU7C8osiXX745K4tmkk",
+        "hash": "2c74b719a413ab5ed8ac72ad824db0873cc76e095cc1c8d199ba6d46d33ff4da"
+      },
+      "lib/constants.ts": {
+        "txId": "3EwiUUvH2YxVS7mYToddaN2NkcJPGZqpujNGNqVxDB8z7Z1m4e2Zy2J5WedwXXcDjeNQiExpy2t3z19VgogGF3vw",
+        "hash": "11a14333148ab38ddadf97f48554420bd7b1b8f59682900b9c833fb3128c8b98"
+      },
+      "lib/friends/dm-fetcher.ts": {
+        "txId": "3H5Xzsm1EuGZdkqTnuWV5ERX7rB5d9muDx8f1s4BfiBYNf6GsePzZMuuUFpg8ikt8qYUyUiv8QjtWgawKeuk3r2n",
+        "hash": "3434d18a3b9af92a8ada21104f56d9008129e0e6378846210d7deb49172e20ce"
+      },
+      "lib/friends/request-connection.ts": {
+        "txId": "D3QEY1dM1uSmqVdxR5m7SVByWC34ixDe3mHL1Lim3AETrRYHTpRz5WMfx8h3aLPyesiz4MDUhmweZDD6oB4Yh1d",
+        "hash": "0f96808ce7cbb826aacc315cc664c109ca454176cf40492ba1b38b7355dbb0e3"
+      },
+      "lib/friends/types.ts": {
+        "txId": "4miyG9LGCAjjgggDL6CMDS7om3LEh4Nv1221axzKueFw5jPit4czHvLbPY9igbF5mFDmg7M5vU4TXQkHwyUNW12F",
+        "hash": "2450c9f88af5fbc366494dbd76331095f764a233e8d9592788e7d45d7861c8a7"
+      },
+      "lib/friends/use-friend-alerts.ts": {
+        "txId": "xM1nRtrD8VCmqErWMT64bYUCiu8ADSzSWLRvSjJG9zVJdGJb9CTAtsmiSV4kqeNe21VPCc4fdaDPDc9JipMZKhP",
+        "hash": "b4512c4b412f5d7e121a2bab794ce636a3bc60d5953637692b3f63fc09c3cb0f"
+      },
+      "lib/friends/use-friends.ts": {
+        "txId": "2GDGprKoF2HYbFJqkK6msUzQTznz9fyKanjhaA8S8grDNdsoTzURa6WCGeYtnWT3PJ8zgj6yt547ooz2cC9dJjNs",
+        "hash": "e51f3de9d4726802b294f0862eb2b972990f0e4e504cc7352e17a9cd39d7f4ea"
+      },
+      "lib/friends/utils.ts": {
+        "txId": "2NEjn9FG4KnWFSJngNHLkdm3XKRStaiW6QUtBrwNeea353M3bUkxCckLrAcMbWQN9wAXt1Rjk9o9HCJHjG7UhfKf",
+        "hash": "d0d5a92e1887a3f019f46325f3d5f03130dd724df0fb9fc8fad53dcd5f091582"
+      },
+      "lib/iqlabs/constants.ts": {
+        "txId": "5Z7dHtWsFsWBJmqtwDLpMoDGw5xephniPK4yxyE3WQJwGVNo4j9UbJLnD7enfauyq4BKaqgT3Lnypat3tghsfY6y",
+        "hash": "25b519fa47405c0d20c1e8ed62f234812cb18d0cea885d3a379bbc035b9d669a"
+      },
+      "lib/iqlabs/use-user-init.ts": {
+        "txId": "5hNri4rPPP8z1kmP8AnWcBcrbgyLNBceLbCiQHitQJceV7CEdAVkV9gjp3Bx1nCm3d4jEcJHWX42tkqTSPoFroZ5",
+        "hash": "651ab41c9bf0aea03ec8fb2d475a7e466958c2f45b890903c8372cdd958c22ca"
+      },
+      "lib/rpc/cache.ts": {
+        "txId": "wzEvZ8xKPKexiu9aebBTUzqkR6WgdEZt7zxPZ2fca8VXt4EYNA1zFERmV1sL3BqTcuVYKakCU6s7zvvcsrAaVfW",
+        "hash": "25920c93403c8f228bda4ed53991c0630a2ad278e3d89c2c5264b62b50cb3f25"
+      },
+      "lib/shared/channel-utils.ts": {
+        "txId": "5M1oXCRWHwuBDLt9RDTSJku5f75BQ7XtH1Vwm5YcammfTgXUaRnywLXAFqWgX9E2EAiNLgs2J65kiTcbFnadfT6j",
+        "hash": "05ecdf7520abafff17bfb69f7cca902dce140cc981032c91d4e7d46830678d17"
+      },
+      "lib/shared/message-helpers.ts": {
+        "txId": "FyLL9om5ci8Sd8SqhUygiMGs5JkdSjSYmMqtJZTxzKYrexpaXtptaSyqvLp5xpmajYyMsH5hHqiERnjg97kPk83",
+        "hash": "10ccca969c043435eb25460ed1de5744ebbf6d735369b4cebdba2fd096ddbf29"
+      },
+      "lib/shared/message.ts": {
+        "txId": "A5i72ywkGZyHFbEHGtxnQWNPA6ssFhSLwWzSjtgdtDD8ucRBBNhX9BdQco3GmM76D55bxy2uZ4CrNW4w1ewdahy",
+        "hash": "5e7e86d309646d4a7e6b77c9b1b222a5cd70e777867a2714d7c8b5215e5971a5"
+      },
+      "lib/shared/use-account-subscription.ts": {
+        "txId": "3JuLN1LfcpiRhzhzsvXy1JD6NUXPST28aQZV2uPqYgGmJ4cMwjfwN5YYEQ6Pg2QZ9zm8gEFVW1E7ce57ioadtq2o",
+        "hash": "b599e9b888b08bacbecb84b5579d3ed66e2796199fa5f3e55aa9921f185be892"
+      },
+      "lib/shared/use-message-channel.ts": {
+        "txId": "383HwXaVdF8p9etLM4ghBVEHYqQPwkNp8o73TqdX7aNx42WhoFDyYJCeWRNaQ3nFaBTt8RWvFrahE3EMf96ius1s",
+        "hash": "7e84b4a01b1e9b0110aaa7933a842fa48505b9ca8e870a373d0a56b635166f00"
+      },
+      "lib/shared/use-message-reader.ts": {
+        "txId": "5QmvpqGZavpjCGFCqUxVVpN9ctUZRhEftbxPEK1KLmuFoWu853zaLfQ25Ruhp2ajruFTAx1KQVT5afSHx8KqE7tK",
+        "hash": "750fbec0b74f6e140f61522fd0bf43bb012a31cbd79666f462f7662aaf8ee3c3"
+      },
+      "lib/shared/use-message-sender.ts": {
+        "txId": "4gQZkEHfaad4rn5izDXXEDHavHzoXpnuc5mDgz4U4XGSBrgwSHuPtWUYZ5JWL55BQWtCn8kSEAT6fBzVQ3ZkU8YS",
+        "hash": "c61266e74e80ede6a9070d40baa3e52c9c97c14cd4a661c7aff6678be1d91ce6"
+      },
+      "lib/shared/use-pending-messages.ts": {
+        "txId": "4JypAQJcHrrNEZ5iZBKjXB4sh8qUJdY1ZUBqwaMvQXTbWazLHFFo9RwSdJbybYLwZ54snYZbF9jzmkgsr22bCTAW",
+        "hash": "ad155a0b6ceaaa4c6ee7f3cc24984b5966c8b2125d869177758f89d329e2ed0a"
+      },
+      "lib/shared/use-scroll-tracker.ts": {
+        "txId": "wpVBERoLKLa4csWL67Vp8QeRVTUnNoca3DN5Tn4SARG4vFMoL93J23zPX5thyrEGM6HVc54yToxK8KgEM2jUPqV",
+        "hash": "5dab81ec4163789318da32f6ca30af54c77e9ad3ccf7d28d0d2fa3343e7f51e2"
+      },
+      "lib/shared/use-websocket-channel.ts": {
+        "txId": "27PZRbouF6BjDQa7FGf6bofgvRtDbfb8mK37Nw2q7f6HDbdX94HQYgLyj6nJNYuQjvpipgoaFjAzAh54sjmdHE2x",
+        "hash": "c78c87eb766bbe16fb4dfcc64b44e866944b7c3126dd686f3f7888c00b77d8d8"
+      },
+      "lib/shared/useMessageIndexLoader.ts": {
+        "txId": "5wSdYwBc7PFjyrMcD3MZ8wmDBCqeS3JZiZZ919hahMmUuQPqqKkgVHmyR9Wyxzo2iMtiZZRooj8iFamM843Muo48",
+        "hash": "2b57517b997f375595c4f6154b541581ff6bda8ffbdf6843b55c7364da368fe7"
+      },
+      "lib/shared/useMessageLoader.ts": {
+        "txId": "4JawFqHznrtj3FsUdT9FYq6x16T8w2DtkY429gM8UnmpGqxUmubAEMMsZxuCnP2rFjxwT3uDZGvDTncfVa4jLSHm",
+        "hash": "fb10108e6ec5149825b124b275c2be47d2496a15dcc884badbcb5cfa67c971c6"
+      },
+      "lib/shared/useOnAccountChange.ts": {
+        "txId": "2iStzX1BT7aCJ8jh9BkUbXFdf6Fq4QoGQEoFjaBo58i6U2jpHCCgkDzyc8QXk3LfUJwmGNdYHCHafzZV82iycAwq",
+        "hash": "0e12e32477bef966aefc86cd748cc1ffe3976c8e45a2c93c4ce535bff0755e9b"
+      },
+      "lib/token/bonk.ts": {
+        "txId": "aZC3pHPgajwW3G2ohVRtEQcCgU4o9tdNQQ1kpd5rrLeASdDMyauvjaR7Wt2drehpmuKDRW3375kZ2yw35wLXfmP",
+        "hash": "d89ba49728b8fd69d576576d85bad54cca846739199aa0760b6d1c16eb41f03a"
+      },
+      "lib/utils/error-utils.ts": {
+        "txId": "4UyTXgfTYqZdTNchTUcuUnAxgExqBtDTuLUXws1DM5n2fm6BFGPjXokTh9F8wy3yVtY5hShsbHm9jTE9LzMHeC2w",
+        "hash": "213a9781a9d94f7f37256b606c093925861f8f75ceb1d210d976ea33b670809b"
+      },
+      "lib/utils/fetch-with-retry.ts": {
+        "txId": "3pExr1ZhtAsknTNWk1ZN7gkMe6bN4SEy3VTJpBEqPUkEHpLKyKTcHuiNSg1RcMhtmjqoCJJSE1xcGyQoTsr59MGq",
+        "hash": "99d94a8758bec369827f102332b9f8805ddf47a688653bbc39ae4a42c9b55253"
+      },
+      "lib/utils/message-utils.ts": {
+        "txId": "3zXm9SLFPetnvQsufMrAcCxJAK3YDAutzPQB9WrcYCUCfrVQKYW8X5cpKLiC6N6XJTXnqHVC8tnMkrsFHPZ9mpVt",
+        "hash": "1dd39ae9b64aadb819f17abccf811a9bafd41f2e89c400a04ff60863a3e6c068"
+      },
+      "lib/utils/rpc-request-queue.ts": {
+        "txId": "3xWh2GUcDWgFTSXQDJewFASVUNUCeAH5mQFZYKe4PjDPF7PeVvtNoyGLZyoBbpneZVGJCpDrCAN6gjiLuTbqmVig",
+        "hash": "5e3fde3d7efdc3d59eb983665253a9ea8223a7f5bb068fea4f479d83abddf5b7"
+      },
+      "lib/wallet/app-wallet.ts": {
+        "txId": "4ERgn1LqB8UzbY6zqf8bvKoxTcvz1xVyGSqzh1RkeDVr3umBmeXVz7zaERdVSnXpgd5LfJbUj3DHUQqf3h4SuSqN",
+        "hash": "d85a89e49cd36921b1afe6c5659c31cc4377b45d40809373aa31aab5a9a7bee1"
+      },
+      "lib/wallet/mobile-detection.ts": {
+        "txId": "35moVb1wpyp4NXJDetnao3CarBAcuVXyYwEyDUox5SNj3aCgwGxrwBw6zCaFYtd2hZaBHHiQySEKxrAfmXRdpdkX",
+        "hash": "b8557c7f40f949620186249cad77a946061f5fbb6306e48a0600104ec1692a67"
+      },
+      "lib/wallet/privy-app-wallet.ts": {
+        "txId": "3JANrriUcFiQ9oMEfegWJstKZD3nJmpQY6oo5yyy8rrG66xtEVDAG1x7RygeMSrkZYNJkgS7dRGizRWxnntWd3Cx",
+        "hash": "c5b178ce4438baa1737a286dc6df31f8ad42178b8cc4974d57700edecc7ea4af"
+      },
+      "lib/wallet/privy-wallet-adapter.ts": {
+        "txId": "3efYjymZWKfggtj35rgJGhZS1HUdogr7sTSgHykfpqRcVyL2hMWHdic4rmf8TbBzm2Jgozj8eNnFWtCxdhhdrzh6",
+        "hash": "c1d43443f637a0fac0a0b3938d2e5c469e59d957365598b21eada634948f8937"
+      },
+      "lib/wallet/use-app-wallet.ts": {
+        "txId": "44dfzDsh2TA29MBL51si4JdyvEqpRjcRMiE4z5rNF6623Hhf6KXR7h7mNvQFrPVaFDrrzR6eRwXXqLwaSrHudzZj",
+        "hash": "166394858bff740f1bb01ad4b0b375271e6a8a596c079f6bf661e6792833c772"
+      },
+      "next.config.ts": {
+        "txId": "cGJa7KNakcu11wfBYJLfexh5gsJ8pe7ary73pzLwHRNsZ9kCnM4orhQmjn5ebDo18V3s7chEvr1vcw328bnyrr1",
+        "hash": "8c34f9e0893e53d730d30511951ed24ca4913cbceb032de9adda77c78c649e58"
+      },
+      "noti-server.ts": {
+        "txId": "38MnFrshp97WRK7bcKVvDJfFys8YL1K28BF9N7NW8s78SrzbeEEHboMQUpvrWKwo53LxjtcFtEJ3btLojpziVjbR",
+        "hash": "8fc359341c55b13209dc71b3b6e9d108e0f265178dcf5381bfbc44ff9c2f93e9"
+      },
+      "package.json": {
+        "txId": "22i6xU1Ed9omP9NvqdSZVeVBArupPoTGeKEYhUgwUV98SegJM3mMicfKJnuBCbSzheoSaNCA6H3bpZRrhTk154H4",
+        "hash": "7c942eeb7d4a2169015ee2847cc1cda34cf5de6c0d5eed1388fc4fa5ec480feb"
+      },
+      "postcss.config.mjs": {
+        "txId": "rShdKCw5rAnRQN5SuF7G1iWNtSWSjBoP2JjSzrKhiEHPY4iXf1saCTTNMusin2ZsVPyn8SoUSWzWwnC37c3QUvY",
+        "hash": "85839a71c1f72fec225cdfb4789cb8aaf75df49a30e3bf4262aca17cdc91b4b2"
+      },
+      "public/Q_explain.png": {
+        "txId": "59bahuR9KiaNrMDibuoaB5Tw9CrnxZVWaVFxHFpDUycbqvNze48i3CAruqYhJ2eNZ5YMzPd2C5QYHhX4txEikhSM",
+        "hash": "194244364c924f1e2c07925def0ab18530b877ffd6182583c2a5395d58c2c9d6"
+      },
+      "public/apple-icon.svg": {
+        "txId": "5puciWkS5KELuGUkws4GNzkapDa5nLL4kGwp5sfe4J4bnNFidyhJMgvjvk2igukgSQAHUyduMMT8XmpoNFi4dxpw",
+        "hash": "848da42f9b788d1301590c14e726fa3ae193e78b9b6ce85d7ff8689c08bb4ba1"
+      },
+      "public/file.svg": {
+        "txId": "2rr7Yue66XzcLzV7ZcSArjLceDmGwXniMPDDFfzcHgr4rikcv2cqKJL23dQo2jPVAETYufJTrswBHGH1mttxEdyr",
+        "hash": "e4c3501db6fb2e3079b220bd427c21334c8313a1c228a1262429308d7cb4049f"
+      },
+      "public/globe.svg": {
+        "txId": "3VgPCXSTESXaBQb8wgxKLgJUDBDekBH8mGaK9qVJm26Wb1BYHtwg6cR22BHxGKNfo6ALJHwAtYynFSZEtcNcTed9",
+        "hash": "859d13df1a870ed1cedbb604ff5590011e0bb3eb53feaf28b9e88762be87182b"
+      },
+      "public/iq_logo.svg": {
+        "txId": "59ymJ45XGYsRKSTstYow4qWrLSmZGWLfDN9NupdY64j7abPpNmkixgsgunc8E3ZtvFzG9kDoeMdjyHnrCoeyRkaf",
+        "hash": "848da42f9b788d1301590c14e726fa3ae193e78b9b6ce85d7ff8689c08bb4ba1"
+      },
+      "public/manifest.json": {
+        "txId": "5RWqgUEXhCHQWRY5AbNxMrcy6tXE2HbrpbqHtntvszdKAPJXebrdkJQkZgRvzhT8KKJsoo9DstE1ntp8gcjavmqR",
+        "hash": "700bb98c12a962f65308f38d14541265e864454d024f7e770ecc4b5277995b65"
+      },
+      "public/next.svg": {
+        "txId": "2BHLXgTwyksTBWstxDLPNcPCUJ6TVsmoKLQqKb6WDVC54rFxVJzdWwgDcJ7mvQMPNUPG3FBB4xMMx3xMBzgoVNvk",
+        "hash": "9b3b780618343e6aa96bc29a5fd7a0049244b1dc28a2c9bc90f1118ce10d8f24"
+      },
+      "public/og-image.svg": {
+        "txId": "JPhrowzVX4KkxkbpMH4mNu9ANBg7ck5uarM1JXdfGq7Qr4eR2pdPwUocSWvM1oUwv44pzwTHQTJ4j6THv1rmwhm",
+        "hash": "2a63b7e860729438dd99c98200de0b865f25be2009a49568084cb45e1e535993"
+      },
+      "public/profile.svg": {
+        "txId": "G82rt9vRp6aagqAftLmFj6ExKNUcRcX5H6TW1SyDBWHkp9BsTyvS13fDAeWnUDjyWwrxg8go8VxJaNzUYhooJBJ",
+        "hash": "a87158179df9056506aee0589d7c5d6e057eb95585ac7f085fe05cfbf2cac3ec"
+      },
+      "public/robots.txt": {
+        "txId": "5DYpTCmSj55gyRCgLvrZTwLVY4177mnide5zkb6QcSgpLfR7jXvzfzDh6md5GtK5SHYx2juMmPMMgSea7yGsFXvQ",
+        "hash": "d3a71836a8d36d886b8d7da40245a7f8011b96d690d8c40bfbccd01df1c67b6d"
+      },
+      "public/vercel.svg": {
+        "txId": "4bV5u35WrTD4S2Sqbajb9xZ4VZxxCo3kNtN9RdCXWmrPQMUYMKQ892mMxbA92mWy52coNaZ5SmAKcpxypTomxJsz",
+        "hash": "0a481b9c595b34db6b5ec3ad8b0c6e6ff7e6db085e08a4af5b89dd91afe29d17"
+      },
+      "public/window.svg": {
+        "txId": "4KAoTsAQNMaLVigvTB5pCQEdJDfeNuGBfJcNMPb8LACRGXFMSn58rd5pfc7BY5VbbZoPLC4tLCTRfifSmwWrP3Ro",
+        "hash": "1ecfab06789d2c778ce9989ebc9f6f78ebe71fdf9da41588b39994631eaf5487"
+      },
+      "tsconfig.json": {
+        "txId": "4oqtaJ3EE6vDsCcgFs2kV1hz97t7NfZi7twioi8qyqNUCT7hrG6e1PaFoumz7n6eDbckgV3HRRVhYGae79DxeJ5B",
+        "hash": "b80344b5827f32d19238d259e909e6e78d2b3f9dc05cd636633a1956d967e77b"
+      },
+      "types/svg.d.ts": {
+        "txId": "GiDdx2M18peWXWKm8dt4eRfrk6aj1x6iCAh6hyrXwVCnv8XzbDD6te5AhyeUy8Wyxw78Q2USiKkuzVfnTgYMXe3",
+        "hash": "0e5b8457fc3ad91594cef3392fe1eae14bc4e5dc388df8d77e8c24e717f3b4a0"
+      }
+    }
+  }
+}

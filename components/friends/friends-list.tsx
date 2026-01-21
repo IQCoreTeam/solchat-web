@@ -69,7 +69,6 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         [programId]
     );
     const { friends, loading, error: friendsError, refetch } = useFriends({
-        connection,
         userAddress: userAddress || '',
     });
 

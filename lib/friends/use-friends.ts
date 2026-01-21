@@ -6,17 +6,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { PublicKey, Connection } from '@solana/web3.js';
-import { Buffer } from 'buffer';
-import { BorshAccountsCoder } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk/src';
-import idl from 'iqlabs-sdk/idl/code_in.json';
-import type { Friend } from './types';
-import { STATUS_LABELS } from './types';
-import { ROOT_ID } from '@/lib/iqlabs/constants';
+import type { Friend, FriendStatus } from './types';
 
 export interface UseFriendsParams {
-  connection: Connection;
   userAddress: string | undefined;
 }
 
@@ -31,7 +24,7 @@ export interface UseFriendsReturn {
  * Hook to fetch and manage friends list
  */
 export function useFriends(params: UseFriendsParams): UseFriendsReturn {
-  const { connection, userAddress } = params;
+  const { userAddress } = params;
 
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(false);
@@ -49,76 +42,34 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
     setError(null);
 
     try {
-      const programPubkey = iqlabs.contract.getProgramId();
-      const accCoder = new BorshAccountsCoder(idl as any);
-      const dbRootId = Buffer.from(ROOT_ID, 'utf8');
-      const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programPubkey);
+      const connections = await iqlabs.reader.fetchUserConnections(userAddress, {
+        speed: 'medium',
+      });
 
-      const connectionAccounts = await connection.getProgramAccounts(programPubkey);
+      console.log('[useFriends] Found', connections.length, 'connections');
 
-      console.log('[useFriends] Found', connectionAccounts.length, 'connection accounts');
+      const friendsList: Friend[] = connections.map((conn) => {
+        const friendAddress = conn.partyA === userAddress ? conn.partyB : conn.partyA;
+        const dmSeed = iqlabs.utils.deriveDmSeed(conn.partyA, conn.partyB);
+        const dmSeedHex = Buffer.from(dmSeed).toString('hex');
 
-      const friendsList: Friend[] = [];
+        const requester = conn.requester === 'a' ? 0 : 1;
+        const blocker = conn.blocker === 'a' ? 0 : conn.blocker === 'b' ? 1 : 255;
 
-      for (const { account, pubkey } of connectionAccounts) {
-        try {
-          const decoded = accCoder.decode('Connection', account.data) as any;
-
-          if (!decoded) continue;
-
-          const partyA = new PublicKey(decoded.party_a).toBase58();
-          const partyB = new PublicKey(decoded.party_b).toBase58();
-          const dbRootId = decoded.db_root_id
-            ? Buffer.from(decoded.db_root_id).toString('utf8')
-            : '';
-
-          // Only include if user is one of the parties
-          if (partyA !== userAddress && partyB !== userAddress) {
-            continue;
-          }
-
-          const friendAddress = partyA === userAddress ? partyB : partyA;
-
-          const dmSeed = iqlabs.utils.deriveDmSeed(partyA, partyB);
-          const expected = iqlabs.contract.getConnectionTablePda(
-            dbRoot,
-            dmSeed,
-            programPubkey
-          );
-          const actualAddress = pubkey.toBase58();
-          if (!expected.equals(pubkey)) {
-            console.warn('[useFriends] PDA mismatch, skipping account:', {
-              expected: expected.toBase58(),
-              actual: actualAddress,
-            });
-            continue;
-          }
-
-          const dmSeedHex = Buffer.from(dmSeed).toString('hex');
-
-          const status = STATUS_LABELS[decoded.status] || 'pending';
-          const lastTimestampRaw = (decoded as any).last_timestamp ?? (decoded as any).lastTimestamp ?? 0;
-          const lastTimestamp = typeof lastTimestampRaw === 'number'
-            ? lastTimestampRaw
-            : Number(lastTimestampRaw || 0);
-
-          friendsList.push({
-            address: friendAddress,
-            status,
-            requester: decoded.requester,
-            blocker: decoded.blocker,
-            dmSeed,
-            dmSeedHex,
-            tableAddress: actualAddress,
-            partyA,
-            partyB,
-            dbRootId,
-            lastTimestamp,
-          });
-        } catch (decodeErr) {
-          console.warn('[useFriends] Failed to decode Connection:', decodeErr);
-        }
-      }
+        return {
+          address: friendAddress,
+          status: conn.status as FriendStatus,
+          requester,
+          blocker,
+          dmSeed,
+          dmSeedHex,
+          tableAddress: '', // SDK doesn't return this
+          partyA: conn.partyA,
+          partyB: conn.partyB,
+          dbRootId: conn.dbRootId,
+          lastTimestamp: conn.timestamp,
+        };
+      });
 
       console.log('[useFriends] Loaded', friendsList.length, 'friends');
       setFriends(friendsList);
@@ -129,7 +80,7 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
     } finally {
       setLoading(false);
     }
-  }, [connection, userAddress]);
+  }, [userAddress]);
 
   useEffect(() => {
     fetchFriends();
