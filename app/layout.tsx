@@ -129,7 +129,7 @@ export default function RootLayout({
       name: "IQ Labs",
       url: "https://iqlabs.io",
     },
-    screenshot: `${siteUrl}/og-image.svg`,
+    screenshot: `${siteUrl}/icon.svg`,
     softwareVersion: "1.0",
     aggregateRating: {
       "@type": "AggregateRating",

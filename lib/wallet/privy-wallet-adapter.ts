@@ -42,7 +42,7 @@ export function usePrivyWalletAdapter() {
 
       // Sign through Privy
       const result = await wallet.signTransaction({
-        chain: 'solana:devnet', // or mainnet-beta
+        chain: 'solana:mainnet-beta',
         transaction: new Uint8Array(serialized),
       });
 
