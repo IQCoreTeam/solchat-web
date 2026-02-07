@@ -70,7 +70,7 @@ export function useAppWallet(): AppWallet {
       }
 
       // Use the cluster from environment variable
-      const cluster = process.env.NEXT_PUBLIC_SOLANA_CLUSTER || 'devnet';
+      const cluster = process.env.NEXT_PUBLIC_SOLANA_CLUSTER || 'mainnet-beta';
       const chain = `solana:${cluster}` as const;
 
       // Serialize the transaction to get the message
