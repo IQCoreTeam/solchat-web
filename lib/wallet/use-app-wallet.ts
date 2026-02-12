@@ -10,7 +10,7 @@ import { Connection, PublicKey, Transaction, VersionedTransaction } from '@solan
 import { usePrivy } from '@privy-io/react-auth';
 import { useWallets } from '@privy-io/react-auth/solana';
 import { RPC_URL } from '@/lib/constants';
-import { setRpcUrl } from 'iqlabs-sdk/src';
+import { setRpcUrl } from 'iqlabs-sdk';
 
 export interface AppWallet {
   publicKey: PublicKey | null;

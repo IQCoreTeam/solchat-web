@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AccountInfo, Connection, PublicKey } from '@solana/web3.js';
 import { SystemProgram } from '@solana/web3.js';
-import iqlabs from 'iqlabs-sdk/src';
-import type { SignerInput } from 'iqlabs-sdk/src/sdk/utils/wallet';
-import { sendTx } from 'iqlabs-sdk/src/sdk/writer/writer_utils';
+import iqlabs from 'iqlabs-sdk';
+import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
+import { sendTx } from 'iqlabs-sdk/dist/sdk/writer/writer_utils';
 import { getCachedAccountInfo } from '@/lib/rpc/cache';
 import type { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
 

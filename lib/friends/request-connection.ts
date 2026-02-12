@@ -1,6 +1,6 @@
 import { Buffer } from 'buffer';
 import { PublicKey, SystemProgram, type TransactionInstruction } from '@solana/web3.js';
-import iqlabs from 'iqlabs-sdk/src';
+import iqlabs from 'iqlabs-sdk';
 
 type RequestConnectionIxParams = {
   builder: ReturnType<typeof iqlabs.contract.createInstructionBuilder>;

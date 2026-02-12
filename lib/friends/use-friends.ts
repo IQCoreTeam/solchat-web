@@ -6,7 +6,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import iqlabs from 'iqlabs-sdk/src';
+import iqlabs from 'iqlabs-sdk';
 import type { Friend, FriendStatus } from './types';
 
 export interface UseFriendsParams {

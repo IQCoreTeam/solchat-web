@@ -1,4 +1,4 @@
-import iqlabs from 'iqlabs-sdk/src';
+import iqlabs from 'iqlabs-sdk';
 import { rowToMessage, type MessageRow } from '@/lib/shared/message-helpers';
 import { channelKeyToSeed } from '@/lib/shared/channel-utils';
 import { getCacheManager } from '@/lib/cache';
@@ -37,8 +37,7 @@ export function createRoomFetcher({
     const maxTx = fetchConfig?.maxTx ?? baseMaxTx;
     const targetSignatures = fetchConfig?.signatures?.length
       ? fetchConfig.signatures
-      : (await iqlabs.reader.fetchAccountTransactions(room.tableAddress, { limit: maxTx }))
-          .map((sig) => sig.signature);
+      : await iqlabs.reader.collectSignatures(room.tableAddress, maxTx);
 
     const cacheManager = getCacheManager();
 

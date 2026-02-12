@@ -7,7 +7,7 @@
 'use client';
 
 import { Buffer } from 'buffer';
-import iqlabs from 'iqlabs-sdk/src';
+import iqlabs from 'iqlabs-sdk';
 import type { Row } from '@/lib/shared/message-helpers';
 import { getCacheManager } from './cache-manager';
 import type { Connection } from '@solana/web3.js';

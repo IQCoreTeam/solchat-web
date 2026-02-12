@@ -4,10 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SystemProgram } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import type { Idl } from '@coral-xyz/anchor';
-import iqlabs from 'iqlabs-sdk/src';
+import iqlabs from 'iqlabs-sdk';
 import idl from 'iqlabs-sdk/idl/code_in.json';
-import type { SignerInput } from 'iqlabs-sdk/src/sdk/utils/wallet';
-import { ensureUserInitialized, sendTx } from 'iqlabs-sdk/src/sdk/writer/writer_utils';
+import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
+import { ensureUserInitialized, sendTx } from 'iqlabs-sdk/dist/sdk/writer/writer_utils';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
 
