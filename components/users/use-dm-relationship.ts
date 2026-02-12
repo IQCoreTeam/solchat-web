@@ -5,7 +5,7 @@ import type { Connection } from '@solana/web3.js';
 import { PublicKey } from '@solana/web3.js';
 import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
 import { Buffer } from 'buffer';
-import iqlabs from 'iqlabs-sdk/src';
+import iqlabs from 'iqlabs-sdk';
 import idl from 'iqlabs-sdk/idl/code_in.json';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
 import { STATUS_LABELS, type FriendStatus } from '@/lib/friends/types';

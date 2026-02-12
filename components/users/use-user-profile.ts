@@ -10,7 +10,7 @@ import { PublicKey } from '@solana/web3.js';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
 import { getCachedAccountInfo } from '@/lib/rpc/cache';
 import type { UserProfile } from './types';
-import iqlabs from 'iqlabs-sdk/src';
+import iqlabs from 'iqlabs-sdk';
 
 // Global cache to prevent redundant fetches across components
 const profileCache = new Map<string, { data: UserProfile | null; timestamp: number }>();

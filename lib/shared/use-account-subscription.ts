@@ -8,7 +8,7 @@
 
 import { useEffect, useRef } from 'react';
 import { PublicKey, type Connection } from '@solana/web3.js';
-import iqlabs from 'iqlabs-sdk/src';
+import iqlabs from 'iqlabs-sdk';
 import { updateAccountCache } from '@/lib/rpc/cache';
 
 export interface UseAccountSubscriptionParams {
@@ -94,11 +94,9 @@ export function useAccountSubscription({
     const subscribe = async () => {
       try {
         // Initial fetch to populate seen signatures
-        const initial = await iqlabs.reader.fetchAccountTransactions(account, {
-          limit: fetchLimit,
-        });
+        const initial = await iqlabs.reader.collectSignatures(account, fetchLimit);
         for (const sig of initial) {
-          seenSignaturesRef.current.add(sig.signature);
+          seenSignaturesRef.current.add(sig);
         }
         console.log(`[${logPrefix}] Initial seen signatures: ${seenSignaturesRef.current.size}`);
 
@@ -134,12 +132,10 @@ export function useAccountSubscription({
 
               try {
                 // Fetch recent signatures
-                const signatures = await iqlabs.reader.fetchAccountTransactions(account, {
-                  limit: fetchLimit,
-                });
+                const signatures = await iqlabs.reader.collectSignatures(account, fetchLimit);
 
                 // Filter out already-seen signatures
-                const fresh = signatures.filter((sig) => !seenSignaturesRef.current.has(sig.signature));
+                const fresh = signatures.filter((sig) => !seenSignaturesRef.current.has(sig));
 
                 if (fresh.length === 0) {
                   console.log(`[${logPrefix}] No new signatures found`);
@@ -151,8 +147,8 @@ export function useAccountSubscription({
                 // Mark as seen and reverse to get chronological order (oldest first)
                 const newSigs: string[] = [];
                 for (const sig of fresh.reverse()) {
-                  seenSignaturesRef.current.add(sig.signature);
-                  newSigs.push(sig.signature);
+                  seenSignaturesRef.current.add(sig);
+                  newSigs.push(sig);
                 }
 
                 // Call handler with new signatures

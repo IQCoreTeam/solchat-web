@@ -1,4 +1,4 @@
-import iqlabs from 'iqlabs-sdk/src';
+import iqlabs from 'iqlabs-sdk';
 import type { Friend } from '@/lib/friends/types';
 import { dmChannelKeyToSeed } from '@/lib/shared/channel-utils';
 import { rowToMessage, type MessageRow } from '@/lib/shared/message-helpers';
@@ -27,8 +27,7 @@ export function createDmFetcher({
     const maxTx = fetchConfig?.maxTx ?? baseMaxTx;
     const targetSignatures = fetchConfig?.signatures?.length
       ? fetchConfig.signatures
-      : (await iqlabs.reader.fetchAccountTransactions(friend.tableAddress, { limit: maxTx }))
-          .map((sig) => sig.signature);
+      : await iqlabs.reader.collectSignatures(friend.tableAddress, maxTx);
 
     const decodeRowsFromSignatures = async (
       signatures: string[],
