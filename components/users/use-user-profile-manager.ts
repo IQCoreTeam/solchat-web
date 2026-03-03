@@ -227,21 +227,12 @@ export function useUserProfileManager() {
 
         const metadataBefore = extractUserMetadata(await connection.getAccountInfo(userPda));
 
-        const ix = iqlabs.contract.updateUserMetadataInstruction(
-          builder,
-          {
-            user: userPda,
-            db_root: dbRoot,
-            signer: userPk,
-            system_program: SystemProgram.programId,
-          },
-          {
-            db_root_id: dbRootId,
-            meta: Buffer.from(txId, 'utf8'),
-          }
+        await iqlabs.writer.updateUserMetadata(
+          connection,
+          signer,
+          dbRootId,
+          txId,
         );
-
-        await sendTx(connection, signer, ix);
 
         const metadataAfter = extractUserMetadata(await connection.getAccountInfo(userPda));
         const addedMetadataThisCall = !metadataBefore && !!metadataAfter;
