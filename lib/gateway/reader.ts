@@ -14,6 +14,7 @@ export async function readCodeIn(signature: string): Promise<{ data: string | nu
         const json = await res.json();
         return { data: json.data ?? null, metadata: json.metadata ?? '' };
       }
+      // Gateway returned non-ok (e.g. 404) — fall through to SDK
     } catch { /* gateway down, fall through */ }
   }
   return iqlabs.reader.readCodeIn(signature);
@@ -49,4 +50,35 @@ export async function getSignaturesForTable(tablePda: string, limit = 200, befor
     } catch { /* gateway down, fall through */ }
   }
   return iqlabs.reader.collectSignatures(tablePda, limit);
+}
+
+/** Fetch user profile via gateway, fallback to SDK. */
+export async function getUserProfile(pubkey: string): Promise<Record<string, any> | null> {
+  if (GATEWAY_URL) {
+    try {
+      const res = await fetch(`${GATEWAY_URL}/user/${pubkey}/profile`);
+      if (res.ok) return res.json();
+    } catch { /* gateway down, fall through */ }
+  }
+  const state = await iqlabs.reader.readUserState(pubkey);
+  if (!state?.profileData) return null;
+  try {
+    return typeof state.profileData === 'string' ? JSON.parse(state.profileData) : state.profileData;
+  } catch {
+    return null;
+  }
+}
+
+/** Fetch user connections via gateway, fallback to SDK. */
+export async function getUserConnections(pubkey: string): Promise<any[]> {
+  if (GATEWAY_URL) {
+    try {
+      const res = await fetch(`${GATEWAY_URL}/user/${pubkey}/connections`);
+      if (res.ok) {
+        const data = await res.json();
+        return Array.isArray(data) ? data : [];
+      }
+    } catch { /* gateway down, fall through */ }
+  }
+  return iqlabs.reader.fetchUserConnections(pubkey, { speed: 'medium' });
 }

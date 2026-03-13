@@ -42,7 +42,7 @@ export function createDmFetcher({
         try {
           result = await readCodeIn(signature);
         } catch (err) {
-          if (err instanceof Error && err.message.includes('user_inventory_code_in instruction not found')) {
+          if (err instanceof Error && err.message.includes('instruction not found')) {
             continue;
           }
           throw err;
@@ -50,23 +50,23 @@ export function createDmFetcher({
         const { data, metadata } = result;
         let row: Record<string, unknown>;
         if (!data) {
-          row = { signature, metadata, data: null };
+          row = { __txSignature: signature, metadata, data: null };
         } else if (isEncryptedDm(data)) {
           // Decrypt encrypted DM
           try {
             if (!signMessage) {
-              row = { signature, metadata, text: '[encrypted — key not available]' };
+              row = { __txSignature: signature, metadata, text: '[encrypted — key not available]' };
             } else {
               const kp = await getOrDeriveKeypair(signMessage);
               const decrypted = await decryptDmPayload(kp.privKey, data);
               if (decrypted) {
                 row = { ...decrypted, __txSignature: signature };
               } else {
-                row = { signature, metadata, text: '[unable to decrypt]' };
+                row = { __txSignature: signature, metadata, text: '[unable to decrypt]' };
               }
             }
           } catch {
-            row = { signature, metadata, text: '[decryption failed]' };
+            row = { __txSignature: signature, metadata, text: '[decryption failed]' };
           }
         } else {
           try {
@@ -74,10 +74,10 @@ export function createDmFetcher({
             if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
               row = { ...parsed, __txSignature: signature };
             } else {
-              row = { signature, metadata, data };
+              row = { __txSignature: signature, metadata, data };
             }
           } catch {
-            row = { signature, metadata, data };
+            row = { __txSignature: signature, metadata, data };
           }
         }
         const message = rowToMessage(row);

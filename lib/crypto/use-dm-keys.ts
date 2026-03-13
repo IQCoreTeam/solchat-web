@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppWallet } from '@/lib/wallet/use-app-wallet';
-import { GATEWAY_URL } from '@/lib/constants';
+import { getUserProfile } from '@/lib/gateway/reader';
 import {
   getOrDeriveKeypair,
   clearCachedKeypair,
@@ -68,32 +68,10 @@ export function useDmKeys() {
       if (cached) return cached;
 
       try {
-        // Try gateway profile endpoint (fast, cached)
-        if (GATEWAY_URL) {
-          try {
-            const res = await fetch(`${GATEWAY_URL}/user/${walletAddress}/profile`);
-            if (res.ok) {
-              const profile = await res.json();
-              if (isValidEncKey(profile?.encryptionPubKey)) {
-                encPubKeyCache.set(walletAddress, profile.encryptionPubKey);
-                return profile.encryptionPubKey;
-              }
-            }
-          } catch { /* fall through to RPC */ }
-        }
-
-        // RPC fallback via SDK
-        const iqlabs = (await import('iqlabs-sdk')).default;
-        const userState = await iqlabs.reader.readUserState(walletAddress);
-        if (!userState?.profileData) return null;
-
-        const profileData = typeof userState.profileData === 'string'
-          ? JSON.parse(userState.profileData)
-          : userState.profileData;
-
-        if (isValidEncKey(profileData?.encryptionPubKey)) {
-          encPubKeyCache.set(walletAddress, profileData.encryptionPubKey);
-          return profileData.encryptionPubKey;
+        const profile = await getUserProfile(walletAddress);
+        if (isValidEncKey(profile?.encryptionPubKey)) {
+          encPubKeyCache.set(walletAddress, profile.encryptionPubKey);
+          return profile.encryptionPubKey;
         }
         return null;
       } catch (err) {

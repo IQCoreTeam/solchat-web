@@ -8,8 +8,8 @@
 
 import { Buffer } from 'buffer';
 import iqlabs from 'iqlabs-sdk';
-import { readTableRows as gatewayReadTableRows } from '@/lib/gateway/reader';
-import type { Row } from '@/lib/shared/message-helpers';
+import { readTableRows as gatewayReadTableMessageRows } from '@/lib/gateway/reader';
+import type { MessageRow } from '@/lib/shared/message-helpers';
 import { getCacheManager } from './cache-manager';
 import type { Connection } from '@solana/web3.js';
 import type { Idl } from '@coral-xyz/anchor';
@@ -24,25 +24,25 @@ export interface ReaderParams {
 
 async function readRowsByTable(
   params: ReaderParams & { tableName: string }
-): Promise<Row[]> {
+): Promise<MessageRow[]> {
   const { rootId, tableName, maxTx } = params;
   const programId = iqlabs.contract.PROGRAM_ID;
   const dbRootId = Buffer.from(rootId, 'utf8');
   const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programId);
   const tableSeed = iqlabs.utils.toSeedBytes(tableName);
   const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed, programId);
-  return gatewayReadTableRows(tablePda.toBase58(), maxTx) as Promise<Row[]>;
+  return gatewayReadTableMessageRows(tablePda.toBase58(), maxTx) as Promise<MessageRow[]>;
 }
 
 async function readRowsByDmSeed(
   params: ReaderParams & { dmSeed: Uint8Array }
-): Promise<Row[]> {
+): Promise<MessageRow[]> {
   const { rootId, dmSeed, maxTx } = params;
   const programId = iqlabs.contract.PROGRAM_ID;
   const dbRootId = Buffer.from(rootId, 'utf8');
   const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programId);
   const tablePda = iqlabs.contract.getConnectionTablePda(dbRoot, dmSeed, programId);
-  return gatewayReadTableRows(tablePda.toBase58(), maxTx) as Promise<Row[]>;
+  return gatewayReadTableMessageRows(tablePda.toBase58(), maxTx) as Promise<MessageRow[]>;
 }
 
 /**
@@ -50,7 +50,7 @@ async function readRowsByDmSeed(
  */
 export async function readRowsByTableCached(
   params: ReaderParams & { tableName: string }
-): Promise<Row[]> {
+): Promise<MessageRow[]> {
   const { tableName, ...readerParams } = params;
   const roomId = `room:${tableName}`;
 
@@ -92,7 +92,7 @@ export async function readRowsByTableCached(
  */
 export async function readRowsByDmSeedCached(
   params: ReaderParams & { dmSeed: Uint8Array }
-): Promise<Row[]> {
+): Promise<MessageRow[]> {
   const { dmSeed } = params;
   const dmSeedHex = Buffer.from(dmSeed).toString('hex');
   const roomId = `dm:${dmSeedHex}`;
@@ -153,7 +153,7 @@ export async function invalidateDmCache(dmSeed: Uint8Array): Promise<void> {
  */
 export async function syncRoomMessages(
   params: ReaderParams & { tableName: string }
-): Promise<Row[]> {
+): Promise<MessageRow[]> {
   const { tableName } = params;
   const roomId = `room:${tableName}`;
   const manager = getCacheManager();
@@ -170,7 +170,7 @@ export async function syncRoomMessages(
  */
 export async function syncDmMessages(
   params: ReaderParams & { dmSeed: Uint8Array }
-): Promise<Row[]> {
+): Promise<MessageRow[]> {
   const { dmSeed } = params;
   const dmSeedHex = Buffer.from(dmSeed).toString('hex');
   const manager = getCacheManager();

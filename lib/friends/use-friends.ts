@@ -1,6 +1,6 @@
 /**
  * Friends Data Hook
- * - Fetch and manage friends list from blockchain
+ * - Fetch and manage friends list via gateway, fallback to SDK/RPC
  */
 
 'use client';
@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import iqlabs from 'iqlabs-sdk';
 import type { Friend, FriendStatus } from './types';
+import { getUserConnections } from '@/lib/gateway/reader';
 
 export interface UseFriendsParams {
   userAddress: string | undefined;
@@ -42,9 +43,7 @@ export function useFriends(params: UseFriendsParams): UseFriendsReturn {
     setError(null);
 
     try {
-      const connections = await iqlabs.reader.fetchUserConnections(userAddress, {
-        speed: 'medium',
-      });
+      const connections = await getUserConnections(userAddress);
 
       console.log('[useFriends] Found', connections.length, 'connections');
 
