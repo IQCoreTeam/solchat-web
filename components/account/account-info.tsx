@@ -6,10 +6,28 @@ import { useQuery } from '@tanstack/react-query';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { Window, WindowHeader, WindowContent, Cutout, Button, Frame } from 'react95';
 import { useAppWallet } from '@/lib/wallet/use-app-wallet';
+import { useExportWallet } from '@privy-io/react-auth/solana';
 
 function formatAddress(value?: string | null, chars = 4) {
   if (!value) return '';
   return `${value.slice(0, chars)}…${value.slice(-chars)}`;
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      size="sm"
+      onClick={() => {
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+      style={{ minWidth: 60, marginLeft: 8 }}
+    >
+      {copied ? 'Copied' : 'Copy'}
+    </Button>
+  );
 }
 
 export function AccountInfo() {
@@ -17,6 +35,7 @@ export function AccountInfo() {
   const wallet = useWallet();
   const privyWallet = useAppWallet();
   const privyAddress = privyWallet.publicKey?.toBase58();
+  const { exportWallet } = useExportWallet();
 
   const [sendAmount, setSendAmount] = useState('');
   const [sendingSOL, setSendingSOL] = useState(false);
@@ -126,7 +145,10 @@ export function AccountInfo() {
             <p className="text-[11px] uppercase tracking-[0.4em]">Wallet</p>
             <h3 className="text-2xl mt-1">{formatAddress(publicAddress, 6)}</h3>
           </div>
-          <Cutout className="p-4 text-xs break-all border">{publicAddress}</Cutout>
+          <div className="flex items-center gap-2">
+            <Cutout className="p-4 text-xs break-all border flex-1">{publicAddress}</Cutout>
+            {publicAddress && <CopyButton text={publicAddress} />}
+          </div>
           <Cutout className="border p-4">
             <p className="text-xs mb-1">SOL balance</p>
             <p className="text-2xl font-bold">
@@ -146,7 +168,10 @@ export function AccountInfo() {
             <h3 className="text-2xl mt-1">{privyAddress ? formatAddress(privyAddress, 6) : 'Not available'}</h3>
           </div>
           {privyAddress && (
-            <Cutout className="p-4 text-xs break-all border">{privyAddress}</Cutout>
+            <div className="flex items-center gap-2">
+              <Cutout className="p-4 text-xs break-all border flex-1">{privyAddress}</Cutout>
+              <CopyButton text={privyAddress} />
+            </div>
           )}
           <Cutout className="border p-4">
             <p className="text-xs mb-1">SOL balance</p>
@@ -154,6 +179,9 @@ export function AccountInfo() {
               {privyBalance !== undefined ? privyBalance.toFixed(4) : '…'}
             </p>
           </Cutout>
+          <Button fullWidth onClick={() => exportWallet()}>
+            Export Private Key
+          </Button>
         </WindowContent>
       </Window>
 
