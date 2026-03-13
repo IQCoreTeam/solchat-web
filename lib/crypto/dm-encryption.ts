@@ -10,7 +10,6 @@
 
 import {
   deriveX25519Keypair,
-  dhDecrypt,
   multiEncrypt,
   multiDecrypt,
   bytesToHex,
@@ -19,14 +18,7 @@ import type { MultiEncryptResult } from 'iqlabs-sdk/dist/sdk/crypto';
 
 export type EncryptedDmPayload = {
   enc: 'dh-multi';
-  /** Wrapped keys for each participant (sender + recipient) */
   r: MultiEncryptResult['recipients'];
-  iv: string;
-  ct: string;
-} | {
-  /** Legacy single-recipient format */
-  enc: 'dh';
-  sp: string;
   iv: string;
   ct: string;
 };
@@ -81,10 +73,6 @@ export async function encryptDmPayload(
   });
 }
 
-/**
- * Try to decrypt a DM message. Handles both multi-recipient (new)
- * and single-recipient (legacy) formats. Returns null on failure.
- */
 export async function decryptDmPayload(
   privKey: Uint8Array,
   pubHex: string,
@@ -92,23 +80,11 @@ export async function decryptDmPayload(
 ): Promise<Record<string, unknown> | null> {
   try {
     const parsed = JSON.parse(data);
-    if (!parsed) return null;
-
-    if (parsed.enc === 'dh-multi') {
-      const { r, iv, ct } = parsed;
-      if (!r || !iv || !ct) return null;
-      const plainBytes = await multiDecrypt(privKey, pubHex, { recipients: r, iv, ciphertext: ct });
-      return JSON.parse(decoder.decode(plainBytes));
-    }
-
-    if (parsed.enc === 'dh') {
-      const { sp, iv, ct } = parsed;
-      if (!sp || !iv || !ct) return null;
-      const plainBytes = await dhDecrypt(privKey, sp, iv, ct);
-      return JSON.parse(decoder.decode(plainBytes));
-    }
-
-    return null;
+    if (parsed?.enc !== 'dh-multi') return null;
+    const { r, iv, ct } = parsed;
+    if (!r || !iv || !ct) return null;
+    const plainBytes = await multiDecrypt(privKey, pubHex, { recipients: r, iv, ciphertext: ct });
+    return JSON.parse(decoder.decode(plainBytes));
   } catch {
     return null;
   }
@@ -120,7 +96,7 @@ export async function decryptDmPayload(
 export function isEncryptedDm(data: string): boolean {
   try {
     const parsed = JSON.parse(data);
-    return parsed?.enc === 'dh' || parsed?.enc === 'dh-multi';
+    return parsed?.enc === 'dh-multi';
   } catch {
     return false;
   }
