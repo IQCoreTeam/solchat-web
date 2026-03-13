@@ -90,8 +90,8 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
       const userInventory = iqlabs.contract.getUserInventoryPda(user, programId);
 
       // Check via Helius (fast reads). We bypass the SDK's
-      // ensureUserInitialized because it reads via the write connection
-      // (reflow), which hangs.
+      // ensureUserInitialized because it reads via the write connection,
+      // which can hang on some RPC providers.
       const invInfo = await readConnection.getAccountInfo(userInventory);
       if (!invInfo) {
         console.log('[useUserInit] User not initialized, creating accounts');

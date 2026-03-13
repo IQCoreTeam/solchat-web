@@ -93,7 +93,7 @@ export function useRooms({
         instrPda: iqlabs.contract.getInstructionTablePda(rootPubkey, seed, programId),
       }));
 
-      // Batch fetch all table accounts using Helius (reflow doesn't support this reliably)
+      // Batch fetch all table accounts using Helius (default RPC doesn't support this reliably)
       const tablePdas = seedsWithPdas.map((s) => s.tablePda);
       const tableAccounts = await readConnection.getMultipleAccountsInfo(tablePdas);
 

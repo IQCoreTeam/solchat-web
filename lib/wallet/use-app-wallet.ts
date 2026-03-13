@@ -221,8 +221,8 @@ export function useAppConnection() {
       ? 'provider'
       : 'default';
 
-  // Write connection: reflow (fast tx sending, skip preflight since reflow
-  // simulation is unreliable and can falsely reject valid signed transactions)
+  // Write connection: skip preflight since the default RPC's simulation
+  // is unreliable and can falsely reject valid signed transactions
   const connection = useMemo(() => {
     const conn = new Connection(endpoint, 'confirmed');
     const origSendRawTransaction = conn.sendRawTransaction.bind(conn);
