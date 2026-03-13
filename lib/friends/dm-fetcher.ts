@@ -3,12 +3,14 @@ import type { Friend } from '@/lib/friends/types';
 import { dmChannelKeyToSeed } from '@/lib/shared/channel-utils';
 import { rowToMessage, type MessageRow } from '@/lib/shared/message-helpers';
 import type { FetchConfig } from '@/lib/shared/useMessageIndexLoader';
+import { decryptDmPayload, isEncryptedDm, getOrDeriveKeypair } from '@/lib/crypto/dm-encryption';
 
 type DmFetcherOptions = {
   userAddress: string | null;
   endpointSource: string;
   friendMapBySeedHex: Record<string, Friend>;
   setChatSlowRpcMode: (value: boolean) => void;
+  signMessage?: (msg: Uint8Array) => Promise<Uint8Array>;
 };
 
 export function createDmFetcher({
@@ -16,6 +18,7 @@ export function createDmFetcher({
   endpointSource,
   friendMapBySeedHex,
   setChatSlowRpcMode,
+  signMessage,
 }: DmFetcherOptions) {
   return async (channelKey: string, fetchConfig?: FetchConfig): Promise<MessageRow[]> => {
     if (!userAddress) return [];
@@ -48,6 +51,23 @@ export function createDmFetcher({
         let row: Record<string, unknown>;
         if (!data) {
           row = { signature, metadata, data: null };
+        } else if (isEncryptedDm(data)) {
+          // Decrypt encrypted DM
+          try {
+            if (!signMessage) {
+              row = { signature, metadata, text: '[encrypted — key not available]' };
+            } else {
+              const kp = await getOrDeriveKeypair(signMessage);
+              const decrypted = await decryptDmPayload(kp.privKey, data);
+              if (decrypted) {
+                row = { ...decrypted, __txSignature: signature };
+              } else {
+                row = { signature, metadata, text: '[unable to decrypt]' };
+              }
+            }
+          } catch {
+            row = { signature, metadata, text: '[decryption failed]' };
+          }
         } else {
           try {
             const parsed = JSON.parse(data) as Record<string, unknown>;

@@ -40,6 +40,8 @@ import { extractErrorLogs } from '@/lib/utils/error-utils';
 import { createDmFetcher } from '@/lib/friends/dm-fetcher';
 import { useWebSocketChannel } from '@/lib/shared/use-websocket-channel';
 import { useScrollTracker } from '@/lib/shared/use-scroll-tracker';
+import { useDmKeys } from '@/lib/crypto/use-dm-keys';
+import { encryptDmPayload } from '@/lib/crypto/dm-encryption';
 type Tab = 'all' | 'pending' | 'blocked';
 
 type FriendsListProps = {
@@ -71,6 +73,14 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     const { friends, loading, error: friendsError, refetch } = useFriends({
         userAddress: userAddress || '',
     });
+    const dmKeys = useDmKeys();
+
+    // Derive encryption keys when wallet is ready
+    useEffect(() => {
+        if (wallet.connected) {
+            dmKeys.deriveKeys();
+        }
+    }, [wallet.connected, dmKeys.deriveKeys]);
 
     /* --------------------------------------------------------------------------
      * Local State
@@ -259,8 +269,9 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                 endpointSource,
                 friendMapBySeedHex,
                 setChatSlowRpcMode,
+                signMessage: wallet.signMessage,
             }),
-        [userAddress, endpointSource, friendMapBySeedHex, setChatSlowRpcMode]
+        [userAddress, endpointSource, friendMapBySeedHex, setChatSlowRpcMode, wallet.signMessage]
     );
 
     const {
@@ -316,14 +327,23 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                 }
                 return { ok: true };
             },
-            writeMessage: (payload) =>
-                iqlabs.writer.writeConnectionRow(
+            writeMessage: async (payload) => {
+                const recipientAddress = chatFriend!.address;
+                const recipientPubKey = await dmKeys.getRecipientPubKey(recipientAddress);
+                let data: string;
+                if (recipientPubKey) {
+                    data = await encryptDmPayload(recipientPubKey, payload);
+                } else {
+                    data = JSON.stringify(payload);
+                }
+                return iqlabs.writer.writeConnectionRow(
                     connection,
                     signer! as Signer,
                     dbRootId,
                     chatFriend!.dmSeed,
-                    JSON.stringify(payload)
-                ),
+                    data
+                );
+            },
             onBeforeSend: (_payload, timestamp) => {
                 if (chatFriend?.dmSeedHex) {
                     const dmKey = chatFriend.dmSeedHex;
