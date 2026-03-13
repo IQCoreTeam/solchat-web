@@ -42,7 +42,11 @@ export function createDmFetcher({
         try {
           result = await readCodeIn(signature);
         } catch (err) {
-          if (err instanceof Error && err.message.includes('instruction not found')) {
+          if (err instanceof Error && (
+            err.message.includes('instruction not found') ||
+            err.message.includes('429') ||
+            err.message.includes('Too Many Requests')
+          )) {
             continue;
           }
           throw err;

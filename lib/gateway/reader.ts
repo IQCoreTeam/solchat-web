@@ -14,7 +14,14 @@ export async function readCodeIn(signature: string): Promise<{ data: string | nu
         const json = await res.json();
         return { data: json.data ?? null, metadata: json.metadata ?? '' };
       }
-      // Gateway returned non-ok (e.g. 404) — fall through to SDK
+      // Gateway responded (e.g. 404 for non-data tx) — try parsing body
+      // to avoid expensive SDK fallback that can 429 on rate-limited RPCs
+      try {
+        const json = await res.json();
+        if (json && 'data' in json) {
+          return { data: json.data ?? null, metadata: json.metadata ?? '' };
+        }
+      } catch { /* body not JSON, fall through to SDK */ }
     } catch { /* gateway down, fall through */ }
   }
   return iqlabs.reader.readCodeIn(signature);
