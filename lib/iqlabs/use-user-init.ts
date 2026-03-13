@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SystemProgram } from '@solana/web3.js';
+import { Connection, SystemProgram } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import type { Idl } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
@@ -10,12 +10,18 @@ import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
 import { ensureUserInitialized, sendTx } from 'iqlabs-sdk/dist/sdk/writer/writer_utils';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
+import { HELIUS_RPC_URL } from '@/lib/constants';
 
 const toRootBytes = (value: string | Uint8Array) =>
   value instanceof Uint8Array ? value : Buffer.from(value, 'utf8');
 
 export function useUserInit(rootIdOverride?: string | Uint8Array) {
   const { connection } = useAppConnection();
+  // Use Helius for read-only checks (rpc.reflow.xyz may not support getAccountInfo reliably)
+  const readConnection = useMemo(
+    () => HELIUS_RPC_URL ? new Connection(HELIUS_RPC_URL, 'confirmed') : connection,
+    [connection]
+  );
   const appWallet = useAppWallet();
   const { publicKey, connected, signTransaction, signAllTransactions } = appWallet;
   const [isInitialized, setIsInitialized] = useState(false);
@@ -66,7 +72,7 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
       setIsInitializing(true);
       setError(null);
 
-      const rootInfo = await connection.getAccountInfo(rootPda);
+      const rootInfo = await readConnection.getAccountInfo(rootPda);
       if (!rootInfo) {
         const ix = iqlabs.contract.initializeDbRootInstruction(
           builder,
@@ -85,13 +91,17 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
       const codeAccount = iqlabs.contract.getCodeAccountPda(user, programId);
       const userInventory = iqlabs.contract.getUserInventoryPda(user, programId);
 
-      await ensureUserInitialized(connection, signer, builder, {
-        user,
-        code_account: codeAccount,
-        user_state: userState,
-        user_inventory: userInventory,
-        system_program: SystemProgram.programId,
-      });
+      // Check if already initialized using Helius (fast reads)
+      const invInfo = await readConnection.getAccountInfo(userInventory);
+      if (!invInfo) {
+        await ensureUserInitialized(connection, signer, builder, {
+          user,
+          code_account: codeAccount,
+          user_state: userState,
+          user_inventory: userInventory,
+          system_program: SystemProgram.programId,
+        });
+      }
 
       setIsInitialized(true);
     } catch (err) {
@@ -107,7 +117,7 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
     } finally {
       setIsInitializing(false);
     }
-  }, [builder, connected, connection, dbRootId, programId, rootPda]);
+  }, [builder, connected, connection, readConnection, dbRootId, programId, rootPda]);
 
   useEffect(() => {
     if (!publicKey || !connected || !signTransaction || !signAllTransactions) {

@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { AccountInfo, Connection, PublicKey } from '@solana/web3.js';
-import { SystemProgram } from '@solana/web3.js';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { AccountInfo, PublicKey } from '@solana/web3.js';
+import { Connection, SystemProgram } from '@solana/web3.js';
 import iqlabs from 'iqlabs-sdk';
 import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
 import { sendTx } from 'iqlabs-sdk/dist/sdk/writer/writer_utils';
-import { getCachedAccountInfo } from '@/lib/rpc/cache';
 import type { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
+import { HELIUS_RPC_URL } from '@/lib/constants';
 
 export type RootStatus = 'checking' | 'missing' | 'creating' | 'ready' | 'error';
 
@@ -34,11 +34,16 @@ export function useRootAccount({
   const [rootAccount, setRootAccount] = useState<AccountInfo<Buffer> | null>(null);
   const [rootError, setRootError] = useState<string | null>(null);
 
+  const readConnection = useMemo(
+    () => HELIUS_RPC_URL ? new Connection(HELIUS_RPC_URL, 'confirmed') : connection,
+    [connection]
+  );
+
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const acc = await getCachedAccountInfo(connection, rootPubkey);
+        const acc = await readConnection.getAccountInfo(rootPubkey);
         if (!mounted) return;
         if (acc) {
           setRootStatus('ready');
@@ -56,7 +61,7 @@ export function useRootAccount({
     return () => {
       mounted = false;
     };
-  }, [connection, rootPubkey, isUserInitialized, isUserInitializing]);
+  }, [readConnection, rootPubkey, isUserInitialized, isUserInitializing]);
 
   const handleCreateRoot = useCallback(async () => {
     if (!signer) return;
