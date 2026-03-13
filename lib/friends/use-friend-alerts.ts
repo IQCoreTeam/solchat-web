@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Friend } from '@/lib/friends/types';
-import { shortenAddress } from '@/lib/friends/utils';
+import { shorten as shortenAddress } from '@/lib/utils/message-utils';
 import { getLastMessageTimestamp, makeDmTimestampKey } from '@/lib/cache/message-timestamp-cache';
 
 type UseFriendAlertsOptions = {

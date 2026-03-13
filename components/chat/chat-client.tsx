@@ -44,7 +44,7 @@ export function ChatClient() {
     /* --------------------------------------------------------------------------
      * Context & External Hooks
      * -------------------------------------------------------------------------- */
-    const { connection, endpointSource, setCustomRpcEndpoint } = useAppConnection();
+    const { connection, readConnection, endpointSource, setCustomRpcEndpoint } = useAppConnection();
     const wallet = useAppWallet();
     const {
         isInitialized: isUserInitialized,
@@ -129,13 +129,13 @@ export function ChatClient() {
 
     const { rootStatus, rootAccount, handleCreateRoot } = useRootAccount({
         connection,
+        readConnection,
         rootPubkey,
         isUserInitialized,
         isUserInitializing,
         builder,
         dbRootId,
         signer,
-        runWithRpcRateLimit,
     });
 
     const {
@@ -154,10 +154,10 @@ export function ChatClient() {
         rootAccount,
         coder,
         connection,
+        readConnection,
         rootPubkey,
         programId,
         sortRoomsByTimestamp,
-        runWithRpcRateLimit,
         signer,
         builder,
         dbRootId,
@@ -250,7 +250,7 @@ export function ChatClient() {
             channelKey: selectedChannelKey,
             resolveChannelMeta,
             fetcher,
-            connection,
+            connection: readConnection,
             endpointSource,
             onRowsApplied: ({ channelKey, seedHex, rows }) => {
                 const latestTimestamp = rows.reduce((max, msg) => Math.max(max, msg.timestamp ?? 0), 0);
@@ -548,7 +548,7 @@ export function ChatClient() {
     }, [selectedChannelKey, targetedDecode]);
 
     useAccountSubscription({
-        connection,
+        connection: readConnection,
         account: selectedRoom ? new PublicKey(selectedRoom.tableAddress) : null,
         onNewSignatures: handleNewSignatures,
         commitment: 'confirmed',

@@ -397,8 +397,8 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                 const recipientAddress = chatFriend!.address;
                 const recipientPubKey = await dmKeys.getRecipientPubKey(recipientAddress);
                 let data: string;
-                if (recipientPubKey) {
-                    data = await encryptDmPayload(recipientPubKey, payload);
+                if (recipientPubKey && dmKeys.pubHex) {
+                    data = await encryptDmPayload(dmKeys.pubHex, recipientPubKey, payload);
                 } else {
                     data = JSON.stringify(payload);
                 }

@@ -3,15 +3,11 @@
 import { useState } from 'react';
 import { PublicKey, LAMPORTS_PER_SOL, SystemProgram, Transaction } from '@solana/web3.js';
 import { useQuery } from '@tanstack/react-query';
-import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { Window, WindowHeader, WindowContent, Cutout, Button, Frame } from 'react95';
-import { useAppWallet } from '@/lib/wallet/use-app-wallet';
+import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { useExportWallet } from '@privy-io/react-auth/solana';
-
-function formatAddress(value?: string | null, chars = 4) {
-  if (!value) return '';
-  return `${value.slice(0, chars)}…${value.slice(-chars)}`;
-}
+import { shorten } from '@/lib/utils/message-utils';
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -31,7 +27,7 @@ function CopyButton({ text }: { text: string }) {
 }
 
 export function AccountInfo() {
-  const { connection } = useConnection();
+  const { connection, readConnection } = useAppConnection();
   const wallet = useWallet();
   const privyWallet = useAppWallet();
   const privyAddress = privyWallet.publicKey?.toBase58();
@@ -46,7 +42,7 @@ export function AccountInfo() {
     queryKey: ['balance', wallet.publicKey?.toBase58()],
     queryFn: async () => {
       if (!wallet.publicKey) return 0;
-      return (await connection.getBalance(wallet.publicKey)) / LAMPORTS_PER_SOL;
+      return (await readConnection.getBalance(wallet.publicKey)) / LAMPORTS_PER_SOL;
     },
     enabled: !!wallet.publicKey,
     refetchInterval: 10000,
@@ -56,7 +52,7 @@ export function AccountInfo() {
     queryKey: ['privy-balance', privyAddress],
     queryFn: async () => {
       if (!privyWallet.publicKey) return 0;
-      return (await connection.getBalance(privyWallet.publicKey)) / LAMPORTS_PER_SOL;
+      return (await readConnection.getBalance(privyWallet.publicKey)) / LAMPORTS_PER_SOL;
     },
     enabled: !!privyWallet.publicKey,
     refetchInterval: 10000,
@@ -66,7 +62,7 @@ export function AccountInfo() {
     queryKey: ['tokens', wallet.publicKey?.toBase58()],
     queryFn: async () => {
       if (!wallet.publicKey) return [];
-      const accounts = await connection.getParsedTokenAccountsByOwner(wallet.publicKey, {
+      const accounts = await readConnection.getParsedTokenAccountsByOwner(wallet.publicKey, {
         programId: new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),
       });
       return accounts.value.map((acc) => ({
@@ -143,7 +139,7 @@ export function AccountInfo() {
         <WindowContent className="space-y-4">
           <div>
             <p className="text-[11px] uppercase tracking-[0.4em]">Wallet</p>
-            <h3 className="text-2xl mt-1">{formatAddress(publicAddress, 6)}</h3>
+            <h3 className="text-2xl mt-1">{shorten(publicAddress ?? '', 6)}</h3>
           </div>
           <div className="flex items-center gap-2">
             <Cutout className="p-4 text-xs break-all border flex-1">{publicAddress}</Cutout>
@@ -165,7 +161,7 @@ export function AccountInfo() {
         <WindowContent className="space-y-4">
           <div>
             <p className="text-[11px] uppercase tracking-[0.4em]">Embedded Wallet</p>
-            <h3 className="text-2xl mt-1">{privyAddress ? formatAddress(privyAddress, 6) : 'Not available'}</h3>
+            <h3 className="text-2xl mt-1">{privyAddress ? shorten(privyAddress, 6) : 'Not available'}</h3>
           </div>
           {privyAddress && (
             <div className="flex items-center gap-2">

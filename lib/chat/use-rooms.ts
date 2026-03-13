@@ -1,16 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import type { AccountInfo, PublicKey } from '@solana/web3.js';
-import { Connection, PublicKey as Web3PublicKey, SystemProgram } from '@solana/web3.js';
+import type { AccountInfo, Connection, PublicKey } from '@solana/web3.js';
+import { PublicKey as Web3PublicKey, SystemProgram } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import { BorshAccountsCoder } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
 import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
 import { sendTx } from 'iqlabs-sdk/dist/sdk/writer/writer_utils';
 import { MESSAGE_COLUMNS } from '@/lib/iqlabs/constants';
-import { HELIUS_RPC_URL } from '@/lib/constants';
 import { decodeBytes, normalizeBytes } from '@/lib/shared/message-helpers';
-import type { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
 import type { RootStatus } from './use-root-account';
 
 export type RoomMeta = {
@@ -28,10 +26,10 @@ type UseRoomsOptions = {
   rootAccount: AccountInfo<Buffer> | null;
   coder: BorshAccountsCoder;
   connection: Connection;
+  readConnection: Connection;
   rootPubkey: PublicKey;
   programId: PublicKey;
   sortRoomsByTimestamp: (list: RoomMeta[]) => RoomMeta[];
-  runWithRpcRateLimit: typeof runWithRpcRateLimit;
   signer: SignerInput | null;
   builder: ReturnType<typeof iqlabs.contract.createInstructionBuilder>;
   dbRootId: Buffer;
@@ -42,19 +40,14 @@ export function useRooms({
   rootAccount,
   coder,
   connection,
+  readConnection,
   rootPubkey,
   programId,
   sortRoomsByTimestamp,
-  runWithRpcRateLimit,
   signer,
   builder,
   dbRootId,
 }: UseRoomsOptions) {
-  const readConnection = useMemo(
-    () => HELIUS_RPC_URL ? new Connection(HELIUS_RPC_URL, 'confirmed') : connection,
-    [connection]
-  );
-
   const [rooms, setRooms] = useState<RoomMeta[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(false);
   const [roomsError, setRoomsError] = useState<string | null>(null);

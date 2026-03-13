@@ -58,14 +58,15 @@ export function createDmFetcher({
               row = { __txSignature: signature, metadata, text: '[encrypted — key not available]' };
             } else {
               const kp = await getOrDeriveKeypair(signMessage);
-              const decrypted = await decryptDmPayload(kp.privKey, data);
+              const decrypted = await decryptDmPayload(kp.privKey, kp.pubHex, data);
               if (decrypted) {
                 row = { ...decrypted, __txSignature: signature };
               } else {
                 row = { __txSignature: signature, metadata, text: '[unable to decrypt]' };
               }
             }
-          } catch {
+          } catch (err) {
+            console.warn('[dm-fetcher] Decryption failed for', signature, err);
             row = { __txSignature: signature, metadata, text: '[decryption failed]' };
           }
         } else {

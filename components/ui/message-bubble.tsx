@@ -276,12 +276,32 @@ export function MessageBubble({
                         </div>
                     )}
 
-                    {/* Simple status for DM/friend modes */}
+                    {/* Status + timestamp for DM/friend modes */}
                     {(mode === 'dm' || mode === 'friend') && (
                         <div className="mt-1 flex items-center gap-2 text-[11px] text-white/50">
-                            {mode === 'dm' && formattedTime && <span>{formattedTime}</span>}
-                            {mode === 'dm' && formattedTime && <span>·</span>}
-                            <span>{isPending ? 'Pending' : 'confirmed'}</span>
+                            {isPending ? (
+                                <span>Pending</span>
+                            ) : signature ? (
+                                <a
+                                    href={`https://solscan.io/tx/${signature}${process.env.NEXT_PUBLIC_SOLANA_CLUSTER && process.env.NEXT_PUBLIC_SOLANA_CLUSTER !== 'mainnet-beta'
+                                        ? `?cluster=${process.env.NEXT_PUBLIC_SOLANA_CLUSTER}`
+                                        : ''}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="underline decoration-dotted underline-offset-2 hover:text-white/80 transition"
+                                    title="View on Solscan"
+                                >
+                                    Confirmed
+                                </a>
+                            ) : (
+                                <span>Confirmed</span>
+                            )}
+                            {localizedTime && (
+                                <>
+                                    <span>·</span>
+                                    <span>{localizedTime}</span>
+                                </>
+                            )}
                         </div>
                     )}
                 </div>

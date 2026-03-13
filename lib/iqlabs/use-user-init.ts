@@ -1,27 +1,21 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Connection, SystemProgram } from '@solana/web3.js';
+import { SystemProgram } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import type { Idl } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
 import idl from 'iqlabs-sdk/idl/code_in.json';
 import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
-import { ensureUserInitialized, sendTx } from 'iqlabs-sdk/dist/sdk/writer/writer_utils';
+import { sendAndConfirmTx } from '@/lib/utils/send-and-confirm';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
-import { HELIUS_RPC_URL } from '@/lib/constants';
 
 const toRootBytes = (value: string | Uint8Array) =>
   value instanceof Uint8Array ? value : Buffer.from(value, 'utf8');
 
 export function useUserInit(rootIdOverride?: string | Uint8Array) {
-  const { connection } = useAppConnection();
-  // Use Helius for read-only checks (rpc.reflow.xyz may not support getAccountInfo reliably)
-  const readConnection = useMemo(
-    () => HELIUS_RPC_URL ? new Connection(HELIUS_RPC_URL, 'confirmed') : connection,
-    [connection]
-  );
+  const { connection, readConnection } = useAppConnection();
   const appWallet = useAppWallet();
   const { publicKey, connected, signTransaction, signAllTransactions } = appWallet;
   const [isInitialized, setIsInitialized] = useState(false);
@@ -72,8 +66,10 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
       setIsInitializing(true);
       setError(null);
 
+      // Ensure root PDA exists
       const rootInfo = await readConnection.getAccountInfo(rootPda);
       if (!rootInfo) {
+        console.log('[useUserInit] Root PDA missing, creating:', rootPda.toBase58());
         const ix = iqlabs.contract.initializeDbRootInstruction(
           builder,
           {
@@ -83,24 +79,31 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
           },
           { db_root_id: dbRootId }
         );
-        await sendTx(connection, signer, ix);
+        await sendAndConfirmTx(connection, readConnection, signer, ix);
+        console.log('[useUserInit] Root PDA created successfully');
       }
 
+      // Ensure user is initialized
       const user = currentPublicKey;
       const userState = iqlabs.contract.getUserPda(user, programId);
       const codeAccount = iqlabs.contract.getCodeAccountPda(user, programId);
       const userInventory = iqlabs.contract.getUserInventoryPda(user, programId);
 
-      // Check if already initialized using Helius (fast reads)
+      // Check via Helius (fast reads). We bypass the SDK's
+      // ensureUserInitialized because it reads via the write connection
+      // (reflow), which hangs.
       const invInfo = await readConnection.getAccountInfo(userInventory);
       if (!invInfo) {
-        await ensureUserInitialized(connection, signer, builder, {
+        console.log('[useUserInit] User not initialized, creating accounts');
+        const ix = iqlabs.contract.userInitializeInstruction(builder, {
           user,
           code_account: codeAccount,
           user_state: userState,
           user_inventory: userInventory,
           system_program: SystemProgram.programId,
         });
+        await sendAndConfirmTx(connection, readConnection, signer, ix);
+        console.log('[useUserInit] User initialized successfully');
       }
 
       setIsInitialized(true);

@@ -34,7 +34,7 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
   const [imageError, setImageError] = useState(false);
   const [copied, setCopied] = useState(false);
   const wallet = useAppWallet();
-  const { connection } = useAppConnection();
+  const { connection, readConnection } = useAppConnection();
   const signer = useMemo<SignerInput | null>(() => {
     if (!wallet.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) {
       return null;
@@ -70,7 +70,7 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
     isBlocker,
     dmSeed,
     refresh: refreshDmState,
-  } = useDmRelationship(connection, viewerAddress, walletAddress);
+  } = useDmRelationship(readConnection, viewerAddress, walletAddress);
   const handleCopyWallet = async () => {
     try {
       await navigator.clipboard.writeText(walletAddress);
@@ -113,7 +113,6 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
     try {
       const receiver = new PublicKey(walletAddress.trim());
       const { ix } = buildRequestConnectionInstruction({
-        builder,
         dbRootId,
         programId,
         requester: wallet.publicKey,

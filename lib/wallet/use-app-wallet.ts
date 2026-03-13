@@ -45,13 +45,12 @@ export function useAppWallet(): AppWallet {
     return solanaWallet || null;
   }, [user]);
 
-  // Get the connected wallet from useWallets (for signing capabilities)
+  // Get the embedded wallet from useWallets (for signing capabilities)
+  // IMPORTANT: Never fall back to wallets[0] — that could be an external wallet
+  // (Phantom, Solflare) used only for Privy authentication, not for app operations.
   const connectedWallet = useMemo(() => {
-    if (!wallets || wallets.length === 0) return null;
-
-    // Find the embedded wallet in connected wallets
-    // If user has linked account, it should be in wallets array when ready
-    return wallets.find((w) => w.address === embeddedWallet?.address) || wallets[0] || null;
+    if (!wallets || wallets.length === 0 || !embeddedWallet?.address) return null;
+    return wallets.find((w) => w.address === embeddedWallet.address) || null;
   }, [wallets, embeddedWallet]);
 
   const publicKey = useMemo(() => {
@@ -222,18 +221,31 @@ export function useAppConnection() {
       ? 'provider'
       : 'default';
 
-  const connection = useMemo(() => new Connection(endpoint, 'confirmed'), [endpoint]);
+  // Write connection: reflow (fast tx sending, skip preflight since reflow
+  // simulation is unreliable and can falsely reject valid signed transactions)
+  const connection = useMemo(() => {
+    const conn = new Connection(endpoint, 'confirmed');
+    const origSendRawTransaction = conn.sendRawTransaction.bind(conn);
+    conn.sendRawTransaction = (raw: Buffer | Uint8Array | number[], opts?: any) =>
+      origSendRawTransaction(raw, { ...opts, skipPreflight: true });
+    return conn;
+  }, [endpoint]);
+
+  // Read connection: Helius (reliable reads, tx history support)
+  const readConnection = useMemo(
+    () => HELIUS_RPC_URL ? new Connection(HELIUS_RPC_URL, 'confirmed') : connection,
+    [connection]
+  );
 
   useEffect(() => {
     // Use Helius for SDK internal reads (supports tx history), fall back to app RPC
     setRpcUrl(HELIUS_RPC_URL || endpoint);
   }, [endpoint]);
 
-
   useEffect(() => {
     if (typeof window === 'undefined') return;
     (window as any).solchatSetRpcEndpoint = setCustomRpcEndpoint;
   }, [setCustomRpcEndpoint]);
 
-  return { connection, rpcEndpoint: endpoint, endpointSource, setCustomRpcEndpoint };
+  return { connection, readConnection, rpcEndpoint: endpoint, endpointSource, setCustomRpcEndpoint };
 }
