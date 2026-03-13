@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import type { AccountInfo, Connection, PublicKey } from '@solana/web3.js';
-import { PublicKey as Web3PublicKey, SystemProgram } from '@solana/web3.js';
+import type { AccountInfo, PublicKey } from '@solana/web3.js';
+import { Connection, PublicKey as Web3PublicKey, SystemProgram } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import { BorshAccountsCoder } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
 import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
 import { sendTx } from 'iqlabs-sdk/dist/sdk/writer/writer_utils';
 import { MESSAGE_COLUMNS } from '@/lib/iqlabs/constants';
+import { HELIUS_RPC_URL } from '@/lib/constants';
 import { decodeBytes, normalizeBytes } from '@/lib/shared/message-helpers';
 import type { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
 import type { RootStatus } from './use-root-account';
@@ -49,6 +50,11 @@ export function useRooms({
   builder,
   dbRootId,
 }: UseRoomsOptions) {
+  const readConnection = useMemo(
+    () => HELIUS_RPC_URL ? new Connection(HELIUS_RPC_URL, 'confirmed') : connection,
+    [connection]
+  );
+
   const [rooms, setRooms] = useState<RoomMeta[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(false);
   const [roomsError, setRoomsError] = useState<string | null>(null);
@@ -94,12 +100,9 @@ export function useRooms({
         instrPda: iqlabs.contract.getInstructionTablePda(rootPubkey, seed, programId),
       }));
 
-      // Batch fetch all table accounts using getMultipleAccountsInfo
+      // Batch fetch all table accounts using Helius (reflow doesn't support this reliably)
       const tablePdas = seedsWithPdas.map((s) => s.tablePda);
-      const tableAccounts = await runWithRpcRateLimit(
-        () => connection.getMultipleAccountsInfo(tablePdas),
-        { endpoint: connection.rpcEndpoint }
-      );
+      const tableAccounts = await readConnection.getMultipleAccountsInfo(tablePdas);
 
       const roomList: RoomMeta[] = [];
       for (let i = 0; i < seedsWithPdas.length; i++) {
@@ -140,7 +143,7 @@ export function useRooms({
     } finally {
       setRoomsLoading(false);
     }
-  }, [rootStatus, rootAccount, coder, connection, rootPubkey, programId, sortRoomsByTimestamp, runWithRpcRateLimit]);
+  }, [rootStatus, rootAccount, coder, readConnection, rootPubkey, programId, sortRoomsByTimestamp]);
 
   const lastRootAccountRef = useRef<AccountInfo<Buffer> | null>(null);
   useEffect(() => {
