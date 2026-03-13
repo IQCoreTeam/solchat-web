@@ -5,6 +5,7 @@ import { PublicKey, SystemProgram, type AccountInfo, type Signer } from '@solana
 import { Buffer } from 'buffer';
 import type { Idl } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
+import { readCodeIn, readTableRows as gatewayReadTableRows } from '@/lib/gateway/reader';
 import idl from 'iqlabs-sdk/idl/code_in.json';
 import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
 import { sendTx } from 'iqlabs-sdk/dist/sdk/writer/writer_utils';
@@ -39,7 +40,7 @@ async function parseMetadata(
 
   try {
     if (metadataStr.length <= 100 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(metadataStr)) {
-      const result = await iqlabs.reader.readCodeIn(metadataStr);
+      const result = await readCodeIn(metadataStr);
       if (!result?.data || result.data.startsWith('[unable')) return null;
       return JSON.parse(result.data);
     }
@@ -59,7 +60,7 @@ export function useUserProfileManager() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const programId = useMemo(() => iqlabs.contract.getProgramId(), []);
+  const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
   const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
   const dbRoot = useMemo(() => iqlabs.contract.getDbRootPda(dbRootId, programId), [dbRootId, programId]);
   const builder = useMemo(() => iqlabs.contract.createInstructionBuilder(idl as Idl, programId), [programId]);
@@ -148,7 +149,7 @@ export function useUserProfileManager() {
         return;
       }
 
-      const rows = await iqlabs.reader.readTableRows(tablePda);
+      const rows = await gatewayReadTableRows(tablePda.toBase58());
 
       const userPubkeys: string[] = [];
       for (const row of rows) {

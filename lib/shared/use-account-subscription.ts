@@ -8,8 +8,8 @@
 
 import { useEffect, useRef } from 'react';
 import { PublicKey, type Connection } from '@solana/web3.js';
-import iqlabs from 'iqlabs-sdk';
 import { updateAccountCache } from '@/lib/rpc/cache';
+import { getSignaturesForTable } from '@/lib/gateway/reader';
 
 export interface UseAccountSubscriptionParams {
   /**
@@ -94,7 +94,7 @@ export function useAccountSubscription({
     const subscribe = async () => {
       try {
         // Initial fetch to populate seen signatures
-        const initial = await iqlabs.reader.collectSignatures(account, fetchLimit);
+        const initial = await getSignaturesForTable(account.toBase58(), fetchLimit);
         for (const sig of initial) {
           seenSignaturesRef.current.add(sig);
         }
@@ -132,7 +132,7 @@ export function useAccountSubscription({
 
               try {
                 // Fetch recent signatures
-                const signatures = await iqlabs.reader.collectSignatures(account, fetchLimit);
+                const signatures = await getSignaturesForTable(account.toBase58(), fetchLimit);
 
                 // Filter out already-seen signatures
                 const fresh = signatures.filter((sig) => !seenSignaturesRef.current.has(sig));

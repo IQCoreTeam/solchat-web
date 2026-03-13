@@ -9,7 +9,7 @@ import { useMemo, useState, useEffect, useCallback } from 'react';
 import { Connection, PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
 import { usePrivy } from '@privy-io/react-auth';
 import { useWallets } from '@privy-io/react-auth/solana';
-import { RPC_URL } from '@/lib/constants';
+import { RPC_URL, HELIUS_RPC_URL } from '@/lib/constants';
 import { setRpcUrl } from 'iqlabs-sdk';
 
 export interface AppWallet {
@@ -225,7 +225,8 @@ export function useAppConnection() {
   const connection = useMemo(() => new Connection(endpoint, 'confirmed'), [endpoint]);
 
   useEffect(() => {
-    setRpcUrl(endpoint);
+    // Use Helius for SDK internal reads (supports tx history), fall back to app RPC
+    setRpcUrl(HELIUS_RPC_URL || endpoint);
   }, [endpoint]);
 
 

@@ -11,6 +11,7 @@ import { ROOT_ID } from '@/lib/iqlabs/constants';
 import { getCachedAccountInfo } from '@/lib/rpc/cache';
 import type { UserProfile } from './types';
 import iqlabs from 'iqlabs-sdk';
+import { readCodeIn } from '@/lib/gateway/reader';
 
 // Global cache to prevent redundant fetches across components
 const profileCache = new Map<string, { data: UserProfile | null; timestamp: number }>();
@@ -19,7 +20,7 @@ const CACHE_TTL = 1000 * 60 * 5; // 5 minutes
 
 export function useUserProfile(walletAddress: string | undefined) {
   const { connection } = useAppConnection();
-  const programId = useMemo(() => iqlabs.contract.getProgramId(), []);
+  const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
 
   const [profile, setProfile] = useState<UserProfile | null>(() => {
     if (!walletAddress) return null;
@@ -122,7 +123,7 @@ export function useUserProfile(walletAddress: string | undefined) {
 
           if (metadata.length <= 100 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(metadata)) {
             // Transaction ID - reconstruct original JSON using SDK HIGH-LEVEL function
-            const result = await iqlabs.reader.readCodeIn(metadata);
+            const result = await readCodeIn(metadata);
 
             if (!result?.data || result.data.startsWith('[unable')) {
               throw new Error('Failed to reconstruct metadata from transaction');

@@ -1,4 +1,4 @@
-import iqlabs from 'iqlabs-sdk';
+import { readCodeIn, getSignaturesForTable } from '@/lib/gateway/reader';
 import type { Friend } from '@/lib/friends/types';
 import { dmChannelKeyToSeed } from '@/lib/shared/channel-utils';
 import { rowToMessage, type MessageRow } from '@/lib/shared/message-helpers';
@@ -27,7 +27,7 @@ export function createDmFetcher({
     const maxTx = fetchConfig?.maxTx ?? baseMaxTx;
     const targetSignatures = fetchConfig?.signatures?.length
       ? fetchConfig.signatures
-      : await iqlabs.reader.collectSignatures(friend.tableAddress, maxTx);
+      : await getSignaturesForTable(friend.tableAddress, maxTx);
 
     const decodeRowsFromSignatures = async (
       signatures: string[],
@@ -37,7 +37,7 @@ export function createDmFetcher({
       for (const signature of signatures) {
         let result: { data: string | null; metadata: string };
         try {
-          result = await iqlabs.reader.readCodeIn(signature);
+          result = await readCodeIn(signature);
         } catch (err) {
           if (err instanceof Error && err.message.includes('user_inventory_code_in instruction not found')) {
             continue;

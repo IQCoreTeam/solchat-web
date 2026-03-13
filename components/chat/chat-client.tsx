@@ -54,7 +54,7 @@ export function ChatClient() {
     } = useUserInit();
     const { logout } = usePrivy();
 
-    const programId = useMemo(() => iqlabs.contract.getProgramId(), []);
+    const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
     const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
     const coder = useMemo(() => new BorshAccountsCoder(idl as Idl), []);
     const builder = useMemo(

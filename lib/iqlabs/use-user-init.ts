@@ -24,7 +24,7 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
 
   const resolvedRootId = rootIdOverride ?? ROOT_ID;
   const dbRootId = useMemo(() => toRootBytes(resolvedRootId), [resolvedRootId]);
-  const programId = useMemo(() => iqlabs.contract.getProgramId(), []);
+  const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
   const builder = useMemo(
     () => iqlabs.contract.createInstructionBuilder(idl as Idl, programId),
     [programId]
@@ -102,6 +102,7 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
         setIsInitialized(true);
         return;
       }
+      console.error('[useUserInit] Init failed:', err);
       setError(err instanceof Error ? err : new Error('Failed to initialize user'));
     } finally {
       setIsInitializing(false);

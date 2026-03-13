@@ -42,7 +42,7 @@ const initialState: DmRelationshipState = {
 };
 
 const coder = new BorshAccountsCoder(idl as Idl);
-const programId = iqlabs.contract.getProgramId();
+const programId = iqlabs.contract.PROGRAM_ID;
 const dbRootId = Buffer.from(ROOT_ID, 'utf8');
 const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programId);
 

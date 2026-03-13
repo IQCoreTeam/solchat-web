@@ -8,6 +8,7 @@
 
 import { Buffer } from 'buffer';
 import iqlabs from 'iqlabs-sdk';
+import { readTableRows as gatewayReadTableRows } from '@/lib/gateway/reader';
 import type { Row } from '@/lib/shared/message-helpers';
 import { getCacheManager } from './cache-manager';
 import type { Connection } from '@solana/web3.js';
@@ -25,23 +26,23 @@ async function readRowsByTable(
   params: ReaderParams & { tableName: string }
 ): Promise<Row[]> {
   const { rootId, tableName, maxTx } = params;
-  const programId = iqlabs.contract.getProgramId();
+  const programId = iqlabs.contract.PROGRAM_ID;
   const dbRootId = Buffer.from(rootId, 'utf8');
   const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programId);
   const tableSeed = iqlabs.utils.toSeedBytes(tableName);
   const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed, programId);
-  return iqlabs.reader.readTableRows(tablePda, { limit: maxTx }) as Promise<Row[]>;
+  return gatewayReadTableRows(tablePda.toBase58(), maxTx) as Promise<Row[]>;
 }
 
 async function readRowsByDmSeed(
   params: ReaderParams & { dmSeed: Uint8Array }
 ): Promise<Row[]> {
   const { rootId, dmSeed, maxTx } = params;
-  const programId = iqlabs.contract.getProgramId();
+  const programId = iqlabs.contract.PROGRAM_ID;
   const dbRootId = Buffer.from(rootId, 'utf8');
   const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programId);
   const tablePda = iqlabs.contract.getConnectionTablePda(dbRoot, dmSeed, programId);
-  return iqlabs.reader.readTableRows(tablePda, { limit: maxTx }) as Promise<Row[]>;
+  return gatewayReadTableRows(tablePda.toBase58(), maxTx) as Promise<Row[]>;
 }
 
 /**

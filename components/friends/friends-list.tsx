@@ -58,7 +58,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         isInitialized: isUserInitialized,
         error: userInitError,
     } = useUserInit();
-    const programId = useMemo(() => iqlabs.contract.getProgramId(), []);
+    const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
     const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
     const dbRoot = useMemo(
         () => iqlabs.contract.getDbRootPda(dbRootId, programId),
