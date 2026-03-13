@@ -9,11 +9,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { PublicKey } from '@solana/web3.js';
-import iqlabs from 'iqlabs-sdk';
-import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
-import { getCachedAccountInfo } from '@/lib/rpc/cache';
-import { readCodeIn } from '@/lib/gateway/reader';
+import { useAppWallet } from '@/lib/wallet/use-app-wallet';
+import { GATEWAY_URL } from '@/lib/constants';
 import {
   getOrDeriveKeypair,
   clearCachedKeypair,
@@ -23,42 +20,11 @@ import {
 // Cache encryption pubkeys by wallet address
 const encPubKeyCache = new Map<string, string>();
 
-function extractMetadataFromAccount(data: Buffer): string {
-  try {
-    let offset = 8; // discriminator
-    offset += 32; // owner
-    if (offset + 4 > data.length) return '';
-    const dataLen = data.readUInt32LE(offset);
-    offset += 4 + dataLen;
-    if (offset + 4 > data.length) return '';
-    const metadataLen = data.readUInt32LE(offset);
-    offset += 4;
-    if (metadataLen <= 0 || offset + metadataLen > data.length) return '';
-    return data.slice(offset, offset + metadataLen).toString('utf8').trim();
-  } catch {
-    return '';
-  }
-}
-
-async function resolveProfileJson(
-  connection: any,
-  metadataStr: string
-): Promise<Record<string, unknown> | null> {
-  if (!metadataStr || metadataStr.length <= 2) return null;
-  try {
-    if (metadataStr.length <= 100 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(metadataStr)) {
-      const result = await readCodeIn(metadataStr);
-      if (!result?.data || result.data.startsWith('[unable')) return null;
-      return JSON.parse(result.data);
-    }
-    return JSON.parse(metadataStr);
-  } catch {
-    return null;
-  }
+function isValidEncKey(key: unknown): key is string {
+  return typeof key === 'string' && key.length === 64 && /^[0-9a-f]+$/i.test(key);
 }
 
 export function useDmKeys() {
-  const { connection } = useAppConnection();
   const wallet = useAppWallet();
   const [ready, setReady] = useState(false);
   const [pubHex, setPubHex] = useState<string | null>(null);
@@ -102,20 +68,32 @@ export function useDmKeys() {
       if (cached) return cached;
 
       try {
-        const programId = iqlabs.contract.PROGRAM_ID;
-        const userPk = new PublicKey(walletAddress);
-        const userPda = iqlabs.contract.getUserPda(userPk, programId);
-        const accountInfo = await getCachedAccountInfo(connection, userPda);
-        if (!accountInfo?.data) return null;
+        // Try gateway profile endpoint (fast, cached)
+        if (GATEWAY_URL) {
+          try {
+            const res = await fetch(`${GATEWAY_URL}/user/${walletAddress}/profile`);
+            if (res.ok) {
+              const profile = await res.json();
+              if (isValidEncKey(profile?.encryptionPubKey)) {
+                encPubKeyCache.set(walletAddress, profile.encryptionPubKey);
+                return profile.encryptionPubKey;
+              }
+            }
+          } catch { /* fall through to RPC */ }
+        }
 
-        const metadataStr = extractMetadataFromAccount(Buffer.from(accountInfo.data));
-        const profile = await resolveProfileJson(connection, metadataStr);
-        if (!profile) return null;
+        // RPC fallback via SDK
+        const iqlabs = (await import('iqlabs-sdk')).default;
+        const userState = await iqlabs.reader.readUserState(walletAddress);
+        if (!userState?.profileData) return null;
 
-        const encKey = profile.encryptionPubKey as string | undefined;
-        if (encKey && typeof encKey === 'string' && encKey.length === 64) {
-          encPubKeyCache.set(walletAddress, encKey);
-          return encKey;
+        const profileData = typeof userState.profileData === 'string'
+          ? JSON.parse(userState.profileData)
+          : userState.profileData;
+
+        if (isValidEncKey(profileData?.encryptionPubKey)) {
+          encPubKeyCache.set(walletAddress, profileData.encryptionPubKey);
+          return profileData.encryptionPubKey;
         }
         return null;
       } catch (err) {
@@ -123,7 +101,7 @@ export function useDmKeys() {
         return null;
       }
     },
-    [connection]
+    []
   );
 
   return {
