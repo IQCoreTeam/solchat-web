@@ -14,10 +14,8 @@ import { shorten } from '@/lib/utils/message-utils';
 import { DefaultProfileAvatar } from '@/components/ui/default-profile-avatar';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import iqlabs from 'iqlabs-sdk';
-import idl from 'iqlabs-sdk/idl/code_in.json';
-import type { Idl } from '@coral-xyz/anchor';
-import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
-import { sendTx } from 'iqlabs-sdk/dist/sdk/writer/writer_utils';
+import type { SignerInput } from 'iqlabs-sdk/utils';
+import { sendTx } from '@/lib/iqlabs/send-tx';
 import { DM_STATUS } from '@/lib/friends/types';
 import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
 import { useDmRelationship } from './use-dm-relationship';
@@ -45,15 +43,14 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
       signAllTransactions: wallet.signAllTransactions.bind(wallet),
     };
   }, [wallet]);
-  const programId = useMemo(() => iqlabs.contract.getProgramId(), []);
   const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
   const dbRoot = useMemo(
-    () => iqlabs.contract.getDbRootPda(dbRootId, programId),
-    [dbRootId, programId]
+    () => iqlabs.contract.getDbRootPda(dbRootId),
+    [dbRootId]
   );
   const builder = useMemo(
-    () => iqlabs.contract.createInstructionBuilder(idl as Idl, programId),
-    [programId]
+    () => iqlabs.contract.createInstructionBuilder(),
+    []
   );
   const viewerAddress = wallet.publicKey?.toBase58() || null;
   const isOwnProfile = viewerAddress === walletAddress;
@@ -115,7 +112,6 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
       const { ix } = buildRequestConnectionInstruction({
         builder,
         dbRootId,
-        programId,
         requester: wallet.publicKey,
         receiver,
         tableName: DM_TABLE_NAME,
@@ -159,8 +155,7 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
     try {
       const connectionTable = iqlabs.contract.getConnectionTablePda(
         dbRoot,
-        dmSeed,
-        programId
+        dmSeed
       );
       const ix = iqlabs.contract.manageConnectionInstruction(
         builder,

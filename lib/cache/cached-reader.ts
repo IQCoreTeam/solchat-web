@@ -25,11 +25,10 @@ async function readRowsByTable(
   params: ReaderParams & { tableName: string }
 ): Promise<Row[]> {
   const { rootId, tableName, maxTx } = params;
-  const programId = iqlabs.contract.getProgramId();
   const dbRootId = Buffer.from(rootId, 'utf8');
-  const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programId);
+  const dbRoot = iqlabs.contract.getDbRootPda(dbRootId);
   const tableSeed = iqlabs.utils.toSeedBytes(tableName);
-  const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed, programId);
+  const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed);
   return iqlabs.reader.readTableRows(tablePda, { limit: maxTx }) as Promise<Row[]>;
 }
 
@@ -37,10 +36,9 @@ async function readRowsByDmSeed(
   params: ReaderParams & { dmSeed: Uint8Array }
 ): Promise<Row[]> {
   const { rootId, dmSeed, maxTx } = params;
-  const programId = iqlabs.contract.getProgramId();
   const dbRootId = Buffer.from(rootId, 'utf8');
-  const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programId);
-  const tablePda = iqlabs.contract.getConnectionTablePda(dbRoot, dmSeed, programId);
+  const dbRoot = iqlabs.contract.getDbRootPda(dbRootId);
+  const tablePda = iqlabs.contract.getConnectionTablePda(dbRoot, dmSeed);
   return iqlabs.reader.readTableRows(tablePda, { limit: maxTx }) as Promise<Row[]>;
 }
 

@@ -4,7 +4,7 @@
  * Implements global caching and request deduplication to prevent RPC rate limiting
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useAppConnection } from '@/lib/wallet/use-app-wallet';
 import { PublicKey } from '@solana/web3.js';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
@@ -19,7 +19,6 @@ const CACHE_TTL = 1000 * 60 * 5; // 5 minutes
 
 export function useUserProfile(walletAddress: string | undefined) {
   const { connection } = useAppConnection();
-  const programId = useMemo(() => iqlabs.contract.getProgramId(), []);
 
   const [profile, setProfile] = useState<UserProfile | null>(() => {
     if (!walletAddress) return null;
@@ -77,7 +76,7 @@ export function useUserProfile(walletAddress: string | undefined) {
           } catch {
             return null;
           }
-          const userAccount = iqlabs.contract.getUserPda(userPk, programId);
+          const userAccount = iqlabs.contract.getUserPda(userPk);
 
           // Fetch the User account (cached)
           const accountInfo = await getCachedAccountInfo(connection, userAccount);
@@ -187,7 +186,7 @@ export function useUserProfile(walletAddress: string | undefined) {
     return () => {
       cancelled = true;
     };
-  }, [walletAddress, connection, programId]);
+  }, [walletAddress, connection]);
 
   return { profile, loading, error };
 }

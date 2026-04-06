@@ -16,15 +16,13 @@ import { DmChatModal } from './dm-chat-modal';
 import { AddFriendModal } from './add-friend-modal';
 import { BlockConfirmModal } from './block-confirm-modal';
 import iqlabs from 'iqlabs-sdk';
-import idl from 'iqlabs-sdk/idl/code_in.json';
-import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
-import { sendTx } from 'iqlabs-sdk/dist/sdk/writer/writer_utils';
+import type { SignerInput } from 'iqlabs-sdk/utils';
+import { sendTx } from '@/lib/iqlabs/send-tx';
 import { shortenAddress } from '@/lib/friends/utils';
 import { buildRequestConnectionInstruction } from '@/lib/friends/request-connection';
 import { DM_STATUS } from '@/lib/friends/types';
 import type { Friend } from '@/lib/friends/types';
 import { useFriendAlerts } from '@/lib/friends/use-friend-alerts';
-import { Idl } from '@coral-xyz/anchor';
 import { GlobalStyles } from './theme';
 import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
 import { usePendingMessages } from '@/lib/shared/use-pending-messages';
@@ -58,15 +56,14 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         isInitialized: isUserInitialized,
         error: userInitError,
     } = useUserInit();
-    const programId = useMemo(() => iqlabs.contract.getProgramId(), []);
     const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
     const dbRoot = useMemo(
-        () => iqlabs.contract.getDbRootPda(dbRootId, programId),
-        [dbRootId, programId]
+        () => iqlabs.contract.getDbRootPda(dbRootId),
+        [dbRootId]
     );
     const builder = useMemo(
-        () => iqlabs.contract.createInstructionBuilder(idl as Idl, programId),
-        [programId]
+        () => iqlabs.contract.createInstructionBuilder(),
+        []
     );
     const { friends, loading, error: friendsError, refetch } = useFriends({
         userAddress: userAddress || '',
@@ -618,7 +615,6 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             const { ix } = buildRequestConnectionInstruction({
                 builder,
                 dbRootId,
-                programId,
                 requester: signer.publicKey,
                 receiver,
                 tableName: DM_TABLE_NAME,
@@ -658,8 +654,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         try {
             const connectionTable = iqlabs.contract.getConnectionTablePda(
                 dbRoot,
-                friend.dmSeed,
-                programId
+                friend.dmSeed
             );
             const ix = iqlabs.contract.manageConnectionInstruction(
                 builder,
@@ -697,8 +692,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         try {
             const connectionTable = iqlabs.contract.getConnectionTablePda(
                 dbRoot,
-                friendToBlock.dmSeed,
-                programId
+                friendToBlock.dmSeed
             );
             const ix = iqlabs.contract.manageConnectionInstruction(
                 builder,
@@ -732,8 +726,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         try {
             const connectionTable = iqlabs.contract.getConnectionTablePda(
                 dbRoot,
-                friend.dmSeed,
-                programId
+                friend.dmSeed
             );
             const ix = iqlabs.contract.manageConnectionInstruction(
                 builder,

@@ -3,11 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SystemProgram } from '@solana/web3.js';
 import { Buffer } from 'buffer';
-import type { Idl } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
-import idl from 'iqlabs-sdk/idl/code_in.json';
-import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
-import { ensureUserInitialized, sendTx } from 'iqlabs-sdk/dist/sdk/writer/writer_utils';
+import { sendTx, ensureUserInitialized, type SignerInput } from '@/lib/iqlabs/send-tx';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
 
@@ -24,14 +21,13 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
 
   const resolvedRootId = rootIdOverride ?? ROOT_ID;
   const dbRootId = useMemo(() => toRootBytes(resolvedRootId), [resolvedRootId]);
-  const programId = useMemo(() => iqlabs.contract.getProgramId(), []);
   const builder = useMemo(
-    () => iqlabs.contract.createInstructionBuilder(idl as Idl, programId),
-    [programId]
+    () => iqlabs.contract.createInstructionBuilder(),
+    []
   );
   const rootPda = useMemo(
-    () => iqlabs.contract.getDbRootPda(dbRootId, programId),
-    [dbRootId, programId]
+    () => iqlabs.contract.getDbRootPda(dbRootId),
+    [dbRootId]
   );
 
   const publicKeyRef = useRef(publicKey);
@@ -81,9 +77,9 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
       }
 
       const user = currentPublicKey;
-      const userState = iqlabs.contract.getUserPda(user, programId);
-      const codeAccount = iqlabs.contract.getCodeAccountPda(user, programId);
-      const userInventory = iqlabs.contract.getUserInventoryPda(user, programId);
+      const userState = iqlabs.contract.getUserPda(user);
+      const codeAccount = iqlabs.contract.getCodeAccountPda(user);
+      const userInventory = iqlabs.contract.getUserInventoryPda(user);
 
       await ensureUserInitialized(connection, signer, builder, {
         user,
@@ -106,7 +102,7 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
     } finally {
       setIsInitializing(false);
     }
-  }, [builder, connected, connection, dbRootId, programId, rootPda]);
+  }, [builder, connected, connection, dbRootId, rootPda]);
 
   useEffect(() => {
     if (!publicKey || !connected || !signTransaction || !signAllTransactions) {

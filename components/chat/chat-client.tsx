@@ -3,10 +3,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PublicKey, type Signer } from '@solana/web3.js';
 import { Buffer } from 'buffer';
-import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
+import { BorshAccountsCoder } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
-import idl from 'iqlabs-sdk/idl/code_in.json';
-import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
+import type { SignerInput } from 'iqlabs-sdk/utils';
 import { useUserInit } from '@/lib/iqlabs/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
@@ -54,16 +53,15 @@ export function ChatClient() {
     } = useUserInit();
     const { logout } = usePrivy();
 
-    const programId = useMemo(() => iqlabs.contract.getProgramId(), []);
     const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
-    const coder = useMemo(() => new BorshAccountsCoder(idl as Idl), []);
+    const coder = useMemo(() => new BorshAccountsCoder(iqlabs.contract.IQ_IDL), []);
     const builder = useMemo(
-        () => iqlabs.contract.createInstructionBuilder(idl as Idl, programId),
-        [programId]
+        () => iqlabs.contract.createInstructionBuilder(),
+        []
     );
     const rootPubkey = useMemo(
-        () => iqlabs.contract.getDbRootPda(dbRootId, programId),
-        [dbRootId, programId]
+        () => iqlabs.contract.getDbRootPda(dbRootId),
+        [dbRootId]
     );
 
     /* --------------------------------------------------------------------------
@@ -155,7 +153,6 @@ export function ChatClient() {
         coder,
         connection,
         rootPubkey,
-        programId,
         sortRoomsByTimestamp,
         runWithRpcRateLimit,
         signer,
