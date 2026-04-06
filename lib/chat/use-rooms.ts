@@ -5,8 +5,8 @@ import { PublicKey as Web3PublicKey, SystemProgram } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import { BorshAccountsCoder } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
-import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
-import { sendTx } from 'iqlabs-sdk/dist/sdk/writer/writer_utils';
+import type { SignerInput } from 'iqlabs-sdk/utils';
+import { sendTx } from '@/lib/iqlabs/send-tx';
 import { MESSAGE_COLUMNS } from '@/lib/iqlabs/constants';
 import { decodeBytes, normalizeBytes } from '@/lib/shared/message-helpers';
 import type { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
@@ -28,7 +28,6 @@ type UseRoomsOptions = {
   coder: BorshAccountsCoder;
   connection: Connection;
   rootPubkey: PublicKey;
-  programId: PublicKey;
   sortRoomsByTimestamp: (list: RoomMeta[]) => RoomMeta[];
   runWithRpcRateLimit: typeof runWithRpcRateLimit;
   signer: SignerInput | null;
@@ -42,7 +41,6 @@ export function useRooms({
   coder,
   connection,
   rootPubkey,
-  programId,
   sortRoomsByTimestamp,
   runWithRpcRateLimit,
   signer,
@@ -90,8 +88,8 @@ export function useRooms({
       const seedsWithPdas = uniqueSeeds.map((seed) => ({
         seed,
         seedHex: Buffer.from(seed).toString('hex'),
-        tablePda: iqlabs.contract.getTablePda(rootPubkey, seed, programId),
-        instrPda: iqlabs.contract.getInstructionTablePda(rootPubkey, seed, programId),
+        tablePda: iqlabs.contract.getTablePda(rootPubkey, seed),
+        instrPda: iqlabs.contract.getInstructionTablePda(rootPubkey, seed),
       }));
 
       // Batch fetch all table accounts using getMultipleAccountsInfo
@@ -140,7 +138,7 @@ export function useRooms({
     } finally {
       setRoomsLoading(false);
     }
-  }, [rootStatus, rootAccount, coder, connection, rootPubkey, programId, sortRoomsByTimestamp, runWithRpcRateLimit]);
+  }, [rootStatus, rootAccount, coder, connection, rootPubkey, sortRoomsByTimestamp, runWithRpcRateLimit]);
 
   const lastRootAccountRef = useRef<AccountInfo<Buffer> | null>(null);
   useEffect(() => {
@@ -168,11 +166,10 @@ export function useRooms({
         : undefined;
       const trimmedName = newRoomName.trim();
       const tableSeed = iqlabs.utils.toSeedBytes(trimmedName);
-      const table = iqlabs.contract.getTablePda(rootPubkey, tableSeed, programId);
+      const table = iqlabs.contract.getTablePda(rootPubkey, tableSeed);
       const instructionTable = iqlabs.contract.getInstructionTablePda(
         rootPubkey,
-        tableSeed,
-        programId
+        tableSeed
       );
       const ix = iqlabs.contract.createTableInstruction(
         builder,
@@ -187,11 +184,12 @@ export function useRooms({
         {
           db_root_id: dbRootId,
           table_seed: Buffer.from(tableSeed),
+          table_hint: Buffer.from(trimmedName, 'utf8'),
           table_name: Buffer.from(trimmedName, 'utf8'),
           column_names: MESSAGE_COLUMNS.map((name) => Buffer.from(name, 'utf8')),
           id_col: Buffer.from('id', 'utf8'),
           ext_keys: [],
-          gate_mint_opt: gateMintPubkey ?? null,
+          gate_opt: null,
           writers_opt: null,
         }
       );
@@ -206,7 +204,7 @@ export function useRooms({
     } finally {
       setCreatingRoom(false);
     }
-  }, [signer, newRoomName, newRoomGateMint, connection, loadRooms, rootPubkey, programId, builder, dbRootId]);
+  }, [signer, newRoomName, newRoomGateMint, connection, loadRooms, rootPubkey, builder, dbRootId]);
 
   return {
     rooms,

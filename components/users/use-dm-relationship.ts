@@ -3,10 +3,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Connection } from '@solana/web3.js';
 import { PublicKey } from '@solana/web3.js';
-import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
+import { BorshAccountsCoder } from '@coral-xyz/anchor';
 import { Buffer } from 'buffer';
 import iqlabs from 'iqlabs-sdk';
-import idl from 'iqlabs-sdk/idl/code_in.json';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
 import { STATUS_LABELS, type FriendStatus } from '@/lib/friends/types';
 import { getCachedAccountInfo } from '@/lib/rpc/cache';
@@ -41,10 +40,9 @@ const initialState: DmRelationshipState = {
   isBlocker: false,
 };
 
-const coder = new BorshAccountsCoder(idl as Idl);
-const programId = iqlabs.contract.getProgramId();
+const coder = new BorshAccountsCoder(iqlabs.contract.IQ_IDL);
 const dbRootId = Buffer.from(ROOT_ID, 'utf8');
-const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programId);
+const dbRoot = iqlabs.contract.getDbRootPda(dbRootId);
 
 export function useDmRelationship(
   connection: Connection | null,
@@ -72,7 +70,7 @@ export function useDmRelationship(
 
     const load = async () => {
       const seed = iqlabs.utils.deriveDmSeed(viewerAddress, otherAddress);
-      const dmTablePk = iqlabs.contract.getConnectionTablePda(dbRoot, seed, programId);
+      const dmTablePk = iqlabs.contract.getConnectionTablePda(dbRoot, seed);
 
       setState((prev) => ({
         ...prev,

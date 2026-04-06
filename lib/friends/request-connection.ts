@@ -5,7 +5,6 @@ import iqlabs from 'iqlabs-sdk';
 type RequestConnectionIxParams = {
   builder: ReturnType<typeof iqlabs.contract.createInstructionBuilder>;
   dbRootId: Uint8Array;
-  programId: PublicKey;
   requester: PublicKey;
   receiver: PublicKey;
   tableName: string;
@@ -23,7 +22,6 @@ export function buildRequestConnectionInstruction(
   const {
     builder,
     dbRootId,
-    programId,
     requester,
     receiver,
     tableName,
@@ -31,31 +29,27 @@ export function buildRequestConnectionInstruction(
     idCol,
   } = params;
 
-  const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programId);
+  const dbRoot = iqlabs.contract.getDbRootPda(dbRootId);
   const connectionSeed = iqlabs.utils.deriveDmSeed(requester.toBase58(), receiver.toBase58());
   const connectionSeedBuf = Buffer.from(connectionSeed);
   const connectionTable = iqlabs.contract.getConnectionTablePda(
     dbRoot,
-    connectionSeed,
-    programId
+    connectionSeed
   );
   const instructionTable = iqlabs.contract.getConnectionInstructionTablePda(
     dbRoot,
-    connectionSeed,
-    programId
+    connectionSeed
   );
   const tableRef = iqlabs.contract.getConnectionTableRefPda(
     dbRoot,
-    connectionSeed,
-    programId
+    connectionSeed
   );
   const targetTableRef = iqlabs.contract.getTargetConnectionTableRefPda(
     dbRoot,
-    connectionSeed,
-    programId
+    connectionSeed
   );
-  const requesterUser = iqlabs.contract.getUserPda(requester, programId);
-  const receiverUser = iqlabs.contract.getUserPda(receiver, programId);
+  const requesterUser = iqlabs.contract.getUserPda(requester);
+  const receiverUser = iqlabs.contract.getUserPda(receiver);
   const payloadBody = { dmTable: connectionTable.toBase58() };
 
   const ix = iqlabs.contract.requestConnectionInstruction(

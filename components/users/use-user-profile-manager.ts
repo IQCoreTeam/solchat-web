@@ -3,11 +3,9 @@ import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { getCachedAccountInfo } from '@/lib/rpc/cache';
 import { PublicKey, SystemProgram, type AccountInfo, type Signer } from '@solana/web3.js';
 import { Buffer } from 'buffer';
-import type { Idl } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
-import idl from 'iqlabs-sdk/idl/code_in.json';
-import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
-import { sendTx } from 'iqlabs-sdk/dist/sdk/writer/writer_utils';
+import type { SignerInput } from 'iqlabs-sdk/utils';
+import { sendTx } from '@/lib/iqlabs/send-tx';
 import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
 import { buildRequestConnectionInstruction } from '@/lib/friends/request-connection';
 import type { UserProfile } from './types';
@@ -59,10 +57,9 @@ export function useUserProfileManager() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const programId = useMemo(() => iqlabs.contract.getProgramId(), []);
   const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
-  const dbRoot = useMemo(() => iqlabs.contract.getDbRootPda(dbRootId, programId), [dbRootId, programId]);
-  const builder = useMemo(() => iqlabs.contract.createInstructionBuilder(idl as Idl, programId), [programId]);
+  const dbRoot = useMemo(() => iqlabs.contract.getDbRootPda(dbRootId), [dbRootId]);
+  const builder = useMemo(() => iqlabs.contract.createInstructionBuilder(), []);
 
   const signer = useMemo<SignerInput | null>(() => {
     if (!wallet?.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) return null;
@@ -107,7 +104,7 @@ export function useUserProfileManager() {
     setError(null);
     try {
       const userPk = new PublicKey(userAddress);
-      const userPda = iqlabs.contract.getUserPda(userPk, programId);
+      const userPda = iqlabs.contract.getUserPda(userPk);
 
       const accountInfo = await getCachedAccountInfo(connection, userPda);
       if (!accountInfo?.data) {
@@ -131,7 +128,7 @@ export function useUserProfileManager() {
     } finally {
       setLoading(false);
     }
-  }, [userAddress, connection, programId]);
+  }, [userAddress, connection]);
 
   const loadAllProfiles = useCallback(async () => {
     if (!userAddress) return;
@@ -140,7 +137,7 @@ export function useUserProfileManager() {
     setError(null);
     try {
       const tableSeed = Buffer.from('global_user_list', 'utf8');
-      const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed, programId);
+      const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed);
       const tableInfo = await connection.getAccountInfo(tablePda);
 
       if (!tableInfo) {
@@ -162,7 +159,7 @@ export function useUserProfileManager() {
         return;
       }
 
-      const userPdas = userPubkeys.map(pk => iqlabs.contract.getUserPda(new PublicKey(pk), programId));
+      const userPdas = userPubkeys.map(pk => iqlabs.contract.getUserPda(new PublicKey(pk)));
       const accountInfos = await connection.getMultipleAccountsInfo(userPdas);
 
       const profiles: UserProfile[] = [];
@@ -193,7 +190,7 @@ export function useUserProfileManager() {
     } finally {
       setLoading(false);
     }
-  }, [connection, userAddress, dbRoot, programId]);
+  }, [connection, userAddress, dbRoot]);
 
   const saveProfile = useCallback(
     async (profile: Omit<UserProfile, 'pubkey'>) => {
@@ -202,7 +199,7 @@ export function useUserProfileManager() {
       setError(null);
       try {
         const userPk = new PublicKey(userAddress);
-        const userPda = iqlabs.contract.getUserPda(userPk, programId);
+        const userPda = iqlabs.contract.getUserPda(userPk);
 
         const fullMetadata = JSON.stringify({
           name: profile.name,
@@ -215,7 +212,6 @@ export function useUserProfileManager() {
         const txId = await iqlabs.writer.codeIn(
           { connection, signer },
           [fullMetadata],
-          undefined,
           'profile-metadata'
         );
 
@@ -240,14 +236,13 @@ export function useUserProfileManager() {
         if (addedMetadataThisCall) {
           try {
             const tableSeed = Buffer.from('global_user_list', 'utf8');
-            const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed, programId);
+            const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed);
             const tableInfo = await connection.getAccountInfo(tablePda);
 
             if (!tableInfo) {
               const instructionTable = iqlabs.contract.getInstructionTablePda(
                 dbRoot,
-                tableSeed,
-                programId
+                tableSeed
               );
               const createTableIx = iqlabs.contract.createExtTableInstruction(
                 builder,
@@ -261,11 +256,12 @@ export function useUserProfileManager() {
                 {
                   db_root_id: dbRootId,
                   table_seed: tableSeed,
+                  table_hint: tableSeed,
                   table_name: tableSeed,
                   column_names: [Buffer.from('pubkeyString', 'utf8')],
                   id_col: Buffer.from('pubkeyString', 'utf8'),
                   ext_keys: [],
-                  gate_mint_opt: null,
+                  gate_opt: null,
                   writers_opt: null,
                 }
               );
@@ -305,7 +301,6 @@ export function useUserProfileManager() {
       userAddress,
       connection,
       signer,
-      programId,
       dbRoot,
       dbRootId,
       builder,
@@ -322,7 +317,7 @@ export function useUserProfileManager() {
       await ensureDbRootInitialized(signer.publicKey);
 
       const dmSeed = iqlabs.utils.deriveDmSeed(userAddress, targetPubkey);
-      const dmPda = iqlabs.contract.getConnectionTablePda(dbRoot, dmSeed, programId);
+      const dmPda = iqlabs.contract.getConnectionTablePda(dbRoot, dmSeed);
 
       const existing = await connection.getAccountInfo(dmPda);
       if (existing) throw new Error('Connection already exists :3');
@@ -332,7 +327,6 @@ export function useUserProfileManager() {
         const { ix } = buildRequestConnectionInstruction({
           builder,
           dbRootId,
-          programId,
           requester: signer.publicKey,
           receiver,
           tableName: DM_TABLE_NAME,
@@ -345,7 +339,7 @@ export function useUserProfileManager() {
         throw err;
       }
     },
-    [connection, userAddress, signer, dbRoot, dbRootId, programId, builder, ensureDbRootInitialized]
+    [connection, userAddress, signer, dbRoot, dbRootId, builder, ensureDbRootInitialized]
   );
 
   useEffect(() => {
