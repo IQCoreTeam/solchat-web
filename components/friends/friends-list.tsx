@@ -27,7 +27,7 @@ import type { Friend } from '@/lib/friends/types';
 import { useFriendAlerts } from '@/lib/friends/use-friend-alerts';
 import { Idl } from '@coral-xyz/anchor';
 import { GlobalStyles } from './theme';
-import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
+import { ROOT_ID } from '@/lib/iqlabs/constants';
 import { getUserProfile, notifyGateway } from '@/lib/gateway/reader';
 import { usePendingMessages } from '@/lib/shared/use-pending-messages';
 import { useMessageChannel } from '@/lib/shared/use-message-channel';

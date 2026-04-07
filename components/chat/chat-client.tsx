@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PublicKey, type Signer } from '@solana/web3.js';
-import { Buffer } from 'buffer';
-import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
+import { BorshAccountsCoder } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
 import { IQ_IDL } from 'iqlabs-sdk/contract';
 import type { SignerInput } from 'iqlabs-sdk/utils';

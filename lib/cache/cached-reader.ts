@@ -27,7 +27,7 @@ async function readRowsByTable(
 ): Promise<MessageRow[]> {
   const { rootId, tableName, maxTx } = params;
   const programId = iqlabs.contract.PROGRAM_ID;
-  const dbRootId = Buffer.from(rootId, 'utf8');
+  const dbRootId = iqlabs.utils.toSeedBytes(rootId);
   const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programId);
   const tableSeed = iqlabs.utils.toSeedBytes(tableName);
   const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed, programId);
@@ -39,7 +39,7 @@ async function readRowsByDmSeed(
 ): Promise<MessageRow[]> {
   const { rootId, dmSeed, maxTx } = params;
   const programId = iqlabs.contract.PROGRAM_ID;
-  const dbRootId = Buffer.from(rootId, 'utf8');
+  const dbRootId = iqlabs.utils.toSeedBytes(rootId);
   const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programId);
   const tablePda = iqlabs.contract.getConnectionTablePda(dbRoot, dmSeed, programId);
   return gatewayReadTableMessageRows(tablePda.toBase58(), maxTx) as Promise<MessageRow[]>;

@@ -7,7 +7,7 @@
 
 import { useMemo, useState } from 'react';
 import { Buffer } from 'buffer';
-import { PublicKey } from '@solana/web3.js';
+
 import { useRouter } from 'next/navigation';
 import { useUserProfile } from './use-user-profile';
 import { shorten } from '@/lib/utils/message-utils';
@@ -15,11 +15,11 @@ import { DefaultProfileAvatar } from '@/components/ui/default-profile-avatar';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import iqlabs from 'iqlabs-sdk';
 import { IQ_IDL } from 'iqlabs-sdk/contract';
-import type { Idl } from '@coral-xyz/anchor';
+
 import type { SignerInput } from 'iqlabs-sdk/utils';
 import { sendTx } from '@/lib/iqlabs/send-tx';
 import { DM_STATUS } from '@/lib/friends/types';
-import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
+import { ROOT_ID } from '@/lib/iqlabs/constants';
 import { useDmRelationship } from './use-dm-relationship';
 import { requestDmConnection } from '@/lib/friends/request-connection';
 

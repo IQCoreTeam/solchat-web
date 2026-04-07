@@ -2,16 +2,16 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { PublicKey, SystemProgram, type Signer } from '@solana/web3.js';
 import { Buffer } from 'buffer';
-import type { Idl } from '@coral-xyz/anchor';
+
 import iqlabs from 'iqlabs-sdk';
 import { readTableRows as gatewayReadTableRows, getUserProfile } from '@/lib/gateway/reader';
 import { IQ_IDL } from 'iqlabs-sdk/contract';
 import type { SignerInput } from 'iqlabs-sdk/utils';
 import { sendAndConfirmTx } from '@/lib/utils/send-and-confirm';
-import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
+import { ROOT_ID } from '@/lib/iqlabs/constants';
 import { requestDmConnection } from '@/lib/friends/request-connection';
 import type { UserProfile } from './types';
-import { extractUserMetadata, parseMetadata } from './profile-helpers';
+import { extractUserMetadata } from './profile-helpers';
 import { getOrDeriveKeypair } from '@/lib/crypto/dm-encryption';
 
 export function useUserProfileManager() {
@@ -93,7 +93,7 @@ export function useUserProfileManager() {
     setLoading(true);
     setError(null);
     try {
-      const tableSeed = Buffer.from('global_user_list', 'utf8');
+      const tableSeed = iqlabs.utils.toSeedBytes('global_user_list');
       const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed, programId);
       const tableInfo = await readConnection.getAccountInfo(tablePda);
 
@@ -202,7 +202,7 @@ export function useUserProfileManager() {
 
         if (addedMetadataThisCall) {
           try {
-            const tableSeed = Buffer.from('global_user_list', 'utf8');
+            const tableSeed = iqlabs.utils.toSeedBytes('global_user_list');
             const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed, programId);
             const tableInfo = await readConnection.getAccountInfo(tablePda);
 
