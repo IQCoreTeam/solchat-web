@@ -1,72 +1,69 @@
 /**
- * Gateway-backed reader — tries local gateway first, falls back to SDK/RPC.
+ * Gateway-backed reader — tries multiple gateways with fallback chain,
+ * then falls back to SDK/RPC as last resort.
+ * Same gateway list + pattern as iq-chan (BlockChan).
  */
 
 import iqlabs from 'iqlabs-sdk';
-import { GATEWAY_URL } from '@/lib/constants';
 
-/** Read a single transaction's data via gateway, fallback to SDK. */
-export async function readCodeIn(signature: string): Promise<{ data: string | null; metadata: string }> {
-  if (GATEWAY_URL) {
-    try {
-      const res = await fetch(`${GATEWAY_URL}/data/${signature}`);
-      if (res.ok) {
-        const json = await res.json();
-        return { data: json.data ?? null, metadata: json.metadata ?? '' };
-      }
-      // Gateway responded (e.g. 404 for non-data tx) — try parsing body
-      // to avoid expensive SDK fallback that can 429 on rate-limited RPCs
-      try {
-        const json = await res.json();
-        if (json && 'data' in json) {
-          return { data: json.data ?? null, metadata: json.metadata ?? '' };
-        }
-      } catch { /* body not JSON, fall through to SDK */ }
-    } catch { /* gateway down, fall through */ }
+const PRIMARY_GATEWAY = 'https://gateway.solanainternet.com';
+const AKASH_DIRECT = 'https://fem4pe7sthdm5f9fkhc1fnmpos.ingress.akashprovid.com';
+const BACKUP_GATEWAY = 'https://gateway.iqlabs.dev';
+const GATEWAYS = [PRIMARY_GATEWAY, AKASH_DIRECT, BACKUP_GATEWAY];
+
+function getGateways(): string[] {
+  if (typeof window !== 'undefined') {
+    const custom = localStorage.getItem('solchat_gateway');
+    if (custom) return [custom, ...GATEWAYS];
   }
+  return GATEWAYS;
+}
+
+async function gwFetch(path: string): Promise<Response> {
+  for (const gw of getGateways()) {
+    try {
+      const res = await fetch(`${gw}${path}`);
+      if (res.ok) return res;
+    } catch { continue; }
+  }
+  throw new Error('all gateways unreachable');
+}
+
+export async function readCodeIn(signature: string): Promise<{ data: string | null; metadata: string }> {
+  try {
+    const res = await gwFetch(`/data/${signature}`);
+    const json = await res.json();
+    return { data: json.data ?? null, metadata: json.metadata ?? '' };
+  } catch { /* all gateways failed */ }
   return iqlabs.reader.readCodeIn(signature);
 }
 
-/** Read table rows via gateway, fallback to SDK. */
 export async function readTableRows(tablePda: string, limit = 50): Promise<any[]> {
-  if (GATEWAY_URL) {
-    try {
-      const res = await fetch(`${GATEWAY_URL}/table/${tablePda}/rows?limit=${limit}`);
-      if (res.ok) {
-        const data = await res.json();
-        return Array.isArray(data) ? data : data.rows || [];
-      }
-    } catch { /* gateway down, fall through */ }
-  }
+  try {
+    const res = await gwFetch(`/table/${tablePda}/rows?limit=${limit}`);
+    const data = await res.json();
+    return Array.isArray(data) ? data : data.rows || [];
+  } catch { /* all gateways failed */ }
   return iqlabs.reader.readTableRows(tablePda, { limit });
 }
 
-/** Fetch signature index for a table via gateway, fallback to SDK. */
 export async function getSignaturesForTable(tablePda: string, limit = 200, before?: string): Promise<string[]> {
-  if (GATEWAY_URL) {
-    try {
-      const url = new URL(`${GATEWAY_URL}/table/${tablePda}/index`);
-      if (limit) url.searchParams.set('limit', String(limit));
-      if (before) url.searchParams.set('before', before);
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        const sigs = data.signatures || data;
-        if (Array.isArray(sigs)) return sigs;
-      }
-    } catch { /* gateway down, fall through */ }
-  }
+  try {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (before) params.set('before', before);
+    const res = await gwFetch(`/table/${tablePda}/index?${params}`);
+    const data = await res.json();
+    const sigs = data.signatures || data;
+    if (Array.isArray(sigs)) return sigs;
+  } catch { /* all gateways failed */ }
   return iqlabs.reader.collectSignatures(tablePda, limit);
 }
 
-/** Fetch user profile via gateway, fallback to SDK. */
 export async function getUserProfile(pubkey: string): Promise<Record<string, any> | null> {
-  if (GATEWAY_URL) {
-    try {
-      const res = await fetch(`${GATEWAY_URL}/user/${pubkey}/profile`);
-      if (res.ok) return res.json();
-    } catch { /* gateway down, fall through */ }
-  }
+  try {
+    const res = await gwFetch(`/user/${pubkey}/profile`);
+    return res.json();
+  } catch { /* all gateways failed */ }
   const state = await iqlabs.reader.readUserState(pubkey);
   if (!state?.profileData) return null;
   try {
@@ -76,16 +73,11 @@ export async function getUserProfile(pubkey: string): Promise<Record<string, any
   }
 }
 
-/** Fetch user connections via gateway, fallback to SDK. */
 export async function getUserConnections(pubkey: string): Promise<any[]> {
-  if (GATEWAY_URL) {
-    try {
-      const res = await fetch(`${GATEWAY_URL}/user/${pubkey}/connections`);
-      if (res.ok) {
-        const data = await res.json();
-        return Array.isArray(data) ? data : [];
-      }
-    } catch { /* gateway down, fall through */ }
-  }
+  try {
+    const res = await gwFetch(`/user/${pubkey}/connections`);
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch { /* all gateways failed */ }
   return iqlabs.reader.fetchUserConnections(pubkey, { speed: 'medium' });
 }
