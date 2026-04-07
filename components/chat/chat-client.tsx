@@ -15,6 +15,7 @@ import { useMessageChannel } from '@/lib/shared/use-message-channel';
 import type { FetchConfig } from '@/lib/shared/useMessageIndexLoader';
 import { useAccountSubscription } from '@/lib/shared/use-account-subscription';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
+import { notifyGateway } from '@/lib/gateway/reader';
 import { makeRoomTimestampKey, setLastMessageTimestamp, getLastMessageTimestamp } from '@/lib/cache/message-timestamp-cache';
 import { RpcConfigPrompt } from '@/components/ui/rpc-config-prompt';
 import { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
@@ -305,6 +306,7 @@ export function ChatClient() {
                 // invalidateSignatureCache(selectedRoom.tableAddress);
                 const timestamp = payload.timestamp ?? 0;
                 notifyRoomMessageSent(selectedRoom.seedHex, timestamp, signature);
+                notifyGateway(selectedRoom.tableAddress, signature, signer?.publicKey?.toBase58());
                 // Scroll after DOM updates on next frame
                 requestAnimationFrame(() => scrollToBottom('smooth'));
             },

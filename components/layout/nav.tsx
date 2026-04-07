@@ -72,18 +72,22 @@ const StyledButton = styled.button.attrs({ type: 'button' })`
 `;
 
 const GearButton = styled.button.attrs({ type: 'button', title: 'Gateway Settings' })`
-  background: transparent;
+  background-color: black;
   border: 2px solid #16a34a;
   color: #4ade80;
-  font-size: 1.2rem;
-  width: 36px;
-  height: 36px;
-  display: flex;
+  font-size: 0.875rem;
+  font-family: inherit;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+  height: 100%;
+  padding: 0.5rem;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  padding: 0;
+  transition: border-color 0.2s ease, transform 0.1s ease;
   &:hover { border-color: #4ade80; }
+  &:active { transform: translateY(1px); }
 `;
 
 function GatewaySettings({ open }: { open: boolean }) {
@@ -148,7 +152,7 @@ export function Nav({ onOpenDm }: NavProps) {
           </Link>
           <div className="flex items-center gap-2">
             <WalletButton />
-            <GearButton onClick={() => setSettingsOpen(!settingsOpen)}>&#9881;</GearButton>
+            <GearButton onClick={() => setSettingsOpen(!settingsOpen)}>⚙</GearButton>
           </div>
         </div>
         {!isHomePage && (
@@ -271,7 +275,7 @@ export function Nav({ onOpenDm }: NavProps) {
 
         <div className="flex items-center gap-2">
           <WalletButton />
-          <GearButton onClick={() => setSettingsOpen(!settingsOpen)}>&#9881;</GearButton>
+          <GearButton onClick={() => setSettingsOpen(!settingsOpen)}>⚙</GearButton>
         </div>
       </div>
       <GatewaySettings open={settingsOpen} />

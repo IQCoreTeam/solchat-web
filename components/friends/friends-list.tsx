@@ -28,7 +28,7 @@ import { useFriendAlerts } from '@/lib/friends/use-friend-alerts';
 import { Idl } from '@coral-xyz/anchor';
 import { GlobalStyles } from './theme';
 import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
-import { getUserProfile } from '@/lib/gateway/reader';
+import { getUserProfile, notifyGateway } from '@/lib/gateway/reader';
 import { usePendingMessages } from '@/lib/shared/use-pending-messages';
 import { useMessageChannel } from '@/lib/shared/use-message-channel';
 import { useOnAccountChange } from '@/lib/shared/useOnAccountChange';
@@ -422,6 +422,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                 if (chatFriend?.dmSeedHex) {
                     const timestamp = payload.timestamp ?? 0;
                     notifyDmMessageSent(chatFriend.dmSeedHex, timestamp, signature);
+                    if (chatFriend.tableAddress) notifyGateway(chatFriend.tableAddress, signature, userAddress);
                     const channelKey = makeDmChannelKey(chatFriend.dmSeedHex);
                     applyLocalRows(channelKey, [
                         {

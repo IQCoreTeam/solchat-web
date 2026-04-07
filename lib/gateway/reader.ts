@@ -73,6 +73,16 @@ export async function getUserProfile(pubkey: string): Promise<Record<string, any
   }
 }
 
+/** Notify gateway about a new tx so it caches it instantly. Fire and forget. */
+export function notifyGateway(tablePda: string, txSignature: string, signer?: string): void {
+  const gw = getGateways()[0];
+  fetch(`${gw}/table/${tablePda}/notify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ txSignature, signer }),
+  }).catch(() => {});
+}
+
 export async function getUserConnections(pubkey: string): Promise<any[]> {
   try {
     const res = await gwFetch(`/user/${pubkey}/connections`);
