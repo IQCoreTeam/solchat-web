@@ -12,7 +12,6 @@ import { readTableRows as gatewayReadTableMessageRows } from '@/lib/gateway/read
 import type { MessageRow } from '@/lib/shared/message-helpers';
 import { getCacheManager } from './cache-manager';
 import type { Connection } from '@solana/web3.js';
-import type { Idl } from '@coral-xyz/anchor';
 
 export interface ReaderParams {
   connection: Connection;
