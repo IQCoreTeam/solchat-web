@@ -64,13 +64,23 @@ export function useRooms({
       const rootData = await iqlabs.reader.getTablelistFromRoot(readConnection, ROOT_ID);
       const seedsRaw = rootData.tableSeeds ?? [];
 
+      // SDK returns table hints as hex-encoded UTF-8 strings.
+      // toSeedBytes(string) hashes the string to 32 bytes for PDA derivation.
+      // We must pass the decoded UTF-8 string, not the raw bytes.
+      const entries = seedsRaw
+        .map((entry: any) => {
+          const hintStr = typeof entry === 'string'
+            ? Buffer.from(entry, 'hex').toString('utf8')
+            : Buffer.from(normalizeBytes(entry)).toString('utf8');
+          if (!hintStr) return null;
+          const seed = iqlabs.utils.toSeedBytes(hintStr);
+          return { hint: Buffer.from(hintStr, 'utf8'), seed };
+        })
+        .filter(Boolean) as { hint: Uint8Array; seed: Uint8Array }[];
+
+      // Dedupe by seed hex
       const uniqueSeeds = Array.from(
-        new Map(
-          seedsRaw
-            .map((entry: Uint8Array | number[]) => normalizeBytes(entry))
-            .filter((seed: Uint8Array) => seed.length)
-            .map((seed: Uint8Array) => [Buffer.from(seed).toString('hex'), seed] as const)
-        ).values()
+        new Map(entries.map(e => [Buffer.from(e.seed).toString('hex'), e] as const)).values()
       );
 
       if (uniqueSeeds.length === 0) {
@@ -78,7 +88,7 @@ export function useRooms({
         return;
       }
 
-      const seedsWithPdas = uniqueSeeds.map((seed) => ({
+      const seedsWithPdas = uniqueSeeds.map(({ seed }) => ({
         seed,
         seedHex: Buffer.from(seed).toString('hex'),
         tablePda: iqlabs.contract.getTablePda(rootPubkey, seed, programId),
