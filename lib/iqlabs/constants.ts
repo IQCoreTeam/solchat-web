@@ -1,4 +1,4 @@
-export const ROOT_ID = process.env.NEXT_PUBLIC_ROOT_ID || 'solchat-root';
+export const ROOT_ID = process.env.NEXT_PUBLIC_ROOT_ID || 'solchat';
 
 export const MESSAGE_COLUMNS = ['id', 'text', 'file', 'sender', 'timestamp'] as const;
 
