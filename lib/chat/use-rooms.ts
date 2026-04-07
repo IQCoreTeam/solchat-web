@@ -7,7 +7,7 @@ import { BorshAccountsCoder } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
 import type { SignerInput } from 'iqlabs-sdk/utils';
 import { sendTx } from '@/lib/iqlabs/send-tx';
-import { MESSAGE_COLUMNS } from '@/lib/iqlabs/constants';
+import { MESSAGE_COLUMNS, ROOT_ID } from '@/lib/iqlabs/constants';
 import { decodeBytes, normalizeBytes } from '@/lib/shared/message-helpers';
 import type { RootStatus } from './use-root-account';
 
@@ -60,23 +60,16 @@ export function useRooms({
     setRoomsLoading(true);
     setRoomsError(null);
     try {
-      const decoded = coder.decode('DbRoot', rootAccount.data) as {
-        table_seeds?: (Uint8Array | number[])[];
-        tableSeeds?: (Uint8Array | number[])[];
-        global_table_seeds?: (Uint8Array | number[])[];
-        globalTableSeeds?: (Uint8Array | number[])[];
-      } | null;
-      if (!decoded) throw new Error('Failed to decode root account');
-
-      // Use table_seeds from the root account; exclude global tables
-      const seedsRaw = decoded.table_seeds ?? decoded.tableSeeds ?? [];
+      // Use SDK reader to get table seeds (BorshAccountsCoder doesn't decode them correctly)
+      const rootData = await iqlabs.reader.getTablelistFromRoot(readConnection, ROOT_ID);
+      const seedsRaw = rootData.tableSeeds ?? [];
 
       const uniqueSeeds = Array.from(
         new Map(
           seedsRaw
-            .map((entry) => normalizeBytes(entry))
-            .filter((seed) => seed.length)
-            .map((seed) => [Buffer.from(seed).toString('hex'), seed] as const)
+            .map((entry: Uint8Array | number[]) => normalizeBytes(entry))
+            .filter((seed: Uint8Array) => seed.length)
+            .map((seed: Uint8Array) => [Buffer.from(seed).toString('hex'), seed] as const)
         ).values()
       );
 
@@ -85,7 +78,6 @@ export function useRooms({
         return;
       }
 
-      // Pre-compute all PDAs
       const seedsWithPdas = uniqueSeeds.map((seed) => ({
         seed,
         seedHex: Buffer.from(seed).toString('hex'),
@@ -187,7 +179,8 @@ export function useRooms({
           column_names: MESSAGE_COLUMNS.map((name) => Buffer.from(name, 'utf8')),
           id_col: Buffer.from('id', 'utf8'),
           ext_keys: [],
-          gate_mint_opt: gateMintPubkey ?? null,
+          table_hint: Buffer.from(tableSeed),
+          gate_opt: gateMintPubkey ?? null,
           writers_opt: null,
         }
       );
