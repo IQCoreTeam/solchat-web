@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Connection } from '@solana/web3.js';
 import { PublicKey } from '@solana/web3.js';
 import { BorshAccountsCoder } from '@coral-xyz/anchor';
-import { Buffer } from 'buffer';
 import iqlabs from 'iqlabs-sdk';
+import { IQ_IDL } from 'iqlabs-sdk/contract';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
 import { STATUS_LABELS, type FriendStatus } from '@/lib/friends/types';
 import { getCachedAccountInfo } from '@/lib/rpc/cache';
@@ -40,9 +40,10 @@ const initialState: DmRelationshipState = {
   isBlocker: false,
 };
 
-const coder = new BorshAccountsCoder(iqlabs.contract.IQ_IDL);
-const dbRootId = Buffer.from(ROOT_ID, 'utf8');
-const dbRoot = iqlabs.contract.getDbRootPda(dbRootId);
+const coder = new BorshAccountsCoder(IQ_IDL);
+const programId = iqlabs.contract.PROGRAM_ID;
+const dbRootId = iqlabs.utils.toSeedBytes(ROOT_ID);
+const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programId);
 
 export function useDmRelationship(
   connection: Connection | null,

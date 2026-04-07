@@ -1,7 +1,7 @@
 'use client';
 
 import type { Friend } from '@/lib/friends/types';
-import { shortenAddress } from '@/lib/friends/utils';
+import { shorten as shortenAddress } from '@/lib/utils/message-utils';
 import { Window, WindowHeader, WindowContent, Button } from 'react95';
 
 type BlockConfirmModalProps = {

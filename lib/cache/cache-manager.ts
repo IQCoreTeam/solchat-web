@@ -31,7 +31,7 @@ import {
   type MessageCacheOptions,
   type LoadMessagesResult,
 } from './message-cache';
-import type { MessageRow as Row } from '@/lib/shared/message-helpers';
+import type { MessageRow } from '@/lib/shared/message-helpers';
 import type { ConfirmedSignatureInfo } from '@solana/web3.js';
 
 // ============================================================================
@@ -117,7 +117,7 @@ class CacheManager {
    */
   async loadRoomMessages(
     roomId: string,
-    fetchFn: () => Promise<Row[]>,
+    fetchFn: () => Promise<MessageRow[]>,
     options?: MessageCacheOptions
   ): Promise<LoadMessagesResult> {
     if (!this.isReady()) {
@@ -143,7 +143,7 @@ class CacheManager {
   /**
    * Get cached room messages (no network fetch)
    */
-  async getCachedRoomMessages(roomId: string): Promise<Row[]> {
+  async getCachedRoomMessages(roomId: string): Promise<MessageRow[]> {
     if (!this.isReady()) {
       return [];
     }
@@ -170,7 +170,7 @@ class CacheManager {
   /**
    * Update room message cache
    */
-  async updateRoomCache(roomId: string, messages: Row[], ttl?: number): Promise<void> {
+  async updateRoomCache(roomId: string, messages: MessageRow[], ttl?: number): Promise<void> {
     if (!this.isReady()) {
       return;
     }
@@ -185,7 +185,7 @@ class CacheManager {
   /**
    * Add optimistic message to cache
    */
-  async addOptimisticMessage(roomId: string, message: Row): Promise<void> {
+  async addOptimisticMessage(roomId: string, message: MessageRow): Promise<void> {
     if (!this.isReady()) {
       return;
     }
@@ -215,7 +215,7 @@ class CacheManager {
   /**
    * Sync room messages (force refresh)
    */
-  async syncRoom(roomId: string, fetchFn: () => Promise<Row[]>): Promise<Row[]> {
+  async syncRoom(roomId: string, fetchFn: () => Promise<MessageRow[]>): Promise<MessageRow[]> {
     if (!this.isReady()) {
       return fetchFn();
     }
@@ -238,7 +238,7 @@ class CacheManager {
    */
   async loadDmMessages(
     dmSeedHex: string,
-    fetchFn: () => Promise<Row[]>,
+    fetchFn: () => Promise<MessageRow[]>,
     options?: MessageCacheOptions
   ): Promise<LoadMessagesResult> {
     // DMs use the same caching mechanism as rooms
@@ -248,14 +248,14 @@ class CacheManager {
   /**
    * Get cached DM messages
    */
-  async getCachedDmMessages(dmSeedHex: string): Promise<Row[]> {
+  async getCachedDmMessages(dmSeedHex: string): Promise<MessageRow[]> {
     return this.getCachedRoomMessages(`dm:${dmSeedHex}`);
   }
 
   /**
    * Update DM message cache
    */
-  async updateDmCache(dmSeedHex: string, messages: Row[], ttl?: number): Promise<void> {
+  async updateDmCache(dmSeedHex: string, messages: MessageRow[], ttl?: number): Promise<void> {
     return this.updateRoomCache(`dm:${dmSeedHex}`, messages, ttl);
   }
 
@@ -269,7 +269,7 @@ class CacheManager {
   /**
    * Sync DM messages
    */
-  async syncDm(dmSeedHex: string, fetchFn: () => Promise<Row[]>): Promise<Row[]> {
+  async syncDm(dmSeedHex: string, fetchFn: () => Promise<MessageRow[]>): Promise<MessageRow[]> {
     return this.syncRoom(`dm:${dmSeedHex}`, fetchFn);
   }
 

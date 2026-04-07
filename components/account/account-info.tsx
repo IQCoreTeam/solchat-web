@@ -1,124 +1,68 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
-import { PublicKey } from '@solana/web3.js';
+import { useState } from 'react';
+import { PublicKey, LAMPORTS_PER_SOL, SystemProgram, Transaction } from '@solana/web3.js';
 import { useQuery } from '@tanstack/react-query';
-import { LAMPORTS_PER_SOL, SystemProgram, Transaction } from '@solana/web3.js';
-import { getBonkBalance } from '@/lib/token/bonk';
-import { PrivateEntryCard } from './private-entry-card';
-import { PrivateExitCard } from './private-exit-card';
-import { usePrivyAppWallet, useHasPrivyWallet } from '@/lib/wallet/privy-app-wallet';
-import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import {Window, WindowHeader, WindowContent, Panel, Cutout, Button, Frame} from 'react95';
+import { useWallet } from '@solana/wallet-adapter-react';
+import { Window, WindowHeader, WindowContent, Cutout, Button, Frame } from 'react95';
+import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
+import { useExportWallet } from '@privy-io/react-auth/solana';
+import { shorten } from '@/lib/utils/message-utils';
 
-const CARD_BASE =
-  'rounded-xl border p-6 shadow-md backdrop-blur-sm';
-
-// Inline utility functions for SOL transfers and airdrops
-const lamportsToSol = (lamports: number) => lamports / LAMPORTS_PER_SOL;
-
-const ellipsify = (str: string, chars = 4) => {
-  if (str.length <= chars * 2) return str;
-  return `${str.slice(0, chars)}...${str.slice(-chars)}`;
-};
-
-type WalletExecutor = {
-  publicKey: PublicKey;
-  signTransaction?: (tx: Transaction) => Promise<Transaction>;
-  sendTransaction?: (tx: Transaction) => Promise<string>;
-};
-
-const sendSol = async (connection: any, wallet: WalletExecutor, toPubkey: PublicKey, amount: number) => {
-  const transaction = new Transaction().add(
-    SystemProgram.transfer({
-      fromPubkey: wallet.publicKey,
-      toPubkey,
-      lamports: amount * LAMPORTS_PER_SOL,
-    })
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      size="sm"
+      onClick={() => {
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+      style={{ minWidth: 60, marginLeft: 8 }}
+    >
+      {copied ? 'Copied' : 'Copy'}
+    </Button>
   );
-  transaction.feePayer = wallet.publicKey;
-  transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-
-  if (wallet.sendTransaction) {
-    return await wallet.sendTransaction(transaction);
-  } else if (wallet.signTransaction) {
-    const signed = await wallet.signTransaction(transaction);
-    const txid = await connection.sendRawTransaction(signed.serialize());
-    return txid;
-  }
-  throw new Error('No signing method available');
-};
-
-const requestAirdrop = async (connection: any, pubkey: PublicKey, amount: number) => {
-  const signature = await connection.requestAirdrop(pubkey, amount * LAMPORTS_PER_SOL);
-  await connection.confirmTransaction(signature);
-  return signature;
-};
-
-function formatAddress(value?: string | null, chars = 4) {
-  if (!value) return '';
-  return `${value.slice(0, chars)}…${value.slice(-chars)}`;
 }
 
 export function AccountInfo() {
-  const { connection } = useConnection();
+  const { connection, readConnection } = useAppConnection();
   const wallet = useWallet();
-  const { ready: privyReady, authenticated, login, logout } = usePrivy();
-  const privyWallet = usePrivyAppWallet();
-  const hasPrivyWallet = useHasPrivyWallet();
+  const privyWallet = useAppWallet();
+  const privyAddress = privyWallet.publicKey?.toBase58();
+  const { exportWallet } = useExportWallet();
 
-  const [sendAddress, setSendAddress] = useState('');
   const [sendAmount, setSendAmount] = useState('');
   const [sendingSOL, setSendingSOL] = useState(false);
-  const [requestingAirdrop, setRequestingAirdrop] = useState(false);
   const [message, setMessage] = useState('');
-  const [disconnectingPrivy, setDisconnectingPrivy] = useState(false);
+  const [lastTxId, setLastTxId] = useState('');
 
-  // Debug logging and wallet creation
-  useEffect(() => {
-    console.log('🔍 Privy Debug:', {
-      ready: privyReady,
-      authenticated,
-      hasPrivyWallet,
-      privyWalletAddress: privyWallet?.address,
-      user: authenticated ? 'User exists' : 'No user',
-    });
-
-    if (authenticated && !privyWallet && !hasPrivyWallet) {
-      console.log('⚠️ User authenticated but no Privy Solana wallet found. May need manual creation.');
-    }
-  }, [privyReady, authenticated, privyWallet, hasPrivyWallet]);
-
-  // Fetch SOL balance
   const { data: balance, refetch: refetchBalance } = useQuery({
     queryKey: ['balance', wallet.publicKey?.toBase58()],
     queryFn: async () => {
       if (!wallet.publicKey) return 0;
-      const bal = await connection.getBalance(wallet.publicKey);
-      return lamportsToSol(bal);
+      return (await readConnection.getBalance(wallet.publicKey)) / LAMPORTS_PER_SOL;
     },
     enabled: !!wallet.publicKey,
     refetchInterval: 10000,
   });
 
-  // Fetch BONK balance
-  const { data: bonkBalance, refetch: refetchBonk } = useQuery({
-    queryKey: ['bonk-balance', wallet.publicKey?.toBase58()],
+  const { data: privyBalance, refetch: refetchPrivyBalance } = useQuery({
+    queryKey: ['privy-balance', privyAddress],
     queryFn: async () => {
-      if (!wallet.publicKey) return 0;
-      return await getBonkBalance(connection, wallet.publicKey);
+      if (!privyWallet.publicKey) return 0;
+      return (await readConnection.getBalance(privyWallet.publicKey)) / LAMPORTS_PER_SOL;
     },
-    enabled: !!wallet.publicKey,
+    enabled: !!privyWallet.publicKey,
     refetchInterval: 10000,
   });
 
-  // Fetch token accounts
   const { data: tokens } = useQuery({
     queryKey: ['tokens', wallet.publicKey?.toBase58()],
     queryFn: async () => {
       if (!wallet.publicKey) return [];
-      const accounts = await connection.getParsedTokenAccountsByOwner(wallet.publicKey, {
+      const accounts = await readConnection.getParsedTokenAccountsByOwner(wallet.publicKey, {
         programId: new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),
       });
       return accounts.value.map((acc) => ({
@@ -130,27 +74,31 @@ export function AccountInfo() {
     enabled: !!wallet.publicKey,
   });
 
-  const handleSendSOL = async () => {
-    if (!wallet.publicKey || !wallet.signTransaction || !sendAddress || !sendAmount) {
-      setMessage('Please fill in all fields');
+  const handleFundPrivy = async () => {
+    if (!wallet.publicKey || !wallet.signTransaction || !privyAddress || !sendAmount) {
+      setMessage('Please fill in amount');
       return;
     }
-
     try {
       setSendingSOL(true);
-      setMessage('Sending SOL...');
-
-      const walletExecutor: WalletExecutor = {
-        publicKey: wallet.publicKey,
-        signTransaction: wallet.signTransaction ?? undefined,
-      };
-
-      const txid = await sendSol(connection, walletExecutor, new PublicKey(sendAddress), parseFloat(sendAmount));
-
-      setMessage(`Success! TX: ${ellipsify(txid, 8)}`);
-      setSendAddress('');
+      setLastTxId('');
+      setMessage('Funding Privy wallet...');
+      const tx = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: wallet.publicKey,
+          toPubkey: new PublicKey(privyAddress),
+          lamports: parseFloat(sendAmount) * LAMPORTS_PER_SOL,
+        })
+      );
+      tx.feePayer = wallet.publicKey;
+      tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+      const signed = await wallet.signTransaction(tx);
+      const txid = await connection.sendRawTransaction(signed.serialize());
+      setLastTxId(txid);
+      setMessage(`Success! TX: ${txid.slice(0, 8)}...${txid.slice(-8)}`);
       setSendAmount('');
       refetchBalance();
+      refetchPrivyBalance();
     } catch (error) {
       setMessage(`Error: ${error}`);
     } finally {
@@ -158,375 +106,138 @@ export function AccountInfo() {
     }
   };
 
-  const handleAirdrop = async () => {
-    if (!wallet.publicKey) return;
-
-    try {
-      setRequestingAirdrop(true);
-      setMessage('Requesting airdrop...');
-
-      const txid = await requestAirdrop(connection, wallet.publicKey, 1);
-
-      setMessage(`Success! TX: ${ellipsify(txid, 8)}`);
-      refetchBalance();
-    } catch (error) {
-      setMessage(`Error: ${error}`);
-    } finally {
-      setRequestingAirdrop(false);
-    }
-  };
-
-  const handleCloakSuccess = () => {
-    refetchBalance();
-    refetchBonk();
-  };
-
-  const handleCopyPrivyAddress = async () => {
-    if (!privyWallet?.address) return;
-    try {
-      await navigator.clipboard.writeText(privyWallet.address);
-      setMessage('Privy wallet address copied!');
-    } catch (error) {
-      console.error('Failed to copy address', error);
-    }
-  };
-
-  const handleDisconnectPrivy = async () => {
-    if (!authenticated || disconnectingPrivy) return;
-    setDisconnectingPrivy(true);
-    try {
-      await logout();
-      setMessage('Privy session disconnected. Create a new wallet to continue testing.');
-    } finally {
-      setDisconnectingPrivy(false);
-    }
-  };
-
-  const renderPrivyCard = () => {
-    if (!authenticated) {
-      return (
-        <Window className="w-full">
-          <WindowHeader>
-            [PRIVY SETUP]
-          </WindowHeader>
-          <WindowContent className="space-y-4">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.4em]">Private Treasury</p>
-              <h3 className="text-2xl mt-2">Create your Privy wallet</h3>
-              <p className="text-sm mt-2">
-                Set up a Privy-managed wallet to hold your shielded balance and authenticate with Cloak.
-              </p>
-            </div>
-            <ul className="text-xs space-y-1">
-              <li>✓ Enterprise-grade custody</li>
-              <li>✓ Cross-device continuity</li>
-              <li>✓ Required for Cloak deposits & exits</li>
-            </ul>
-            <Button
-              fullWidth
-              onClick={login}
-              className="    font-bold uppercase tracking-wide"
-              style={{ backgroundColor: '#22c55e', color: '#0a0a0a' }}
-            >
-                Create Privacy Wallet
-            </Button>
-          </WindowContent>
-        </Window>
-      );
-    }
-
-    if (authenticated && !privyWallet) {
-      return (
-        <Window className="w-full">
-          <WindowHeader>
-            <span>[PRIVY SETUP]</span>
-          </WindowHeader>
-          <WindowContent className="space-y-3">
-            <div className="flex items-center gap-3">
-              <span className="h-3 w-3 rounded-full animate-pulse" />
-              <h3 className="text-xl">Provisioning Privy wallet…</h3>
-            </div>
-            <p className="text-sm">
-              Hang tight while we finish creating your embedded wallet. If this takes more than a minute, refresh the
-              page.
-            </p>
-          </WindowContent>
-        </Window>
-      );
-    }
-
-    return (
-      <Window className="w-full">
-        <WindowHeader>
-          <span>[PRIVY TREASURY]</span>
-        </WindowHeader>
-        <WindowContent className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.4em]">Shielded wallet</p>
-              <h3 className="text-2xl mt-1">Privy wallet ready</h3>
-            </div>
-            <span className="px-3 py-1 rounded-full text-xs">CLOAK READY</span>
-          </div>
-          <p className="text-sm leading-relaxed">
-            Fund this wallet privately with Cloak and use it as your shielded identity across SolChat.
-          </p>
-          <Cutout className="p-3 text-xs break-all space-y-1">
-            <p>Privy wallet address</p>
-            <p className="text-sm">{privyWallet?.address}</p>
-          </Cutout>
-          <div className="flex flex-wrap gap-3">
-            <Button
-              onClick={handleCopyPrivyAddress}
-              className="font-semibold uppercase tracking-wide px-4"
-              style={{ backgroundColor: '#22c55e', color: '#0a0a0a' }}
-            >
-              Copy Address
-            </Button>
-            <Button
-              onClick={handleDisconnectPrivy}
-              disabled={disconnectingPrivy}
-              className="font-semibold uppercase tracking-wide px-4"
-              style={{
-                backgroundColor: disconnectingPrivy ? '#cbd5f5' : '#dc2626',
-                color: '#000',
-                opacity: disconnectingPrivy ? 0.6 : 1,
-              }}
-            >
-              {disconnectingPrivy ? 'Disconnecting…' : 'Disconnect Privy'}
-            </Button>
-          </div>
-        </WindowContent>
-      </Window>
-    );
-  };
-
-  // Show connect wallet prompt if not connected
   if (!wallet.connected) {
     return (
       <div className="px-4 py-8 sm:px-6 lg:px-8 max-w-4xl mx-auto">
         <Window className="w-full">
-          <WindowHeader >
+          <WindowHeader>
             <span>[SOLCHAT - ACCOUNT ACCESS]</span>
           </WindowHeader>
-
-          <WindowContent className="space-y-3 ">
-            <h2 className="text-2xl ">Connect your funding wallet to begin</h2>
-
-              <Frame style={{padding: '1rem'}}>
-            <ol className="space-y-2 text-xs ">
-              <li>1. Click “Connect Wallet” in the top-right corner</li>
-              <li>2. Authenticate with Privy to spin up a private wallet</li>
-              <li>3. Return here to fund/exit via Cloak</li>
-            </ol>
-              </Frame>
-              <p className="text-sm ">
-                  SolChat needs your public wallet to fund private deposits and confirm Solana transactions.
-              </p>
+          <WindowContent className="space-y-3">
+            <h2 className="text-2xl">Connect your wallet to begin</h2>
+            <Frame style={{ padding: '1rem' }}>
+              <ol className="space-y-2 text-xs">
+                <li>1. Click &quot;Connect Wallet&quot; in the top-right corner</li>
+                <li>2. Authenticate with Privy to set up your wallet</li>
+                <li>3. Return here to manage your account</li>
+              </ol>
+            </Frame>
           </WindowContent>
         </Window>
       </div>
     );
   }
 
-  const fundingAddress = wallet.publicKey?.toBase58();
-  const privyAddress = privyWallet?.address ?? null;
-
-  const heroPills = [
-    {
-      label: 'Funding Wallet',
-      value: fundingAddress ? formatAddress(fundingAddress) : 'Connect wallet',
-      variant: fundingAddress ? 'ready' : 'warn',
-    },
-    {
-      label: 'Privacy Wallet',
-      value: privyAddress ? formatAddress(privyAddress) : authenticated ? 'Provisioning' : 'Required',
-      variant: privyAddress ? 'ready' : 'warn',
-    },
-    {
-      label: 'Cloak Status',
-      value: privyAddress ? 'Ready' : 'Awaiting Privy',
-      variant: privyAddress ? 'ready' : 'warn',
-    },
-  ] as const;
+  const publicAddress = wallet.publicKey?.toBase58();
 
   return (
-    <div className="px-4 py-6 sm:px-6 lg:px-8 max-w-6xl mx-auto space-y-6">
-      <Window className="w-full shadow-lg">
+    <div className="px-4 py-6 sm:px-6 lg:px-8 max-w-4xl mx-auto space-y-6">
+      <Window className="w-full shadow-md">
         <WindowHeader>
-          <span>[SOLCHAT - ACCOUNT CONSOLE]</span>
+          <span>[PUBLIC WALLET]</span>
         </WindowHeader>
         <WindowContent className="space-y-4">
-          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-            <div className="">
-                <Frame style={{padding: 3}}>
-              <p className="text-[11px] uppercase tracking-[0.4em]">Account Control</p>
-                </Frame>
-              <h1 className="text-3xl sm:text-4xl mt-2">Own your privacy on Solana</h1>
-              <p className="text-sm mt-3 max-w-2xl">
-                Fund your chat wallet with Cloak for a completely private communication experience. Private entry and exit points combined with AES-256-GCM encryption ensure your messages remain secure.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              {heroPills.map((pill) => (
-                <Panel
-                  key={pill.label}
-                  variant="outside"
-                  className="flex min-h-[88px] min-w-[180px] flex-col justify-between rounded-lg border p-4"
-                >
-                  <span className="text-[10px] uppercase tracking-[0.3em] block opacity-80">{pill.label}</span>
-                  <span className="text-lg">{pill.value}</span>
-                </Panel>
-              ))}
-            </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.4em]">Wallet</p>
+            <h3 className="text-2xl mt-1">{shorten(publicAddress ?? '', 6)}</h3>
           </div>
+          <div className="flex items-center gap-2">
+            <Cutout className="p-4 text-xs break-all border flex-1">{publicAddress}</Cutout>
+            {publicAddress && <CopyButton text={publicAddress} />}
+          </div>
+          <Cutout className="border p-4">
+            <p className="text-xs mb-1">SOL balance</p>
+            <p className="text-2xl font-bold">
+              {balance !== undefined ? balance.toFixed(4) : '…'}
+            </p>
+          </Cutout>
         </WindowContent>
       </Window>
 
-      <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-        <section className="space-y-6">
-          {renderPrivyCard()}
-          <PrivateEntryCard privyWallet={privyWallet} onAfterAction={handleCloakSuccess} />
-          <PrivateExitCard privyWallet={privyWallet} onAfterAction={handleCloakSuccess} />
-        </section>
-
-        <section className="space-y-6">
-          <Window className="w-full shadow-md">
-            <WindowHeader>
-              <span>[PUBLIC WALLET]</span>
-            </WindowHeader>
-            <WindowContent className="space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.4em]">Funding wallet</p>
-                  <h3 className="text-2xl mt-1">Public balances</h3>
-                </div>
-                <span className="px-3 py-1 rounded-full text-xs">PUBLIC</span>
-              </div>
-              <Cutout className="p-4 text-xs break-all border">
-                {fundingAddress}
-              </Cutout>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Cutout className="border p-4">
-                  <p className="text-xs mb-1">SOL balance</p>
-                  <p className="text-2xl font-bold">
-                    {balance !== undefined ? balance.toFixed(4) : '…'}
-                  </p>
-                </Cutout>
-                <Cutout className="border p-4">
-                  <p className="text-xs mb-1">BONK balance</p>
-                  <p className="text-2xl font-bold">
-                    {bonkBalance !== undefined ? bonkBalance.toFixed(2) : '…'}
-                  </p>
-                </Cutout>
-              </div>
-              <p className="text-xs">
-                Use this wallet to fund private deposits. Cloak keeps your Privy wallet unlinkable.
-              </p>
-            </WindowContent>
-          </Window>
-
-          <div className={`${CARD_BASE} space-y-4`}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl">Send SOL</h3>
-              <span className="text-xs">Direct transfer</span>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm block mb-2">Recipient address</label>
-                <input
-                  type="text"
-                  value={sendAddress}
-                  onChange={(e) => setSendAddress(e.target.value)}
-                  className="w-full rounded-md border p-3 focus:ring-2 outline-none"
-                  placeholder="Enter Solana address…"
-                />
-              </div>
-              <div>
-                <label className="text-sm block mb-2">Amount (SOL)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={sendAmount}
-                  onChange={(e) => setSendAmount(e.target.value)}
-                  className="w-full rounded-md border p-3 focus:ring-2 outline-none"
-                  placeholder="0.00"
-                />
-              </div>
-              <button
-                onClick={handleSendSOL}
-                disabled={sendingSOL || !sendAddress || !sendAmount}
-                className="w-full py-3 rounded-md disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-                style={{ backgroundColor: '#22c55e', color: '#0a0a0a' }}
-              >
-                {sendingSOL ? 'Sending…' : 'Send SOL'}
-              </button>
-            </div>
+      <Window className="w-full shadow-md">
+        <WindowHeader>
+          <span>[PRIVY WALLET]</span>
+        </WindowHeader>
+        <WindowContent className="space-y-4">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.4em]">Embedded Wallet</p>
+            <h3 className="text-2xl mt-1">{privyAddress ? shorten(privyAddress, 6) : 'Not available'}</h3>
           </div>
-
-          <div className={`${CARD_BASE} space-y-4`}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl">Quick tools</h3>
-              <span className="text-xs">Devnet helpers</span>
+          {privyAddress && (
+            <div className="flex items-center gap-2">
+              <Cutout className="p-4 text-xs break-all border flex-1">{privyAddress}</Cutout>
+              <CopyButton text={privyAddress} />
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <button
-                onClick={handleAirdrop}
-                disabled={requestingAirdrop}
-                className="w-full py-3 rounded-md disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-                style={{ backgroundColor: '#22c55e', color: '#0a0a0a' }}
-              >
-                {requestingAirdrop ? 'Requesting…' : 'Request 1 SOL'}
-              </button>
-              <button
-                onClick={() => {
-                  refetchBalance();
-                  refetchBonk();
-                  setMessage('Balances refreshed');
-                }}
-                className="w-full border py-3 rounded-md transition-colors"
-              >
-                Refresh balances
-              </button>
-            </div>
-            <p className="text-xs">
-              Requests are Devnet-only. Use refresh if airdrops or transfers haven’t reflected yet.
+          )}
+          <Cutout className="border p-4">
+            <p className="text-xs mb-1">SOL balance</p>
+            <p className="text-2xl font-bold">
+              {privyBalance !== undefined ? privyBalance.toFixed(4) : '…'}
             </p>
-          </div>
+          </Cutout>
+          <Button fullWidth onClick={() => exportWallet()}>
+            Export Private Key
+          </Button>
+        </WindowContent>
+      </Window>
 
-          <div className={`${CARD_BASE} space-y-4`}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl">Token accounts</h3>
-              <span className="text-xs">{tokens?.length ?? 0} tracked</span>
-            </div>
-            {tokens && tokens.length > 0 ? (
-              <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
-                {tokens.map((token, index) => (
-                  <div
-                    key={`${token.mint}-${index}`}
-                    className="rounded-lg border p-3 text-sm"
-                  >
-                    <p className="text-[11px] uppercase tracking-[0.3em] mb-1">Mint</p>
-                    <p className="break-all mb-2">{token.mint}</p>
-                    <p>
-                      Balance:{' '}
-                      <span>
-                        {token.amount?.toFixed(token.decimals || 0) || 0}
-                      </span>
-                    </p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm">No SPL token accounts detected for this wallet.</p>
-            )}
+      <Window className="w-full shadow-md">
+        <WindowHeader>
+          <span>[FUND PRIVY WALLET]</span>
+        </WindowHeader>
+        <WindowContent className="space-y-4">
+          <div>
+            <label className="text-sm block mb-2">Recipient (Privy wallet)</label>
+            <Cutout className="p-3 text-xs break-all border">{privyAddress || 'Privy wallet not available'}</Cutout>
           </div>
-        </section>
-      </div>
+          <div>
+            <label className="text-sm block mb-2">Amount (SOL)</label>
+            <input
+              type="number"
+              step="0.01"
+              value={sendAmount}
+              onChange={(e) => setSendAmount(e.target.value)}
+              className="w-full rounded-md border p-3 focus:ring-2 outline-none"
+              placeholder="0.00"
+            />
+          </div>
+          <Button
+            fullWidth
+            onClick={handleFundPrivy}
+            disabled={sendingSOL || !privyAddress || !sendAmount}
+          >
+            {sendingSOL ? 'Funding…' : 'Fund Privy Wallet'}
+          </Button>
+        </WindowContent>
+      </Window>
+
+      {tokens && tokens.length > 0 && (
+        <Window className="w-full shadow-md">
+          <WindowHeader>
+            <span>[TOKEN ACCOUNTS] ({tokens.length})</span>
+          </WindowHeader>
+          <WindowContent className="space-y-3 max-h-64 overflow-y-auto">
+            {tokens.map((token, i) => (
+              <div key={`${token.mint}-${i}`} className="rounded-lg border p-3 text-sm">
+                <p className="text-[11px] uppercase tracking-[0.3em] mb-1">Mint</p>
+                <p className="break-all mb-2">{token.mint}</p>
+                <p>Balance: {token.amount?.toFixed(token.decimals || 0) || 0}</p>
+              </div>
+            ))}
+          </WindowContent>
+        </Window>
+      )}
 
       {message && (
-        <div className={`${CARD_BASE}`}>
+        <div className="rounded-xl border p-6 shadow-md backdrop-blur-sm space-y-2">
           <p className="text-sm">{message}</p>
+          {lastTxId && (
+            <Button
+              onClick={() => window.open(`https://solscan.io/tx/${lastTxId}`, '_blank')}
+            >
+              View on Solscan
+            </Button>
+          )}
         </div>
       )}
     </div>

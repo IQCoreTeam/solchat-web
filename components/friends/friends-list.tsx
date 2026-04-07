@@ -16,15 +16,18 @@ import { DmChatModal } from './dm-chat-modal';
 import { AddFriendModal } from './add-friend-modal';
 import { BlockConfirmModal } from './block-confirm-modal';
 import iqlabs from 'iqlabs-sdk';
+import { IQ_IDL } from 'iqlabs-sdk/contract';
 import type { SignerInput } from 'iqlabs-sdk/utils';
 import { sendTx } from '@/lib/iqlabs/send-tx';
-import { shortenAddress } from '@/lib/friends/utils';
-import { buildRequestConnectionInstruction } from '@/lib/friends/request-connection';
+import { sendAndConfirmTx } from '@/lib/utils/send-and-confirm';
+import { shorten as shortenAddress } from '@/lib/utils/message-utils';
+import { requestDmConnection } from '@/lib/friends/request-connection';
 import { DM_STATUS } from '@/lib/friends/types';
 import type { Friend } from '@/lib/friends/types';
 import { useFriendAlerts } from '@/lib/friends/use-friend-alerts';
 import { GlobalStyles } from './theme';
-import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
+import { ROOT_ID } from '@/lib/iqlabs/constants';
+import { getUserProfile, notifyGateway } from '@/lib/gateway/reader';
 import { usePendingMessages } from '@/lib/shared/use-pending-messages';
 import { useMessageChannel } from '@/lib/shared/use-message-channel';
 import { useOnAccountChange } from '@/lib/shared/useOnAccountChange';
@@ -38,6 +41,8 @@ import { extractErrorLogs } from '@/lib/utils/error-utils';
 import { createDmFetcher } from '@/lib/friends/dm-fetcher';
 import { useWebSocketChannel } from '@/lib/shared/use-websocket-channel';
 import { useScrollTracker } from '@/lib/shared/use-scroll-tracker';
+import { useDmKeys } from '@/lib/crypto/use-dm-keys';
+import { encryptDmPayload } from '@/lib/crypto/dm-encryption';
 type Tab = 'all' | 'pending' | 'blocked';
 
 type FriendsListProps = {
@@ -48,7 +53,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     /* --------------------------------------------------------------------------
      * Context & External Hooks
      * -------------------------------------------------------------------------- */
-    const { connection, endpointSource, setCustomRpcEndpoint } = useAppConnection();
+    const { connection, readConnection, endpointSource, setCustomRpcEndpoint } = useAppConnection();
     const wallet = useAppWallet();
     const router = useRouter();
     const userAddress = wallet?.publicKey?.toBase58() ?? null;
@@ -56,18 +61,30 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         isInitialized: isUserInitialized,
         error: userInitError,
     } = useUserInit();
-    const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
+    const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
+    const dbRootId = useMemo(() => iqlabs.utils.toSeedBytes(ROOT_ID), []);
     const dbRoot = useMemo(
         () => iqlabs.contract.getDbRootPda(dbRootId),
         [dbRootId]
     );
     const builder = useMemo(
-        () => iqlabs.contract.createInstructionBuilder(),
-        []
+        () => iqlabs.contract.createInstructionBuilder(IQ_IDL, programId),
+        [programId]
     );
     const { friends, loading, error: friendsError, refetch } = useFriends({
         userAddress: userAddress || '',
     });
+    const dmKeys = useDmKeys();
+
+    // Derive encryption keys when wallet is ready
+    const encKeyPublishedRef = useRef(false);
+    useEffect(() => {
+        if (!wallet.connected) {
+            encKeyPublishedRef.current = false;
+            return;
+        }
+        dmKeys.deriveKeys();
+    }, [wallet.connected, dmKeys.deriveKeys]);
 
     /* --------------------------------------------------------------------------
      * Local State
@@ -128,6 +145,67 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         };
     }, [wallet]);
     const hasWallet = Boolean(wallet?.publicKey);
+
+    // Encryption status: 'deriving' | 'publishing' | 'ready' | 'error' | 'off'
+    const [encStatus, setEncStatus] = useState<'deriving' | 'publishing' | 'ready' | 'error' | 'off'>('off');
+    const [encError, setEncError] = useState<string | null>(null);
+
+    // Auto-publish encryption pubkey to on-chain profile if not already there
+    useEffect(() => {
+        if (!dmKeys.ready || !dmKeys.pubHex || !signer || !userAddress || encKeyPublishedRef.current) {
+            if (wallet.connected && !dmKeys.ready) setEncStatus('deriving');
+            return;
+        }
+        // Prevent concurrent attempts
+        encKeyPublishedRef.current = true;
+
+        (async () => {
+            try {
+                const existing = await getUserProfile(userAddress);
+
+                if (existing?.encryptionPubKey === dmKeys.pubHex) {
+                    console.log('[dmKeys] Encryption key already published');
+                    setEncStatus('ready');
+                    return;
+                }
+
+                setEncStatus('publishing');
+                const profileData = {
+                    name: existing?.name || '',
+                    bio: existing?.bio || '',
+                    profilePicture: existing?.profilePicture || '',
+                    encryptionPubKey: dmKeys.pubHex,
+                };
+                const txId = await iqlabs.writer.codeIn(
+                    { connection, signer: signer as any },
+                    [JSON.stringify(profileData)],
+                    'profile-metadata',
+                    0,
+                );
+                if (!txId) {
+                    setEncStatus('error');
+                    setEncError('Failed to store encryption key on-chain');
+                    return;
+                }
+
+                await iqlabs.writer.updateUserMetadata(
+                    connection,
+                    signer as any,
+                    dbRootId,
+                    txId,
+                );
+                console.log('[dmKeys] Encryption key auto-published to on-chain profile');
+                setEncStatus('ready');
+            } catch (err) {
+                // Reset ref so it can retry on next render
+                encKeyPublishedRef.current = false;
+                console.warn('[dmKeys] Failed to auto-publish encryption key:', err);
+                const msg = err instanceof Error ? err.message : 'Unknown error';
+                setEncStatus('error');
+                setEncError(msg);
+            }
+        })();
+    }, [dmKeys.ready, dmKeys.pubHex, signer, userAddress, connection, readConnection, programId, dbRootId]);
 
     /* --------------------------------------------------------------------------
      * Derived Values
@@ -256,8 +334,9 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                 endpointSource,
                 friendMapBySeedHex,
                 setChatSlowRpcMode,
+                signMessage: wallet.signMessage,
             }),
-        [userAddress, endpointSource, friendMapBySeedHex, setChatSlowRpcMode]
+        [userAddress, endpointSource, friendMapBySeedHex, setChatSlowRpcMode, wallet.signMessage]
     );
 
     const {
@@ -277,7 +356,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             channelKey: selectedDmChannelKey,
             resolveChannelMeta,
             fetcher,
-            connection,
+            connection: readConnection,
             endpointSource,
             roomRateLimit: DM_RATE_LIMIT,
             onRowsApplied: ({ channelKey, seedHex, rows }) => {
@@ -313,14 +392,23 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                 }
                 return { ok: true };
             },
-            writeMessage: (payload) =>
-                iqlabs.writer.writeConnectionRow(
+            writeMessage: async (payload) => {
+                const recipientAddress = chatFriend!.address;
+                const recipientPubKey = await dmKeys.getRecipientPubKey(recipientAddress);
+                let data: string;
+                if (recipientPubKey && dmKeys.pubHex) {
+                    data = await encryptDmPayload(dmKeys.pubHex, recipientPubKey, payload);
+                } else {
+                    data = JSON.stringify(payload);
+                }
+                return iqlabs.writer.writeConnectionRow(
                     connection,
                     signer! as Signer,
                     dbRootId,
                     chatFriend!.dmSeed,
-                    JSON.stringify(payload)
-                ),
+                    data
+                );
+            },
             onBeforeSend: (_payload, timestamp) => {
                 if (chatFriend?.dmSeedHex) {
                     const dmKey = chatFriend.dmSeedHex;
@@ -333,11 +421,13 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                 if (chatFriend?.dmSeedHex) {
                     const timestamp = payload.timestamp ?? 0;
                     notifyDmMessageSent(chatFriend.dmSeedHex, timestamp, signature);
+                    if (chatFriend.tableAddress) notifyGateway(chatFriend.tableAddress, signature, userAddress);
                     const channelKey = makeDmChannelKey(chatFriend.dmSeedHex);
                     applyLocalRows(channelKey, [
                         {
                             ...payload,
                             status: 'confirmed',
+                            signature,
                             room: chatFriend.dmSeedHex,
                         },
                     ]);
@@ -544,7 +634,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     };
 
     useOnAccountChange({
-        connection,
+        connection: readConnection,
         account: getChatFriendTableAccount(),
         handler: () => {
             void handleDmLogs();
@@ -610,18 +700,12 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             }
         }
 
+        if (!isUserInitialized) {
+            throw new Error('Account not fully initialized. Please wait for setup to complete.');
+        }
+
         try {
-            const receiver = new PublicKey(friendAddress.trim());
-            const { ix } = buildRequestConnectionInstruction({
-                builder,
-                dbRootId,
-                requester: signer.publicKey,
-                receiver,
-                tableName: DM_TABLE_NAME,
-                columns: MESSAGE_COLUMNS,
-                idCol: 'id',
-            });
-            await sendTx(connection, signer, ix);
+            await requestDmConnection(connection, signer, ROOT_ID, signer.publicKey.toBase58(), friendAddress.trim());
             await refetch();
             setAddFriendModalOpen(false);
         } catch (err) {
@@ -669,7 +753,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                     new_status: DM_STATUS.APPROVED,
                 }
             );
-            await sendTx(connection, signer, ix);
+            await sendAndConfirmTx(connection, readConnection, signer, ix);
             await refetch();
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to approve friend';
@@ -707,7 +791,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                     new_status: DM_STATUS.BLOCKED,
                 }
             );
-            await sendTx(connection, signer, ix);
+            await sendAndConfirmTx(connection, readConnection, signer, ix);
             await refetch();
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to block friend';
@@ -868,6 +952,8 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                 isUserInitialized={isUserInitialized}
                 userInitError={userInitError}
                 inputRef={chatInputRef}
+                encStatus={encStatus}
+                encError={encError}
             />
 
             <AddFriendModal

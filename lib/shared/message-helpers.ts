@@ -22,9 +22,6 @@ export type MessageRow = {
   room?: string;
 };
 
-// Alias for backward compatibility with cache layer
-export type Row = MessageRow;
-
 export function normalizeBytes(value: any): Uint8Array {
   if (!value) return new Uint8Array();
   if (value instanceof Uint8Array) return value;

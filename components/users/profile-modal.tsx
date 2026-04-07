@@ -7,19 +7,21 @@
 
 import { useMemo, useState } from 'react';
 import { Buffer } from 'buffer';
-import { PublicKey } from '@solana/web3.js';
+
 import { useRouter } from 'next/navigation';
 import { useUserProfile } from './use-user-profile';
 import { shorten } from '@/lib/utils/message-utils';
 import { DefaultProfileAvatar } from '@/components/ui/default-profile-avatar';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import iqlabs from 'iqlabs-sdk';
+import { IQ_IDL } from 'iqlabs-sdk/contract';
+
 import type { SignerInput } from 'iqlabs-sdk/utils';
 import { sendTx } from '@/lib/iqlabs/send-tx';
 import { DM_STATUS } from '@/lib/friends/types';
-import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
+import { ROOT_ID } from '@/lib/iqlabs/constants';
 import { useDmRelationship } from './use-dm-relationship';
-import { buildRequestConnectionInstruction } from '@/lib/friends/request-connection';
+import { requestDmConnection } from '@/lib/friends/request-connection';
 
 interface ProfileModalProps {
   walletAddress: string;
@@ -32,7 +34,7 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
   const [imageError, setImageError] = useState(false);
   const [copied, setCopied] = useState(false);
   const wallet = useAppWallet();
-  const { connection } = useAppConnection();
+  const { connection, readConnection } = useAppConnection();
   const signer = useMemo<SignerInput | null>(() => {
     if (!wallet.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) {
       return null;
@@ -43,14 +45,15 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
       signAllTransactions: wallet.signAllTransactions.bind(wallet),
     };
   }, [wallet]);
-  const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
+  const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
+  const dbRootId = useMemo(() => iqlabs.utils.toSeedBytes(ROOT_ID), []);
   const dbRoot = useMemo(
     () => iqlabs.contract.getDbRootPda(dbRootId),
     [dbRootId]
   );
   const builder = useMemo(
-    () => iqlabs.contract.createInstructionBuilder(),
-    []
+    () => iqlabs.contract.createInstructionBuilder(IQ_IDL, programId),
+    [programId]
   );
   const viewerAddress = wallet.publicKey?.toBase58() || null;
   const isOwnProfile = viewerAddress === walletAddress;
@@ -67,7 +70,7 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
     isBlocker,
     dmSeed,
     refresh: refreshDmState,
-  } = useDmRelationship(connection, viewerAddress, walletAddress);
+  } = useDmRelationship(readConnection, viewerAddress, walletAddress);
   const handleCopyWallet = async () => {
     try {
       await navigator.clipboard.writeText(walletAddress);
@@ -108,17 +111,7 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
     setRequestError(null);
     setRequestStatus('sending');
     try {
-      const receiver = new PublicKey(walletAddress.trim());
-      const { ix } = buildRequestConnectionInstruction({
-        builder,
-        dbRootId,
-        requester: wallet.publicKey,
-        receiver,
-        tableName: DM_TABLE_NAME,
-        columns: MESSAGE_COLUMNS,
-        idCol: 'id',
-      });
-      await sendTx(connection, signer, ix);
+      await requestDmConnection(connection, signer, ROOT_ID, wallet.publicKey.toBase58(), walletAddress.trim());
       setRequestStatus('success');
       refreshDmState();
     } catch (err) {

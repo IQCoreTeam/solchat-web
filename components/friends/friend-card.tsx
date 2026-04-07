@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import type { Friend } from '@/lib/friends/types';
-import { shortenAddress } from '@/lib/friends/utils';
+import { shorten as shortenAddress } from '@/lib/utils/message-utils';
 import { Frame, Button } from 'react95';
 import { useUserProfile } from '@/components/users/use-user-profile';
 import { ProfileModal } from '@/components/users/profile-modal';

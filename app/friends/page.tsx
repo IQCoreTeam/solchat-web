@@ -7,11 +7,11 @@ import { FriendsList } from '@/components/friends/friends-list';
 import { Nav } from '@/components/layout/nav';
 
 type FriendsPageProps = {
-  searchParams: { [key: string]: string | string[] | undefined };
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 };
 
-export default function FriendsPage({ searchParams }: FriendsPageProps) {
-  const params = searchParams;
+export default async function FriendsPage({ searchParams }: FriendsPageProps) {
+  const params = await searchParams;
   const dm = typeof params?.dm === 'string' ? params.dm : undefined;
 
   return (
