@@ -46,7 +46,7 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
     };
   }, [wallet]);
   const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
-  const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
+  const dbRootId = useMemo(() => iqlabs.utils.toSeedBytes(ROOT_ID), []);
   const dbRoot = useMemo(
     () => iqlabs.contract.getDbRootPda(dbRootId, programId),
     [dbRootId, programId]

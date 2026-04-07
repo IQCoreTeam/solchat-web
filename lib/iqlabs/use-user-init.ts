@@ -12,7 +12,7 @@ import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
 
 const toRootBytes = (value: string | Uint8Array) =>
-  value instanceof Uint8Array ? value : Buffer.from(value, 'utf8');
+  value instanceof Uint8Array ? value : iqlabs.utils.toSeedBytes(value);
 
 export function useUserInit(rootIdOverride?: string | Uint8Array) {
   const { connection, readConnection } = useAppConnection();

@@ -43,7 +43,7 @@ const initialState: DmRelationshipState = {
 
 const coder = new BorshAccountsCoder(IQ_IDL);
 const programId = iqlabs.contract.PROGRAM_ID;
-const dbRootId = Buffer.from(ROOT_ID, 'utf8');
+const dbRootId = iqlabs.utils.toSeedBytes(ROOT_ID);
 const dbRoot = iqlabs.contract.getDbRootPda(dbRootId, programId);
 
 export function useDmRelationship(
