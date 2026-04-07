@@ -1,6 +1,6 @@
 import type { Connection, TransactionInstruction } from '@solana/web3.js';
-import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
-import { sendTx } from 'iqlabs-sdk/dist/sdk/writer/writer_utils';
+import type { SignerInput } from 'iqlabs-sdk/utils';
+import { sendTx } from '@/lib/iqlabs/send-tx';
 
 /**
  * Send a transaction and verify it succeeded on-chain.

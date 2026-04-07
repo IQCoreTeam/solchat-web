@@ -5,8 +5,8 @@ import { SystemProgram } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import type { Idl } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
-import idl from 'iqlabs-sdk/idl/code_in.json';
-import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
+import { IQ_IDL } from 'iqlabs-sdk/contract';
+import type { SignerInput } from 'iqlabs-sdk/utils';
 import { sendAndConfirmTx } from '@/lib/utils/send-and-confirm';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
@@ -26,7 +26,7 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
   const dbRootId = useMemo(() => toRootBytes(resolvedRootId), [resolvedRootId]);
   const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
   const builder = useMemo(
-    () => iqlabs.contract.createInstructionBuilder(idl as Idl, programId),
+    () => iqlabs.contract.createInstructionBuilder(IQ_IDL, programId),
     [programId]
   );
   const rootPda = useMemo(

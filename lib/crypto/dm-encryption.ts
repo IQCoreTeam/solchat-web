@@ -13,8 +13,8 @@ import {
   multiEncrypt,
   multiDecrypt,
   bytesToHex,
-} from 'iqlabs-sdk/dist/sdk/crypto';
-import type { MultiEncryptResult } from 'iqlabs-sdk/dist/sdk/crypto';
+} from 'iqlabs-sdk/crypto';
+import type { MultiEncryptResult } from 'iqlabs-sdk/crypto';
 
 export type EncryptedDmPayload = {
   enc: 'dh-multi';

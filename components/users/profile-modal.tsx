@@ -14,14 +14,14 @@ import { shorten } from '@/lib/utils/message-utils';
 import { DefaultProfileAvatar } from '@/components/ui/default-profile-avatar';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import iqlabs from 'iqlabs-sdk';
-import idl from 'iqlabs-sdk/idl/code_in.json';
+import { IQ_IDL } from 'iqlabs-sdk/contract';
 import type { Idl } from '@coral-xyz/anchor';
-import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
-import { sendTx } from 'iqlabs-sdk/dist/sdk/writer/writer_utils';
+import type { SignerInput } from 'iqlabs-sdk/utils';
+import { sendTx } from '@/lib/iqlabs/send-tx';
 import { DM_STATUS } from '@/lib/friends/types';
 import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
 import { useDmRelationship } from './use-dm-relationship';
-import { buildRequestConnectionInstruction } from '@/lib/friends/request-connection';
+import { requestDmConnection } from '@/lib/friends/request-connection';
 
 interface ProfileModalProps {
   walletAddress: string;
@@ -52,7 +52,7 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
     [dbRootId, programId]
   );
   const builder = useMemo(
-    () => iqlabs.contract.createInstructionBuilder(idl as Idl, programId),
+    () => iqlabs.contract.createInstructionBuilder(IQ_IDL, programId),
     [programId]
   );
   const viewerAddress = wallet.publicKey?.toBase58() || null;
@@ -111,17 +111,7 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
     setRequestError(null);
     setRequestStatus('sending');
     try {
-      const receiver = new PublicKey(walletAddress.trim());
-      const { ix } = buildRequestConnectionInstruction({
-        dbRootId,
-        programId,
-        requester: wallet.publicKey,
-        receiver,
-        tableName: DM_TABLE_NAME,
-        columns: MESSAGE_COLUMNS,
-        idCol: 'id',
-      });
-      await sendTx(connection, signer, ix);
+      await requestDmConnection(connection, signer, ROOT_ID, wallet.publicKey.toBase58(), walletAddress.trim());
       setRequestStatus('success');
       refreshDmState();
     } catch (err) {

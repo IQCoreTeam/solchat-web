@@ -5,11 +5,11 @@ import { Buffer } from 'buffer';
 import type { Idl } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
 import { readTableRows as gatewayReadTableRows, getUserProfile } from '@/lib/gateway/reader';
-import idl from 'iqlabs-sdk/idl/code_in.json';
-import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
+import { IQ_IDL } from 'iqlabs-sdk/contract';
+import type { SignerInput } from 'iqlabs-sdk/utils';
 import { sendAndConfirmTx } from '@/lib/utils/send-and-confirm';
 import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
-import { buildRequestConnectionInstruction } from '@/lib/friends/request-connection';
+import { requestDmConnection } from '@/lib/friends/request-connection';
 import type { UserProfile } from './types';
 import { extractUserMetadata, parseMetadata } from './profile-helpers';
 import { getOrDeriveKeypair } from '@/lib/crypto/dm-encryption';
@@ -27,7 +27,7 @@ export function useUserProfileManager() {
   const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
   const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
   const dbRoot = useMemo(() => iqlabs.contract.getDbRootPda(dbRootId, programId), [dbRootId, programId]);
-  const builder = useMemo(() => iqlabs.contract.createInstructionBuilder(idl as Idl, programId), [programId]);
+  const builder = useMemo(() => iqlabs.contract.createInstructionBuilder(IQ_IDL, programId), [programId]);
 
   const signer = useMemo<SignerInput | null>(() => {
     if (!wallet?.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) return null;
@@ -293,17 +293,7 @@ export function useUserProfileManager() {
       if (existing) throw new Error('Connection already exists :3');
 
       try {
-        const receiver = new PublicKey(targetPubkey.trim());
-        const { ix } = buildRequestConnectionInstruction({
-          dbRootId,
-          programId,
-          requester: signer.publicKey,
-          receiver,
-          tableName: DM_TABLE_NAME,
-          columns: MESSAGE_COLUMNS,
-          idCol: 'id',
-        });
-        await sendAndConfirmTx(connection, readConnection, signer, ix);
+        await requestDmConnection(connection, signer, ROOT_ID, userAddress, targetPubkey.trim());
       } catch (err) {
         console.error('[UserProfileManager] requestDm error', err);
         throw err;

@@ -5,8 +5,8 @@ import { PublicKey, type Signer } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
-import idl from 'iqlabs-sdk/idl/code_in.json';
-import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
+import { IQ_IDL } from 'iqlabs-sdk/contract';
+import type { SignerInput } from 'iqlabs-sdk/utils';
 import { useUserInit } from '@/lib/iqlabs/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { usePrivy } from '@privy-io/react-auth';
@@ -56,9 +56,9 @@ export function ChatClient() {
 
     const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
     const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
-    const coder = useMemo(() => new BorshAccountsCoder(idl as Idl), []);
+    const coder = useMemo(() => new BorshAccountsCoder(IQ_IDL), []);
     const builder = useMemo(
-        () => iqlabs.contract.createInstructionBuilder(idl as Idl, programId),
+        () => iqlabs.contract.createInstructionBuilder(IQ_IDL, programId),
         [programId]
     );
     const rootPubkey = useMemo(

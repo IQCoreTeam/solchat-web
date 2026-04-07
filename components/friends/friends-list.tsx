@@ -16,12 +16,12 @@ import { DmChatModal } from './dm-chat-modal';
 import { AddFriendModal } from './add-friend-modal';
 import { BlockConfirmModal } from './block-confirm-modal';
 import iqlabs from 'iqlabs-sdk';
-import idl from 'iqlabs-sdk/idl/code_in.json';
-import type { SignerInput } from 'iqlabs-sdk/dist/sdk/utils/wallet';
-import { sendTx } from 'iqlabs-sdk/dist/sdk/writer/writer_utils';
+import { IQ_IDL } from 'iqlabs-sdk/contract';
+import type { SignerInput } from 'iqlabs-sdk/utils';
+import { sendTx } from '@/lib/iqlabs/send-tx';
 import { sendAndConfirmTx } from '@/lib/utils/send-and-confirm';
 import { shorten as shortenAddress } from '@/lib/utils/message-utils';
-import { buildRequestConnectionInstruction } from '@/lib/friends/request-connection';
+import { requestDmConnection } from '@/lib/friends/request-connection';
 import { DM_STATUS } from '@/lib/friends/types';
 import type { Friend } from '@/lib/friends/types';
 import { useFriendAlerts } from '@/lib/friends/use-friend-alerts';
@@ -69,7 +69,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         [dbRootId, programId]
     );
     const builder = useMemo(
-        () => iqlabs.contract.createInstructionBuilder(idl as Idl, programId),
+        () => iqlabs.contract.createInstructionBuilder(IQ_IDL, programId),
         [programId]
     );
     const { friends, loading, error: friendsError, refetch } = useFriends({
@@ -705,17 +705,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         }
 
         try {
-            const receiver = new PublicKey(friendAddress.trim());
-            const { ix } = buildRequestConnectionInstruction({
-                dbRootId,
-                programId,
-                requester: signer.publicKey,
-                receiver,
-                tableName: DM_TABLE_NAME,
-                columns: MESSAGE_COLUMNS,
-                idCol: 'id',
-            });
-            await sendAndConfirmTx(connection, readConnection, signer, ix);
+            await requestDmConnection(connection, signer, ROOT_ID, signer.publicKey.toBase58(), friendAddress.trim());
             await refetch();
             setAddFriendModalOpen(false);
         } catch (err) {
