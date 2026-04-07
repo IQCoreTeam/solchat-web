@@ -7,9 +7,8 @@ import { BorshAccountsCoder } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
 import type { SignerInput } from 'iqlabs-sdk/utils';
 import { sendTx } from '@/lib/iqlabs/send-tx';
-import { MESSAGE_COLUMNS } from '@/lib/iqlabs/constants';
+import { MESSAGE_COLUMNS, ROOT_ID } from '@/lib/iqlabs/constants';
 import { decodeBytes, normalizeBytes } from '@/lib/shared/message-helpers';
-import type { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
 import type { RootStatus } from './use-root-account';
 
 export type RoomMeta = {
@@ -27,9 +26,9 @@ type UseRoomsOptions = {
   rootAccount: AccountInfo<Buffer> | null;
   coder: BorshAccountsCoder;
   connection: Connection;
+  readConnection: Connection;
   rootPubkey: PublicKey;
   sortRoomsByTimestamp: (list: RoomMeta[]) => RoomMeta[];
-  runWithRpcRateLimit: typeof runWithRpcRateLimit;
   signer: SignerInput | null;
   builder: ReturnType<typeof iqlabs.contract.createInstructionBuilder>;
   dbRootId: Buffer;
@@ -40,9 +39,9 @@ export function useRooms({
   rootAccount,
   coder,
   connection,
+  readConnection,
   rootPubkey,
   sortRoomsByTimestamp,
-  runWithRpcRateLimit,
   signer,
   builder,
   dbRootId,
@@ -59,24 +58,27 @@ export function useRooms({
     setRoomsLoading(true);
     setRoomsError(null);
     try {
-      const decoded = coder.decode('DbRoot', rootAccount.data) as {
-        table_seeds?: (Uint8Array | number[])[];
-        tableSeeds?: (Uint8Array | number[])[];
-        global_table_seeds?: (Uint8Array | number[])[];
-        globalTableSeeds?: (Uint8Array | number[])[];
-      } | null;
-      if (!decoded) throw new Error('Failed to decode root account');
+      // Use SDK reader to get table seeds (BorshAccountsCoder doesn't decode them correctly)
+      const rootData = await iqlabs.reader.getTablelistFromRoot(readConnection, ROOT_ID);
+      const seedsRaw = rootData.tableSeeds ?? [];
 
-      // Use table_seeds from the root account; exclude global tables
-      const seedsRaw = decoded.table_seeds ?? decoded.tableSeeds ?? [];
+      // SDK returns table hints as hex-encoded UTF-8 strings.
+      // toSeedBytes(string) hashes the string to 32 bytes for PDA derivation.
+      // We must pass the decoded UTF-8 string, not the raw bytes.
+      const entries = seedsRaw
+        .map((entry: any) => {
+          const hintStr = typeof entry === 'string'
+            ? Buffer.from(entry, 'hex').toString('utf8')
+            : Buffer.from(normalizeBytes(entry)).toString('utf8');
+          if (!hintStr) return null;
+          const seed = iqlabs.utils.toSeedBytes(hintStr);
+          return { hint: Buffer.from(hintStr, 'utf8'), seed };
+        })
+        .filter(Boolean) as { hint: Uint8Array; seed: Uint8Array }[];
 
+      // Dedupe by seed hex
       const uniqueSeeds = Array.from(
-        new Map(
-          seedsRaw
-            .map((entry) => normalizeBytes(entry))
-            .filter((seed) => seed.length)
-            .map((seed) => [Buffer.from(seed).toString('hex'), seed] as const)
-        ).values()
+        new Map(entries.map(e => [Buffer.from(e.seed).toString('hex'), e] as const)).values()
       );
 
       if (uniqueSeeds.length === 0) {
@@ -84,20 +86,18 @@ export function useRooms({
         return;
       }
 
-      // Pre-compute all PDAs
-      const seedsWithPdas = uniqueSeeds.map((seed) => ({
+
+      const seedsWithPdas = uniqueSeeds.map(({ seed }) => ({
         seed,
         seedHex: Buffer.from(seed).toString('hex'),
         tablePda: iqlabs.contract.getTablePda(rootPubkey, seed),
         instrPda: iqlabs.contract.getInstructionTablePda(rootPubkey, seed),
       }));
 
-      // Batch fetch all table accounts using getMultipleAccountsInfo
+
+      // Batch fetch all table accounts
       const tablePdas = seedsWithPdas.map((s) => s.tablePda);
-      const tableAccounts = await runWithRpcRateLimit(
-        () => connection.getMultipleAccountsInfo(tablePdas),
-        { endpoint: connection.rpcEndpoint }
-      );
+      const tableAccounts = await readConnection.getMultipleAccountsInfo(tablePdas);
 
       const roomList: RoomMeta[] = [];
       for (let i = 0; i < seedsWithPdas.length; i++) {
@@ -138,7 +138,7 @@ export function useRooms({
     } finally {
       setRoomsLoading(false);
     }
-  }, [rootStatus, rootAccount, coder, connection, rootPubkey, sortRoomsByTimestamp, runWithRpcRateLimit]);
+  }, [rootStatus, rootAccount, coder, readConnection, rootPubkey, sortRoomsByTimestamp]);
 
   const lastRootAccountRef = useRef<AccountInfo<Buffer> | null>(null);
   useEffect(() => {
@@ -189,7 +189,8 @@ export function useRooms({
           column_names: MESSAGE_COLUMNS.map((name) => Buffer.from(name, 'utf8')),
           id_col: Buffer.from('id', 'utf8'),
           ext_keys: [],
-          gate_opt: null,
+          table_hint: Buffer.from(tableSeed),
+          gate_opt: gateMintPubkey ?? null,
           writers_opt: null,
         }
       );

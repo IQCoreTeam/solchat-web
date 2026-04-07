@@ -1,54 +1,21 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
-import { getCachedAccountInfo } from '@/lib/rpc/cache';
-import { PublicKey, SystemProgram, type AccountInfo, type Signer } from '@solana/web3.js';
+import { PublicKey, SystemProgram, type Signer } from '@solana/web3.js';
 import { Buffer } from 'buffer';
+
 import iqlabs from 'iqlabs-sdk';
+import { readTableRows as gatewayReadTableRows, getUserProfile } from '@/lib/gateway/reader';
+import { IQ_IDL } from 'iqlabs-sdk/contract';
 import type { SignerInput } from 'iqlabs-sdk/utils';
-import { sendTx } from '@/lib/iqlabs/send-tx';
-import { ROOT_ID, MESSAGE_COLUMNS, DM_TABLE_NAME } from '@/lib/iqlabs/constants';
-import { buildRequestConnectionInstruction } from '@/lib/friends/request-connection';
+import { sendAndConfirmTx } from '@/lib/utils/send-and-confirm';
+import { ROOT_ID } from '@/lib/iqlabs/constants';
+import { requestDmConnection } from '@/lib/friends/request-connection';
 import type { UserProfile } from './types';
-
-function extractUserMetadata(info?: AccountInfo<Buffer> | null): string {
-  if (!info?.data) return '';
-  try {
-    const data = Buffer.from(info.data);
-    let offset = 8; // discriminator
-    offset += 32; // owner
-    if (offset + 4 > data.length) return '';
-    const dataLen = data.readUInt32LE(offset);
-    offset += 4 + dataLen;
-    if (offset + 4 > data.length) return '';
-    const metadataLen = data.readUInt32LE(offset);
-    offset += 4;
-    if (metadataLen <= 0 || offset + metadataLen > data.length) return '';
-    return data.slice(offset, offset + metadataLen).toString('utf8').trim();
-  } catch {
-    return '';
-  }
-}
-
-async function parseMetadata(
-  connection: ReturnType<typeof useAppConnection>['connection'],
-  metadataStr: string
-): Promise<{ name: string; bio: string; profilePicture: string } | null> {
-  if (!metadataStr || metadataStr.length <= 2) return null;
-
-  try {
-    if (metadataStr.length <= 100 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(metadataStr)) {
-      const result = await iqlabs.reader.readCodeIn(metadataStr);
-      if (!result?.data || result.data.startsWith('[unable')) return null;
-      return JSON.parse(result.data);
-    }
-    return JSON.parse(metadataStr);
-  } catch {
-    return null;
-  }
-}
+import { extractUserMetadata } from './profile-helpers';
+import { getOrDeriveKeypair } from '@/lib/crypto/dm-encryption';
 
 export function useUserProfileManager() {
-  const { connection } = useAppConnection();
+  const { connection, readConnection } = useAppConnection();
   const wallet = useAppWallet();
   const userAddress = wallet?.publicKey?.toBase58();
 
@@ -57,9 +24,10 @@ export function useUserProfileManager() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
-  const dbRoot = useMemo(() => iqlabs.contract.getDbRootPda(dbRootId), [dbRootId]);
-  const builder = useMemo(() => iqlabs.contract.createInstructionBuilder(), []);
+  const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
+  const dbRootId = useMemo(() => iqlabs.utils.toSeedBytes(ROOT_ID), []);
+  const dbRoot = useMemo(() => iqlabs.contract.getDbRootPda(dbRootId, programId), [dbRootId, programId]);
+  const builder = useMemo(() => iqlabs.contract.createInstructionBuilder(IQ_IDL, programId), [programId]);
 
   const signer = useMemo<SignerInput | null>(() => {
     if (!wallet?.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) return null;
@@ -72,7 +40,7 @@ export function useUserProfileManager() {
 
   const ensureDbRootInitialized = useCallback(async (signerPublicKey: PublicKey) => {
     if (!signer) throw new Error('Wallet not connected');
-    const rootInfo = await connection.getAccountInfo(dbRoot);
+    const rootInfo = await readConnection.getAccountInfo(dbRoot);
     if (rootInfo) return;
     try {
       const initRootIx = iqlabs.contract.initializeDbRootInstruction(
@@ -84,7 +52,7 @@ export function useUserProfileManager() {
         },
         { db_root_id: dbRootId }
       );
-      await sendTx(connection, signer, initRootIx);
+      await sendAndConfirmTx(connection, readConnection, signer, initRootIx);
     } catch (initErr) {
       if (
         !(
@@ -95,7 +63,7 @@ export function useUserProfileManager() {
         throw initErr;
       }
     }
-  }, [builder, connection, dbRoot, dbRootId, signer]);
+  }, [builder, connection, readConnection, dbRoot, dbRootId, signer]);
 
   const loadMyProfile = useCallback(async () => {
     if (!userAddress) return;
@@ -103,23 +71,12 @@ export function useUserProfileManager() {
     setLoading(true);
     setError(null);
     try {
-      const userPk = new PublicKey(userAddress);
-      const userPda = iqlabs.contract.getUserPda(userPk);
-
-      const accountInfo = await getCachedAccountInfo(connection, userPda);
-      if (!accountInfo?.data) {
-        setMyProfile(null);
-        return;
-      }
-
-      const metadataStr = extractUserMetadata(accountInfo);
-      const profileData = await parseMetadata(connection, metadataStr);
-
+      const profile = await getUserProfile(userAddress);
       setMyProfile({
         pubkey: userAddress,
-        name: profileData?.name || '',
-        bio: profileData?.bio || '',
-        profilePicture: profileData?.profilePicture || '',
+        name: profile?.name || '',
+        bio: profile?.bio || '',
+        profilePicture: profile?.profilePicture || '',
         timestamp: Date.now(),
       });
     } catch (err) {
@@ -128,7 +85,7 @@ export function useUserProfileManager() {
     } finally {
       setLoading(false);
     }
-  }, [userAddress, connection]);
+  }, [userAddress]);
 
   const loadAllProfiles = useCallback(async () => {
     if (!userAddress) return;
@@ -136,16 +93,16 @@ export function useUserProfileManager() {
     setLoading(true);
     setError(null);
     try {
-      const tableSeed = Buffer.from('global_user_list', 'utf8');
-      const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed);
-      const tableInfo = await connection.getAccountInfo(tablePda);
+      const tableSeed = iqlabs.utils.toSeedBytes('global_user_list');
+      const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed, programId);
+      const tableInfo = await readConnection.getAccountInfo(tablePda);
 
       if (!tableInfo) {
         setAllProfiles([]);
         return;
       }
 
-      const rows = await iqlabs.reader.readTableRows(tablePda);
+      const rows = await gatewayReadTableRows(tablePda.toBase58());
 
       const userPubkeys: string[] = [];
       for (const row of rows) {
@@ -159,25 +116,22 @@ export function useUserProfileManager() {
         return;
       }
 
-      const userPdas = userPubkeys.map(pk => iqlabs.contract.getUserPda(new PublicKey(pk)));
-      const accountInfos = await connection.getMultipleAccountsInfo(userPdas);
-
-      const profiles: UserProfile[] = [];
-      for (let i = 0; i < userPubkeys.length; i++) {
-        const pubkey = userPubkeys[i];
-        const accountInfo = accountInfos[i];
-
-        const metadataStr = extractUserMetadata(accountInfo);
-        const profileData = await parseMetadata(connection, metadataStr);
-
-        profiles.push({
-          pubkey,
-          name: profileData?.name || '',
-          bio: profileData?.bio || '',
-          profilePicture: profileData?.profilePicture || '',
-          timestamp: Date.now(),
-        });
-      }
+      // Fetch all profiles in parallel (getUserProfile handles gateway + fallback)
+      const results = await Promise.allSettled(
+        userPubkeys.map(async (pubkey) => {
+          const profile = await getUserProfile(pubkey);
+          return {
+            pubkey,
+            name: profile?.name || '',
+            bio: profile?.bio || '',
+            profilePicture: profile?.profilePicture || '',
+            timestamp: Date.now(),
+          } as UserProfile;
+        })
+      );
+      const profiles: UserProfile[] = results
+        .filter((r): r is PromiseFulfilledResult<UserProfile> => r.status === 'fulfilled')
+        .map(r => r.value);
 
       setAllProfiles(profiles);
     } catch (err) {
@@ -190,7 +144,7 @@ export function useUserProfileManager() {
     } finally {
       setLoading(false);
     }
-  }, [connection, userAddress, dbRoot]);
+  }, [readConnection, userAddress, dbRoot, programId]);
 
   const saveProfile = useCallback(
     async (profile: Omit<UserProfile, 'pubkey'>) => {
@@ -201,18 +155,31 @@ export function useUserProfileManager() {
         const userPk = new PublicKey(userAddress);
         const userPda = iqlabs.contract.getUserPda(userPk);
 
+        // Derive encryption pubkey if wallet supports signMessage
+        let encryptionPubKey: string | undefined;
+        if (wallet.signMessage) {
+          try {
+            const kp = await getOrDeriveKeypair(wallet.signMessage);
+            encryptionPubKey = kp.pubHex;
+          } catch (err) {
+            console.warn('[UserProfile] Could not derive encryption key:', err);
+          }
+        }
+
         const fullMetadata = JSON.stringify({
           name: profile.name,
           bio: profile.bio,
           profilePicture: profile.profilePicture,
+          ...(encryptionPubKey ? { encryptionPubKey } : {}),
         });
 
         console.log('[UserProfile] Storing metadata with iqlabs.writer.codeIn...');
 
         const txId = await iqlabs.writer.codeIn(
-          { connection, signer },
+          { connection, signer: signer as any },
           [fullMetadata],
-          'profile-metadata'
+          'profile-metadata',
+          0,
         );
 
         if (!txId) throw new Error('Failed to store metadata transaction');
@@ -221,23 +188,23 @@ export function useUserProfileManager() {
 
         await ensureDbRootInitialized(userPk);
 
-        const metadataBefore = extractUserMetadata(await connection.getAccountInfo(userPda));
+        const metadataBefore = extractUserMetadata(await readConnection.getAccountInfo(userPda));
 
         await iqlabs.writer.updateUserMetadata(
           connection,
-          signer,
+          signer as any,
           dbRootId,
           txId,
         );
 
-        const metadataAfter = extractUserMetadata(await connection.getAccountInfo(userPda));
+        const metadataAfter = extractUserMetadata(await readConnection.getAccountInfo(userPda));
         const addedMetadataThisCall = !metadataBefore && !!metadataAfter;
 
         if (addedMetadataThisCall) {
           try {
-            const tableSeed = Buffer.from('global_user_list', 'utf8');
-            const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed);
-            const tableInfo = await connection.getAccountInfo(tablePda);
+            const tableSeed = iqlabs.utils.toSeedBytes('global_user_list');
+            const tablePda = iqlabs.contract.getTablePda(dbRoot, tableSeed, programId);
+            const tableInfo = await readConnection.getAccountInfo(tablePda);
 
             if (!tableInfo) {
               const instructionTable = iqlabs.contract.getInstructionTablePda(
@@ -261,11 +228,12 @@ export function useUserProfileManager() {
                   column_names: [Buffer.from('pubkeyString', 'utf8')],
                   id_col: Buffer.from('pubkeyString', 'utf8'),
                   ext_keys: [],
+                  table_hint: tableSeed,
                   gate_opt: null,
                   writers_opt: null,
                 }
               );
-              await sendTx(connection, signer, createTableIx);
+              await sendAndConfirmTx(connection, readConnection, signer, createTableIx);
               await new Promise(resolve => setTimeout(resolve, 2000));
             }
 
@@ -300,12 +268,14 @@ export function useUserProfileManager() {
     [
       userAddress,
       connection,
+      readConnection,
       signer,
       dbRoot,
       dbRootId,
       builder,
       ensureDbRootInitialized,
       loadAllProfiles,
+      wallet.signMessage,
     ]
   );
 
@@ -319,27 +289,17 @@ export function useUserProfileManager() {
       const dmSeed = iqlabs.utils.deriveDmSeed(userAddress, targetPubkey);
       const dmPda = iqlabs.contract.getConnectionTablePda(dbRoot, dmSeed);
 
-      const existing = await connection.getAccountInfo(dmPda);
+      const existing = await readConnection.getAccountInfo(dmPda);
       if (existing) throw new Error('Connection already exists :3');
 
       try {
-        const receiver = new PublicKey(targetPubkey.trim());
-        const { ix } = buildRequestConnectionInstruction({
-          builder,
-          dbRootId,
-          requester: signer.publicKey,
-          receiver,
-          tableName: DM_TABLE_NAME,
-          columns: MESSAGE_COLUMNS,
-          idCol: 'id',
-        });
-        await sendTx(connection, signer, ix);
+        await requestDmConnection(connection, signer, ROOT_ID, userAddress, targetPubkey.trim());
       } catch (err) {
         console.error('[UserProfileManager] requestDm error', err);
         throw err;
       }
     },
-    [connection, userAddress, signer, dbRoot, dbRootId, builder, ensureDbRootInitialized]
+    [connection, readConnection, userAddress, signer, dbRoot, dbRootId, programId, builder, ensureDbRootInitialized]
   );
 
   useEffect(() => {

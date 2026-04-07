@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PublicKey, type Signer } from '@solana/web3.js';
-import { Buffer } from 'buffer';
 import { BorshAccountsCoder } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
+import { IQ_IDL } from 'iqlabs-sdk/contract';
 import type { SignerInput } from 'iqlabs-sdk/utils';
 import { useUserInit } from '@/lib/iqlabs/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
@@ -14,6 +14,7 @@ import { useMessageChannel } from '@/lib/shared/use-message-channel';
 import type { FetchConfig } from '@/lib/shared/useMessageIndexLoader';
 import { useAccountSubscription } from '@/lib/shared/use-account-subscription';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
+import { notifyGateway } from '@/lib/gateway/reader';
 import { makeRoomTimestampKey, setLastMessageTimestamp, getLastMessageTimestamp } from '@/lib/cache/message-timestamp-cache';
 import { RpcConfigPrompt } from '@/components/ui/rpc-config-prompt';
 import { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
@@ -43,7 +44,7 @@ export function ChatClient() {
     /* --------------------------------------------------------------------------
      * Context & External Hooks
      * -------------------------------------------------------------------------- */
-    const { connection, endpointSource, setCustomRpcEndpoint } = useAppConnection();
+    const { connection, readConnection, endpointSource, setCustomRpcEndpoint } = useAppConnection();
     const wallet = useAppWallet();
     const {
         isInitialized: isUserInitialized,
@@ -53,11 +54,12 @@ export function ChatClient() {
     } = useUserInit();
     const { logout } = usePrivy();
 
-    const dbRootId = useMemo(() => Buffer.from(ROOT_ID, 'utf8'), []);
-    const coder = useMemo(() => new BorshAccountsCoder(iqlabs.contract.IQ_IDL), []);
+    const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
+    const dbRootId = useMemo(() => iqlabs.utils.toSeedBytes(ROOT_ID), []);
+    const coder = useMemo(() => new BorshAccountsCoder(IQ_IDL), []);
     const builder = useMemo(
-        () => iqlabs.contract.createInstructionBuilder(),
-        []
+        () => iqlabs.contract.createInstructionBuilder(IQ_IDL, programId),
+        [programId]
     );
     const rootPubkey = useMemo(
         () => iqlabs.contract.getDbRootPda(dbRootId),
@@ -127,13 +129,13 @@ export function ChatClient() {
 
     const { rootStatus, rootAccount, handleCreateRoot } = useRootAccount({
         connection,
+        readConnection,
         rootPubkey,
         isUserInitialized,
         isUserInitializing,
         builder,
         dbRootId,
         signer,
-        runWithRpcRateLimit,
     });
 
     const {
@@ -152,9 +154,9 @@ export function ChatClient() {
         rootAccount,
         coder,
         connection,
+        readConnection,
         rootPubkey,
         sortRoomsByTimestamp,
-        runWithRpcRateLimit,
         signer,
         builder,
         dbRootId,
@@ -247,7 +249,7 @@ export function ChatClient() {
             channelKey: selectedChannelKey,
             resolveChannelMeta,
             fetcher,
-            connection,
+            connection: readConnection,
             endpointSource,
             onRowsApplied: ({ channelKey, seedHex, rows }) => {
                 const latestTimestamp = rows.reduce((max, msg) => Math.max(max, msg.timestamp ?? 0), 0);
@@ -302,6 +304,7 @@ export function ChatClient() {
                 // invalidateSignatureCache(selectedRoom.tableAddress);
                 const timestamp = payload.timestamp ?? 0;
                 notifyRoomMessageSent(selectedRoom.seedHex, timestamp, signature);
+                notifyGateway(selectedRoom.tableAddress, signature, signer?.publicKey?.toBase58());
                 // Scroll after DOM updates on next frame
                 requestAnimationFrame(() => scrollToBottom('smooth'));
             },
@@ -545,7 +548,7 @@ export function ChatClient() {
     }, [selectedChannelKey, targetedDecode]);
 
     useAccountSubscription({
-        connection,
+        connection: readConnection,
         account: selectedRoom ? new PublicKey(selectedRoom.tableAddress) : null,
         onNewSignatures: handleNewSignatures,
         commitment: 'confirmed',

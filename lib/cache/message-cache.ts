@@ -12,7 +12,7 @@
 'use client';
 
 import { getCacheDB, type CachedMessage, DEFAULT_MESSAGE_TTL } from './db';
-import type { Row } from '@/lib/shared/message-helpers';
+import type { MessageRow } from '@/lib/shared/message-helpers';
 
 // ============================================================================
 // Types
@@ -23,11 +23,11 @@ export interface MessageCacheOptions {
   retryDelay?: number; // Initial delay in ms
   backgroundRefresh?: boolean;
   ttl?: number;
-  onProgress?: (rows: Row[]) => void;
+  onProgress?: (rows: MessageRow[]) => void;
 }
 
 export interface LoadMessagesResult {
-  messages: Row[];
+  messages: MessageRow[];
   fromCache: boolean;
   refreshing: boolean;
 }
@@ -45,7 +45,7 @@ export interface LoadMessagesResult {
  */
 export async function loadMessagesWithCache(
   roomId: string,
-  fetchFn: () => Promise<Row[]>,
+  fetchFn: () => Promise<MessageRow[]>,
   options: MessageCacheOptions = {}
 ): Promise<LoadMessagesResult> {
   const {
@@ -115,7 +115,7 @@ export async function getCachedMessages(roomId: string): Promise<CachedMessage[]
  */
 export async function updateCache(
   roomId: string,
-  messages: Row[],
+  messages: MessageRow[],
   ttl: number = DEFAULT_MESSAGE_TTL
 ): Promise<void> {
   try {
@@ -140,7 +140,7 @@ export async function updateCache(
  */
 export async function addMessageToCache(
   roomId: string,
-  message: Row,
+  message: MessageRow,
   ttl: number = DEFAULT_MESSAGE_TTL
 ): Promise<void> {
   try {
@@ -173,9 +173,9 @@ export async function invalidateCache(roomId: string): Promise<void> {
  */
 export async function syncMessages(
   roomId: string,
-  fetchFn: () => Promise<Row[]>,
+  fetchFn: () => Promise<MessageRow[]>,
   ttl: number = DEFAULT_MESSAGE_TTL
-): Promise<Row[]> {
+): Promise<MessageRow[]> {
   console.log(`[MessageCache] Syncing messages for room: ${roomId.slice(0, 8)}...`);
 
   try {
@@ -225,7 +225,7 @@ async function fetchWithRetry<T>(
  */
 async function fetchAndUpdateCache(
   roomId: string,
-  fetchFn: () => Promise<Row[]>,
+  fetchFn: () => Promise<MessageRow[]>,
   ttl: number
 ): Promise<void> {
   try {
@@ -247,9 +247,9 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Convert Row to CachedMessage
+ * Convert MessageRow to CachedMessage
  */
-function rowToCached(row: Row, roomId: string): Omit<CachedMessage, 'cachedAt' | 'expiresAt'> {
+function rowToCached(row: MessageRow, roomId: string): Omit<CachedMessage, 'cachedAt' | 'expiresAt'> {
   const idCandidate =
     row.id ??
     (row as any).__rowId ??
@@ -274,10 +274,10 @@ function rowToCached(row: Row, roomId: string): Omit<CachedMessage, 'cachedAt' |
 }
 
 /**
- * Convert CachedMessage back to Row
+ * Convert CachedMessage back to MessageRow
  */
-function cachedToRow(cached: CachedMessage): Row {
-  const row: Row = {
+function cachedToRow(cached: CachedMessage): MessageRow {
+  const row: MessageRow = {
     id: cached.id,
     text: cached.text,
   };
@@ -309,8 +309,8 @@ function cachedToRow(cached: CachedMessage): Row {
 /**
  * Deduplicate messages by ID (keeps the latest version)
  */
-export function deduplicateMessages(messages: Row[]): Row[] {
-  const seen = new Map<string, Row>();
+export function deduplicateMessages(messages: MessageRow[]): MessageRow[] {
+  const seen = new Map<string, MessageRow>();
 
   for (const msg of messages) {
     const id = String(msg.id ?? (msg as any).__rowId ?? msg.text ?? Math.random());
@@ -336,7 +336,7 @@ export function deduplicateMessages(messages: Row[]): Row[] {
 /**
  * Merge cached and fresh messages, removing duplicates
  */
-export function mergeMessages(cached: Row[], fresh: Row[]): Row[] {
+export function mergeMessages(cached: MessageRow[], fresh: MessageRow[]): MessageRow[] {
   const all = [...cached, ...fresh];
   return deduplicateMessages(all);
 }
@@ -344,7 +344,7 @@ export function mergeMessages(cached: Row[], fresh: Row[]): Row[] {
 /**
  * Sort messages by timestamp (ascending)
  */
-export function sortMessages(messages: Row[]): Row[] {
+export function sortMessages(messages: MessageRow[]): MessageRow[] {
   return messages.sort((a, b) => {
     const tsA = a.timestamp ?? 0;
     const tsB = b.timestamp ?? 0;
@@ -360,7 +360,7 @@ export function sortMessages(messages: Row[]): Row[] {
  * Load messages for multiple rooms in parallel with caching
  */
 export async function loadMultipleRooms(
-  rooms: Array<{ roomId: string; fetchFn: () => Promise<Row[]> }>,
+  rooms: Array<{ roomId: string; fetchFn: () => Promise<MessageRow[]> }>,
   options: MessageCacheOptions = {}
 ): Promise<Map<string, LoadMessagesResult>> {
   console.log(`[MessageCache] Loading ${rooms.length} rooms in parallel...`);

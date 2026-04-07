@@ -8,7 +8,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { getCacheManager, type MessageCacheOptions, type LoadMessagesResult } from './cache-manager';
-import type { Row } from '@/lib/shared/message-helpers';
+import type { MessageRow } from '@/lib/shared/message-helpers';
 
 /**
  * Hook to use the cache manager
@@ -36,7 +36,7 @@ export function useCacheManager() {
  */
 export function useCachedRoomMessages(
   roomId: string | null,
-  fetchFn: (() => Promise<Row[]>) | null,
+  fetchFn: (() => Promise<MessageRow[]>) | null,
   options?: MessageCacheOptions & { enabled?: boolean }
 ) {
   const [result, setResult] = useState<LoadMessagesResult | null>(null);
@@ -126,7 +126,7 @@ export function useCachedRoomMessages(
  */
 export function useCachedDmMessages(
   dmSeedHex: string | null,
-  fetchFn: (() => Promise<Row[]>) | null,
+  fetchFn: (() => Promise<MessageRow[]>) | null,
   options?: MessageCacheOptions & { enabled?: boolean }
 ) {
   const [result, setResult] = useState<LoadMessagesResult | null>(null);

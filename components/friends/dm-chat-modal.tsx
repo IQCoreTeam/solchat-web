@@ -2,7 +2,7 @@
 
 import type { Dispatch, FormEvent, RefObject, SetStateAction } from 'react';
 import type { Friend } from '@/lib/friends/types';
-import { shortenAddress } from '@/lib/friends/utils';
+import { shorten as shortenAddress } from '@/lib/utils/message-utils';
 import type { MessageRow } from '@/lib/shared/message-helpers';
 import { MessageBubble } from '@/components/ui/message-bubble';
 import { MessageInputForm } from '@/components/chat/message-input-form';
@@ -47,6 +47,8 @@ type DmChatModalProps = {
   isUserInitialized: boolean;
   userInitError: Error | null;
   inputRef: RefObject<HTMLInputElement | null>;
+  encStatus?: 'deriving' | 'publishing' | 'ready' | 'error' | 'off';
+  encError?: string | null;
 };
 
 export function DmChatModal({
@@ -87,6 +89,8 @@ export function DmChatModal({
   isUserInitialized,
   userInitError,
   inputRef,
+  encStatus = 'off',
+  encError,
 }: DmChatModalProps) {
   if (!open || !chatFriend) return null;
 
@@ -128,6 +132,46 @@ export function DmChatModal({
                 : ' (approve to reply)')}
             {chatFriend.status === 'blocked' && ' (unblock to continue)'}
           </div>
+        </div>
+
+        {/* Encryption status */}
+        <div className={`border-b px-4 py-1.5 text-xs flex items-center gap-2 flex-shrink-0 ${
+          encStatus === 'ready'
+            ? 'border-green-700/30 bg-green-900/20 text-green-400'
+            : encStatus === 'error'
+              ? 'border-red-700/30 bg-red-900/20 text-red-400'
+              : 'border-yellow-700/30 bg-yellow-900/20 text-yellow-400'
+        }`}>
+          {encStatus === 'ready' && (
+            <>
+              <span>&#128274;</span>
+              <span>End-to-end encrypted</span>
+            </>
+          )}
+          {encStatus === 'deriving' && (
+            <>
+              <span>&#128272;</span>
+              <span>Deriving encryption keys...</span>
+            </>
+          )}
+          {encStatus === 'publishing' && (
+            <>
+              <span>&#128272;</span>
+              <span>Publishing encryption key on-chain...</span>
+            </>
+          )}
+          {encStatus === 'error' && (
+            <>
+              <span>&#9888;</span>
+              <span>Encryption setup failed{encError ? `: ${encError}` : ''}</span>
+            </>
+          )}
+          {encStatus === 'off' && (
+            <>
+              <span>&#128275;</span>
+              <span>Not encrypted — encryption keys not yet set up</span>
+            </>
+          )}
         </div>
 
         {chatSlowRpcMode && (

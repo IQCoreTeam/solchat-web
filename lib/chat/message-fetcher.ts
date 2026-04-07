@@ -1,4 +1,4 @@
-import iqlabs from 'iqlabs-sdk';
+import { readCodeIn, getSignaturesForTable } from '@/lib/gateway/reader';
 import { rowToMessage, type MessageRow } from '@/lib/shared/message-helpers';
 import { channelKeyToSeed } from '@/lib/shared/channel-utils';
 import { getCacheManager } from '@/lib/cache';
@@ -37,7 +37,7 @@ export function createRoomFetcher({
     const maxTx = fetchConfig?.maxTx ?? baseMaxTx;
     const targetSignatures = fetchConfig?.signatures?.length
       ? fetchConfig.signatures
-      : await iqlabs.reader.collectSignatures(room.tableAddress, maxTx);
+      : await getSignaturesForTable(room.tableAddress, maxTx);
 
     const cacheManager = getCacheManager();
 
@@ -63,7 +63,7 @@ export function createRoomFetcher({
             roomId,
             async () => {
               try {
-                const result = await iqlabs.reader.readCodeIn(signature);
+                const result = await readCodeIn(signature);
                 return result;
               } catch (err) {
                 if (err instanceof Error && err.message.includes('user_inventory_code_in instruction not found')) {

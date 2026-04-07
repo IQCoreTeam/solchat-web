@@ -4,31 +4,29 @@ import { SystemProgram } from '@solana/web3.js';
 import iqlabs from 'iqlabs-sdk';
 import type { SignerInput } from 'iqlabs-sdk/utils';
 import { sendTx } from '@/lib/iqlabs/send-tx';
-import { getCachedAccountInfo } from '@/lib/rpc/cache';
-import type { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
 
 export type RootStatus = 'checking' | 'missing' | 'creating' | 'ready' | 'error';
 
 type UseRootAccountOptions = {
   connection: Connection;
+  readConnection: Connection;
   rootPubkey: PublicKey;
   isUserInitialized: boolean;
   isUserInitializing: boolean;
   builder: ReturnType<typeof iqlabs.contract.createInstructionBuilder>;
   dbRootId: Buffer;
   signer: SignerInput | null;
-  runWithRpcRateLimit: typeof runWithRpcRateLimit;
 };
 
 export function useRootAccount({
   connection,
+  readConnection,
   rootPubkey,
   isUserInitialized,
   isUserInitializing,
   builder,
   dbRootId,
   signer,
-  runWithRpcRateLimit,
 }: UseRootAccountOptions) {
   const [rootStatus, setRootStatus] = useState<RootStatus>('checking');
   const [rootAccount, setRootAccount] = useState<AccountInfo<Buffer> | null>(null);
@@ -38,7 +36,7 @@ export function useRootAccount({
     let mounted = true;
     (async () => {
       try {
-        const acc = await getCachedAccountInfo(connection, rootPubkey);
+        const acc = await readConnection.getAccountInfo(rootPubkey);
         if (!mounted) return;
         if (acc) {
           setRootStatus('ready');
@@ -48,7 +46,7 @@ export function useRootAccount({
         }
       } catch (err) {
         if (!mounted) return;
-        console.error('[ChatClient] Failed to check root:', err);
+        console.error('[useRootAccount] Failed to check root:', err);
         setRootStatus('error');
         setRootError(err instanceof Error ? err.message : 'Unknown error');
       }
@@ -56,7 +54,7 @@ export function useRootAccount({
     return () => {
       mounted = false;
     };
-  }, [connection, rootPubkey, isUserInitialized, isUserInitializing]);
+  }, [readConnection, rootPubkey, isUserInitialized, isUserInitializing]);
 
   const handleCreateRoot = useCallback(async () => {
     if (!signer) return;
@@ -72,18 +70,15 @@ export function useRootAccount({
         { db_root_id: dbRootId }
       );
       await sendTx(connection, signer, ix);
-      const acc = await runWithRpcRateLimit(
-        () => connection.getAccountInfo(rootPubkey),
-        { endpoint: connection.rpcEndpoint }
-      );
+      const acc = await readConnection.getAccountInfo(rootPubkey);
       setRootAccount(acc);
       setRootStatus('ready');
     } catch (err) {
-      console.error('[ChatClient]Create root error:', err);
+      console.error('[useRootAccount] Create root error:', err);
       setRootStatus('error');
       setRootError(err instanceof Error ? err.message : 'Failed to create root');
     }
-  }, [signer, builder, connection, rootPubkey, dbRootId, runWithRpcRateLimit]);
+  }, [signer, builder, connection, readConnection, rootPubkey, dbRootId]);
 
   return {
     rootStatus,

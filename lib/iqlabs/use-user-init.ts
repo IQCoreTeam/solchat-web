@@ -4,15 +4,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SystemProgram } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import iqlabs from 'iqlabs-sdk';
-import { sendTx, ensureUserInitialized, type SignerInput } from '@/lib/iqlabs/send-tx';
+import { IQ_IDL } from 'iqlabs-sdk/contract';
+import type { SignerInput } from 'iqlabs-sdk/utils';
+import { sendAndConfirmTx } from '@/lib/utils/send-and-confirm';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { ROOT_ID } from '@/lib/iqlabs/constants';
 
 const toRootBytes = (value: string | Uint8Array) =>
-  value instanceof Uint8Array ? value : Buffer.from(value, 'utf8');
+  value instanceof Uint8Array ? value : iqlabs.utils.toSeedBytes(value);
 
 export function useUserInit(rootIdOverride?: string | Uint8Array) {
-  const { connection } = useAppConnection();
+  const { connection, readConnection } = useAppConnection();
   const appWallet = useAppWallet();
   const { publicKey, connected, signTransaction, signAllTransactions } = appWallet;
   const [isInitialized, setIsInitialized] = useState(false);
@@ -21,9 +23,10 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
 
   const resolvedRootId = rootIdOverride ?? ROOT_ID;
   const dbRootId = useMemo(() => toRootBytes(resolvedRootId), [resolvedRootId]);
+  const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
   const builder = useMemo(
-    () => iqlabs.contract.createInstructionBuilder(),
-    []
+    () => iqlabs.contract.createInstructionBuilder(IQ_IDL, programId),
+    [programId]
   );
   const rootPda = useMemo(
     () => iqlabs.contract.getDbRootPda(dbRootId),
@@ -62,8 +65,10 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
       setIsInitializing(true);
       setError(null);
 
-      const rootInfo = await connection.getAccountInfo(rootPda);
+      // Ensure root PDA exists
+      const rootInfo = await readConnection.getAccountInfo(rootPda);
       if (!rootInfo) {
+        console.log('[useUserInit] Root PDA missing, creating:', rootPda.toBase58());
         const ix = iqlabs.contract.initializeDbRootInstruction(
           builder,
           {
@@ -73,21 +78,32 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
           },
           { db_root_id: dbRootId }
         );
-        await sendTx(connection, signer, ix);
+        await sendAndConfirmTx(connection, readConnection, signer, ix);
+        console.log('[useUserInit] Root PDA created successfully');
       }
 
+      // Ensure user is initialized
       const user = currentPublicKey;
       const userState = iqlabs.contract.getUserPda(user);
       const codeAccount = iqlabs.contract.getCodeAccountPda(user);
       const userInventory = iqlabs.contract.getUserInventoryPda(user);
 
-      await ensureUserInitialized(connection, signer, builder, {
-        user,
-        code_account: codeAccount,
-        user_state: userState,
-        user_inventory: userInventory,
-        system_program: SystemProgram.programId,
-      });
+      // Check via Helius (fast reads). We bypass the SDK's
+      // ensureUserInitialized because it reads via the write connection,
+      // which can hang on some RPC providers.
+      const invInfo = await readConnection.getAccountInfo(userInventory);
+      if (!invInfo) {
+        console.log('[useUserInit] User not initialized, creating accounts');
+        const ix = iqlabs.contract.userInitializeInstruction(builder, {
+          user,
+          code_account: codeAccount,
+          user_state: userState,
+          user_inventory: userInventory,
+          system_program: SystemProgram.programId,
+        });
+        await sendAndConfirmTx(connection, readConnection, signer, ix);
+        console.log('[useUserInit] User initialized successfully');
+      }
 
       setIsInitialized(true);
     } catch (err) {
@@ -98,11 +114,12 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
         setIsInitialized(true);
         return;
       }
+      console.error('[useUserInit] Init failed:', err);
       setError(err instanceof Error ? err : new Error('Failed to initialize user'));
     } finally {
       setIsInitializing(false);
     }
-  }, [builder, connected, connection, dbRootId, rootPda]);
+  }, [builder, connected, connection, readConnection, dbRootId, programId, rootPda]);
 
   useEffect(() => {
     if (!publicKey || !connected || !signTransaction || !signAllTransactions) {

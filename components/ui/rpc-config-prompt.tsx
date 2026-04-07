@@ -149,10 +149,10 @@ export function RpcConfigPrompt({endpointSource, setCustomRpcEndpoint}: RpcConfi
                             <p className="text-xl">Set your rpc into your local cache!</p>
                             <p className="mb-2 ">
                                 For faster, more reliable chat performance we recommend using a personal RPC endpoint.
-                                Please enter your Devnet RPC URL below.
+                                Please enter your Mainnet RPC URL below.
                             </p>
                             <p className="mb-4 text-xs bg-yellow-300">
-                                * Example: <br/>https://devnet.helius-rpc.com/?api-key=XXXXXXXX
+                                * Example: <br/>https://mainnet.helius-rpc.com/?api-key=XXXXXXXX
                             </p>
 
                         </div>
@@ -168,7 +168,7 @@ export function RpcConfigPrompt({endpointSource, setCustomRpcEndpoint}: RpcConfi
                             setValue(e.target.value);
                             setError(null);
                         }}
-                        placeholder="https://devnet.helius-rpc.com/?api-key=..."
+                        placeholder="https://mainnet.helius-rpc.com/?api-key=..."
                         className="w-full px-3 py-2 text-sm "
                     />
                     {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
