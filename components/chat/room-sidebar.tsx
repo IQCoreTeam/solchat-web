@@ -22,8 +22,14 @@ interface RoomSidebarProps {
     // Room creation
     newRoomName: string;
     setNewRoomName: (name: string) => void;
+    newRoomGateEnabled: boolean;
+    setNewRoomGateEnabled: (enabled: boolean) => void;
     newRoomGateMint: string;
     setNewRoomGateMint: (mint: string) => void;
+    newRoomGateAmount: string;
+    setNewRoomGateAmount: (amount: string) => void;
+    newRoomGateType: 0 | 1;
+    setNewRoomGateType: (gateType: 0 | 1) => void;
     creatingRoom: boolean;
     onCreateRoom: (e: FormEvent) => void;
 
@@ -50,8 +56,14 @@ interface RoomSidebarProps {
 export function RoomSidebar({
                                 newRoomName,
                                 setNewRoomName,
+                                newRoomGateEnabled,
+                                setNewRoomGateEnabled,
                                 newRoomGateMint,
                                 setNewRoomGateMint,
+                                newRoomGateAmount,
+                                setNewRoomGateAmount,
+                                newRoomGateType,
+                                setNewRoomGateType,
                                 creatingRoom,
                                 onCreateRoom,
                                 rooms,
@@ -102,15 +114,49 @@ export function RoomSidebar({
                         style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
                         disabled={creatingRoom || !hasWallet}
                     />
-                    <input
-                        type="text"
-                        value={newRoomGateMint}
-                        onChange={(event) => setNewRoomGateMint(event.target.value)}
-                        placeholder="Gate mint (optional)"
-                        className="w-full rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2"
-                        style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
-                        disabled={creatingRoom || !hasWallet}
-                    />
+                    <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold uppercase tracking-wide text-white/70 select-none">
+                        <input
+                            type="checkbox"
+                            checked={newRoomGateEnabled}
+                            onChange={(event) => setNewRoomGateEnabled(event.target.checked)}
+                            disabled={creatingRoom || !hasWallet}
+                            className="h-4 w-4 accent-green-400"
+                        />
+                        Token gate
+                    </label>
+                    {newRoomGateEnabled && (
+                        <div className="space-y-2 rounded border border-white/10 bg-white/5 p-2">
+                            <input
+                                type="text"
+                                value={newRoomGateMint}
+                                onChange={(event) => setNewRoomGateMint(event.target.value)}
+                                placeholder="Gate mint address"
+                                className="w-full rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2"
+                                style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
+                                disabled={creatingRoom || !hasWallet}
+                            />
+                            <input
+                                type="text"
+                                inputMode="numeric"
+                                value={newRoomGateAmount}
+                                onChange={(event) => setNewRoomGateAmount(event.target.value)}
+                                placeholder="Minimum amount (raw units)"
+                                className="w-full rounded bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2"
+                                style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
+                                disabled={creatingRoom || !hasWallet}
+                            />
+                            <select
+                                value={newRoomGateType}
+                                onChange={(event) => setNewRoomGateType(Number(event.target.value) as 0 | 1)}
+                                disabled={creatingRoom || !hasWallet}
+                                className="w-full rounded bg-white/10 px-3 py-2 text-sm text-white outline-none focus:ring-2"
+                                style={{ '--tw-ring-color': 'rgb(65, 255, 0)' } as React.CSSProperties}
+                            >
+                                <option value={0} className="bg-black text-white">Token (SPL mint)</option>
+                                <option value={1} className="bg-black text-white">Collection (NFT)</option>
+                            </select>
+                        </div>
+                    )}
                     <button
                         type="submit"
                         disabled={creatingRoom || !canWrite || !newRoomName.trim()}

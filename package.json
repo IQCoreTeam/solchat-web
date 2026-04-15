@@ -24,7 +24,7 @@
     "bs58": "^6.0.0",
     "dayjs": "^1.11.19",
     "hanlock": "^1.0.2",
-    "iqlabs-sdk": "npm:@iqlabs-official/solana-sdk@^0.1.20",
+    "iqlabs-sdk": "npm:@iqlabs-official/solana-sdk@^0.1.21",
     "lightningcss-linux-x64-gnu": "^1.32.0",
     "next": "16.1.6",
     "next-themes": "^0.4.6",

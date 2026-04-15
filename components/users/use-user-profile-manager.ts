@@ -228,7 +228,6 @@ export function useUserProfileManager() {
                   column_names: [Buffer.from('pubkeyString', 'utf8')],
                   id_col: Buffer.from('pubkeyString', 'utf8'),
                   ext_keys: [],
-                  table_hint: tableSeed,
                   gate_opt: null,
                   writers_opt: null,
                 }

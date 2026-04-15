@@ -28,6 +28,7 @@ import { useRooms, type RoomMeta } from '@/lib/chat/use-rooms';
 // Import new components
 import { ChatHeader } from './chat-header';
 import { RoomSidebar } from './room-sidebar';
+import { FundingModal } from './funding-modal';
 import { MessageList } from './message-list';
 import { MessageInputForm } from './message-input-form';
 
@@ -51,7 +52,11 @@ export function ChatClient() {
         isInitializing: isUserInitializing,
         error: userInitError,
         retry: retryUserInit,
+        needsFunding,
+        balanceLamports,
+        walletAddress: initWalletAddress,
     } = useUserInit();
+    const [fundingModalDismissed, setFundingModalDismissed] = useState(false);
     const { logout } = usePrivy();
 
     const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
@@ -145,8 +150,14 @@ export function ChatClient() {
         roomsError,
         newRoomName,
         setNewRoomName,
+        newRoomGateEnabled,
+        setNewRoomGateEnabled,
         newRoomGateMint,
         setNewRoomGateMint,
+        newRoomGateAmount,
+        setNewRoomGateAmount,
+        newRoomGateType,
+        setNewRoomGateType,
         creatingRoom,
         handleCreateRoom,
     } = useRooms({
@@ -721,6 +732,7 @@ export function ChatClient() {
             <ChatHeader
                 walletAddress={wallet.publicKey?.toBase58() || null}
                 isUserInitialized={isUserInitialized}
+                needsInit={needsFunding || !!userInitError}
                 userInitError={userInitError}
                 rootStatus={rootStatus}
                 rootStatusText={rootStatusText}
@@ -739,8 +751,14 @@ export function ChatClient() {
                 <RoomSidebar
                     newRoomName={newRoomName}
                     setNewRoomName={setNewRoomName}
+                    newRoomGateEnabled={newRoomGateEnabled}
+                    setNewRoomGateEnabled={setNewRoomGateEnabled}
                     newRoomGateMint={newRoomGateMint}
                     setNewRoomGateMint={setNewRoomGateMint}
+                    newRoomGateAmount={newRoomGateAmount}
+                    setNewRoomGateAmount={setNewRoomGateAmount}
+                    newRoomGateType={newRoomGateType}
+                    setNewRoomGateType={setNewRoomGateType}
                     creatingRoom={creatingRoom}
                     onCreateRoom={handleCreateRoom}
                     rooms={rooms}
@@ -849,6 +867,14 @@ export function ChatClient() {
                     {toast.text}
                 </div>
             )}
+            <FundingModal
+                open={needsFunding && !fundingModalDismissed}
+                walletAddress={initWalletAddress}
+                balanceLamports={balanceLamports}
+                isChecking={isUserInitializing}
+                onRetry={retryUserInit}
+                onClose={() => setFundingModalDismissed(true)}
+            />
         </div>
     );
 }

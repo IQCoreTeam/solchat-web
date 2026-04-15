@@ -1,36 +1,29 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SystemProgram } from '@solana/web3.js';
-import { Buffer } from 'buffer';
+import { LAMPORTS_PER_SOL, SystemProgram } from '@solana/web3.js';
 import iqlabs from 'iqlabs-sdk';
 import { IQ_IDL } from 'iqlabs-sdk/contract';
 import type { SignerInput } from 'iqlabs-sdk/utils';
 import { sendAndConfirmTx } from '@/lib/utils/send-and-confirm';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
-import { ROOT_ID } from '@/lib/iqlabs/constants';
 
-const toRootBytes = (value: string | Uint8Array) =>
-  value instanceof Uint8Array ? value : iqlabs.utils.toSeedBytes(value);
+const MIN_FUNDING_LAMPORTS = 0.005 * LAMPORTS_PER_SOL;
 
-export function useUserInit(rootIdOverride?: string | Uint8Array) {
+export function useUserInit() {
   const { connection, readConnection } = useAppConnection();
   const appWallet = useAppWallet();
   const { publicKey, connected, signTransaction, signAllTransactions } = appWallet;
   const [isInitialized, setIsInitialized] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [needsFunding, setNeedsFunding] = useState(false);
+  const [balanceLamports, setBalanceLamports] = useState<number | null>(null);
 
-  const resolvedRootId = rootIdOverride ?? ROOT_ID;
-  const dbRootId = useMemo(() => toRootBytes(resolvedRootId), [resolvedRootId]);
   const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
   const builder = useMemo(
     () => iqlabs.contract.createInstructionBuilder(IQ_IDL, programId),
     [programId]
-  );
-  const rootPda = useMemo(
-    () => iqlabs.contract.getDbRootPda(dbRootId),
-    [dbRootId]
   );
 
   const publicKeyRef = useRef(publicKey);
@@ -65,24 +58,6 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
       setIsInitializing(true);
       setError(null);
 
-      // Ensure root PDA exists
-      const rootInfo = await readConnection.getAccountInfo(rootPda);
-      if (!rootInfo) {
-        console.log('[useUserInit] Root PDA missing, creating:', rootPda.toBase58());
-        const ix = iqlabs.contract.initializeDbRootInstruction(
-          builder,
-          {
-            db_root: rootPda,
-            signer: currentPublicKey,
-            system_program: SystemProgram.programId,
-          },
-          { db_root_id: dbRootId }
-        );
-        await sendAndConfirmTx(connection, readConnection, signer, ix);
-        console.log('[useUserInit] Root PDA created successfully');
-      }
-
-      // Ensure user is initialized
       const user = currentPublicKey;
       const userState = iqlabs.contract.getUserPda(user);
       const codeAccount = iqlabs.contract.getCodeAccountPda(user);
@@ -92,7 +67,17 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
       // ensureUserInitialized because it reads via the write connection,
       // which can hang on some RPC providers.
       const invInfo = await readConnection.getAccountInfo(userInventory);
-      if (!invInfo) {
+      if (invInfo) {
+        setNeedsFunding(false);
+      } else {
+        const balance = await readConnection.getBalance(currentPublicKey);
+        setBalanceLamports(balance);
+        if (balance < MIN_FUNDING_LAMPORTS) {
+          setNeedsFunding(true);
+          setIsInitialized(false);
+          return;
+        }
+        setNeedsFunding(false);
         console.log('[useUserInit] User not initialized, creating accounts');
         const ix = iqlabs.contract.userInitializeInstruction(builder, {
           user,
@@ -119,7 +104,7 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
     } finally {
       setIsInitializing(false);
     }
-  }, [builder, connected, connection, readConnection, dbRootId, programId, rootPda]);
+  }, [builder, connected, connection, readConnection]);
 
   useEffect(() => {
     if (!publicKey || !connected || !signTransaction || !signAllTransactions) {
@@ -134,6 +119,9 @@ export function useUserInit(rootIdOverride?: string | Uint8Array) {
     isInitialized,
     isInitializing,
     error,
+    needsFunding,
+    balanceLamports,
+    walletAddress: publicKey?.toBase58() ?? null,
     retry: checkAndInitialize,
   };
 }

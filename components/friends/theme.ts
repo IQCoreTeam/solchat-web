@@ -15,7 +15,7 @@ export const GlobalStyles = createGlobalStyle`
     }
   }
   body {
-  font-family: "bitArrayA2", serif;
+  font-family: var(--font-unifont), "Courier New", monospace;
   }
 `;
 
