@@ -3,7 +3,7 @@ import type { FormEvent } from 'react';
 import type { AccountInfo, Connection, PublicKey } from '@solana/web3.js';
 import { PublicKey as Web3PublicKey, SystemProgram } from '@solana/web3.js';
 import { Buffer } from 'buffer';
-import { BorshAccountsCoder } from '@coral-xyz/anchor';
+import { BorshAccountsCoder, BN } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
 import type { SignerInput } from 'iqlabs-sdk/utils';
 import { sendTx } from '@/lib/iqlabs/send-tx';
@@ -51,7 +51,10 @@ export function useRooms({
   const [roomsError, setRoomsError] = useState<string | null>(null);
   const [newRoomName, setNewRoomName] = useState('');
   const [creatingRoom, setCreatingRoom] = useState(false);
+  const [newRoomGateEnabled, setNewRoomGateEnabled] = useState(false);
   const [newRoomGateMint, setNewRoomGateMint] = useState('');
+  const [newRoomGateAmount, setNewRoomGateAmount] = useState('1');
+  const [newRoomGateType, setNewRoomGateType] = useState<0 | 1>(0);
 
   const loadRooms = useCallback(async () => {
     if (rootStatus !== 'ready' || !rootAccount) return;
@@ -161,9 +164,22 @@ export function useRooms({
     setRoomsError(null);
 
     try {
-      const gateMintPubkey = newRoomGateMint?.trim()
-        ? new Web3PublicKey(newRoomGateMint.trim())
-        : undefined;
+      let gateConfig: { mint: Web3PublicKey; amount: BN; gate_type: number } | null = null;
+      if (newRoomGateEnabled) {
+        const mintStr = newRoomGateMint.trim();
+        if (!mintStr) {
+          throw new Error('Gate mint address is required when gating is enabled.');
+        }
+        const amountStr = newRoomGateAmount.trim() || '0';
+        if (!/^\d+$/.test(amountStr)) {
+          throw new Error('Gate amount must be a non-negative integer.');
+        }
+        gateConfig = {
+          mint: new Web3PublicKey(mintStr),
+          amount: new BN(amountStr),
+          gate_type: newRoomGateType,
+        };
+      }
       const trimmedName = newRoomName.trim();
       const tableSeed = iqlabs.utils.toSeedBytes(trimmedName);
       const table = iqlabs.contract.getTablePda(rootPubkey, tableSeed);
@@ -189,15 +205,17 @@ export function useRooms({
           column_names: MESSAGE_COLUMNS.map((name) => Buffer.from(name, 'utf8')),
           id_col: Buffer.from('id', 'utf8'),
           ext_keys: [],
-          table_hint: Buffer.from(tableSeed),
-          gate_opt: gateMintPubkey ?? null,
+          gate_opt: gateConfig,
           writers_opt: null,
         }
       );
       await sendTx(connection, signer, ix);
 
       setNewRoomName('');
+      setNewRoomGateEnabled(false);
       setNewRoomGateMint('');
+      setNewRoomGateAmount('1');
+      setNewRoomGateType(0);
       await loadRooms();
     } catch (err) {
       console.error('[ChatClient] Create room error:', err);
@@ -205,7 +223,19 @@ export function useRooms({
     } finally {
       setCreatingRoom(false);
     }
-  }, [signer, newRoomName, newRoomGateMint, connection, loadRooms, rootPubkey, builder, dbRootId]);
+  }, [
+    signer,
+    newRoomName,
+    newRoomGateEnabled,
+    newRoomGateMint,
+    newRoomGateAmount,
+    newRoomGateType,
+    connection,
+    loadRooms,
+    rootPubkey,
+    builder,
+    dbRootId,
+  ]);
 
   return {
     rooms,
@@ -214,8 +244,14 @@ export function useRooms({
     roomsError,
     newRoomName,
     setNewRoomName,
+    newRoomGateEnabled,
+    setNewRoomGateEnabled,
     newRoomGateMint,
     setNewRoomGateMint,
+    newRoomGateAmount,
+    setNewRoomGateAmount,
+    newRoomGateType,
+    setNewRoomGateType,
     creatingRoom,
     handleCreateRoom,
   };

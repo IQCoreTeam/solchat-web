@@ -21,6 +21,7 @@ interface ChatHeaderProps {
     // Wallet & Auth
     walletAddress: string | null;
     isUserInitialized: boolean;
+    needsInit: boolean;
     userInitError: Error | null;
     rootStatus: 'checking' | 'missing' | 'creating' | 'ready' | 'error';
     rootStatusText: string;
@@ -44,6 +45,7 @@ interface ChatHeaderProps {
 export function ChatHeader({
                                walletAddress,
                                isUserInitialized,
+                               needsInit,
                                userInitError,
                                rootStatus,
                                rootStatusText,
@@ -81,7 +83,7 @@ export function ChatHeader({
 
                 {walletAddress ? (
                     <div className="flex flex-col gap-2 items-end ml-auto">
-                        {isUserInitialized && rootStatus === 'ready' ? (
+                        {!needsInit ? (
                             <div className="border-2 border-green-500 bg-black/70 px-3 py-2 text-xs text-green-200">
                                 <span className="text-green-300 text-xs uppercase">STATUS: OK</span>
                             </div>

@@ -5,9 +5,9 @@ import "./globals.css";
 import { AppProviders } from "@/components/providers";
 import localFont from "next/font/local";
 
-const bitArrayA2 = localFont({
-    src: './fonts/bitArray-A2.ttf',
-    variable: "--font-bitarray",
+const unifont = localFont({
+    src: './fonts/unifont.otf',
+    variable: "--font-unifont",
     display: 'swap',
 });
 
@@ -154,7 +154,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
-      <body className={`${bitArrayA2.variable} antialiased bg-black text-green-400`}>
+      <body className={`${unifont.variable} antialiased bg-black text-green-400`}>
         <AppProviders>{children}</AppProviders>
       </body>
     </html>
