@@ -9,6 +9,7 @@ import { useMemo, useState } from 'react';
 import { Buffer } from 'buffer';
 
 import { useRouter } from 'next/navigation';
+import { usePrivy } from '@privy-io/react-auth';
 import { useUserProfile } from './use-user-profile';
 import { shorten } from '@/lib/utils/message-utils';
 import { DefaultProfileAvatar } from '@/components/ui/default-profile-avatar';
@@ -34,6 +35,7 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
   const [imageError, setImageError] = useState(false);
   const [copied, setCopied] = useState(false);
   const wallet = useAppWallet();
+  const { ready: privyReady, authenticated, login } = usePrivy();
   const { connection, readConnection } = useAppConnection();
   const signer = useMemo<SignerInput | null>(() => {
     if (!wallet.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) {
@@ -273,7 +275,27 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
               SEE PROFILE
             </a>
 
-            {!isOwnProfile && (
+            {!viewerAddress && (
+              <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-2">
+                <div className="text-sm font-bold text-green-400 mb-1">
+                  CONNECT WALLET
+                </div>
+                <p className="text-xs text-white/60 mb-2">
+                  Connect your wallet to send a friend request or open a DM.
+                </p>
+                <button
+                  onClick={() => {
+                    if (privyReady && !authenticated) login();
+                  }}
+                  disabled={!privyReady}
+                  className="w-full rounded border border-green-500 px-4 py-2 text-sm font-bold text-green-300 hover:bg-green-500/10 transition disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {privyReady ? 'CONNECT WALLET' : 'LOADING...'}
+                </button>
+              </div>
+            )}
+
+            {!isOwnProfile && viewerAddress && (
               <div className="space-y-3">
                 {dmStatusLoading && (
                   <div className="bg-white/5 border border-white/10 rounded-lg p-4 text-sm text-white/70">

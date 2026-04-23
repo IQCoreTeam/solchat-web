@@ -1,11 +1,10 @@
 /**
  * Profile deep-link route.
- * Visiting /u/<walletAddress> renders the home page with the profile modal
- * opened for that wallet. Closing the modal returns to "/".
+ * Visiting /u/<walletAddress> renders the chat page with the profile modal
+ * opened for that wallet. Closing the modal returns to "/chat".
  */
 
-import { Footer } from '@/components/layout/footer';
-import { HomeWindow } from '@/components/home/home-window';
+import ChatPage from '../../chat/page';
 import { ProfileRouteModal } from './profile-route-modal';
 
 type ProfileRouteProps = {
@@ -15,10 +14,9 @@ type ProfileRouteProps = {
 export default async function ProfilePage({ params }: ProfileRouteProps) {
   const { wallet } = await params;
   return (
-    <div className="flex flex-col" style={{ minHeight: '100vh' }}>
-      <HomeWindow />
-      <Footer />
+    <>
+      <ChatPage />
       <ProfileRouteModal walletAddress={wallet} />
-    </div>
+    </>
   );
 }
