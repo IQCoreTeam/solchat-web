@@ -263,6 +263,16 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
               </div>
             </div>
 
+            {/* External profile link */}
+            <a
+              href={`https://profile.iqlabs.dev/${walletAddress}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full rounded border border-green-500 px-4 py-2 text-center text-sm font-bold text-green-300 hover:bg-green-500/10 transition"
+            >
+              SEE PROFILE
+            </a>
+
             {!isOwnProfile && (
               <div className="space-y-3">
                 {dmStatusLoading && (

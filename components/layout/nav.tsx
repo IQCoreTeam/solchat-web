@@ -175,15 +175,16 @@ export function Nav({ onOpenDm }: NavProps) {
                 [FRIENDS]
               </StyledButton>
             </Link>
-            <Link href="/users" style={{ flex: 1 }}>
-              <StyledButton
-                style={{
-                  borderColor: isActive('/users') ? '#4ade80' : '#16a34a'
-                }}
-              >
-                [USERS]
+            <a
+              href="https://profile.iqlabs.dev"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ flex: 1 }}
+            >
+              <StyledButton style={{ borderColor: '#16a34a' }}>
+                [PROFILE]
               </StyledButton>
-            </Link>
+            </a>
             <Link href="/account" style={{ flex: 1 }}>
               <StyledButton
                 style={{
@@ -238,15 +239,15 @@ export function Nav({ onOpenDm }: NavProps) {
                 </StyledButton>
               </Link>
 
-              <Link href="/users">
-                <StyledButton
-                  style={{
-                    borderColor: isActive('/users') ? '#4ade80' : '#16a34a'
-                  }}
-                >
-                  [USERS]
+              <a
+                href="https://profile.iqlabs.dev"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <StyledButton style={{ borderColor: '#16a34a' }}>
+                  [PROFILE]
                 </StyledButton>
-              </Link>
+              </a>
 
               <Link href="/account">
                 <StyledButton
