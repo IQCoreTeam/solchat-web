@@ -26,7 +26,7 @@ import { DM_STATUS } from '@/lib/friends/types';
 import type { Friend } from '@/lib/friends/types';
 import { useFriendAlerts } from '@/lib/friends/use-friend-alerts';
 import { GlobalStyles } from './theme';
-import { ROOT_ID } from '@/lib/iqlabs/constants';
+import { ROOT_ID_BYTES } from '@/lib/iqlabs/constants';
 import { getUserProfile, notifyGateway } from '@/lib/gateway/reader';
 import { usePendingMessages } from '@/lib/shared/use-pending-messages';
 import { useMessageChannel } from '@/lib/shared/use-message-channel';
@@ -62,7 +62,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         error: userInitError,
     } = useUserInit();
     const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
-    const dbRootId = useMemo(() => iqlabs.utils.toSeedBytes(ROOT_ID), []);
+    const dbRootId = useMemo(() => ROOT_ID_BYTES, []);
     const dbRoot = useMemo(
         () => iqlabs.contract.getDbRootPda(dbRootId),
         [dbRootId]
@@ -705,7 +705,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         }
 
         try {
-            await requestDmConnection(connection, signer, ROOT_ID, signer.publicKey.toBase58(), friendAddress.trim());
+            await requestDmConnection(connection, signer, ROOT_ID_BYTES, signer.publicKey.toBase58(), friendAddress.trim());
             await refetch();
             setAddFriendModalOpen(false);
         } catch (err) {

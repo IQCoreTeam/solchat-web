@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { AccountInfo, Connection, PublicKey } from '@solana/web3.js';
-import { PublicKey as Web3PublicKey, SystemProgram } from '@solana/web3.js';
+import { PublicKey as Web3PublicKey } from '@solana/web3.js';
 import { Buffer } from 'buffer';
-import { BorshAccountsCoder, BN } from '@coral-xyz/anchor';
+import { BorshAccountsCoder } from '@coral-xyz/anchor';
 import iqlabs from 'iqlabs-sdk';
 import type { SignerInput } from 'iqlabs-sdk/utils';
-import { sendTx } from '@/lib/iqlabs/send-tx';
-import { MESSAGE_COLUMNS, ROOT_ID } from '@/lib/iqlabs/constants';
+import { MESSAGE_COLUMNS, ROOT_ID_BYTES } from '@/lib/iqlabs/constants';
 import { decodeBytes, normalizeBytes } from '@/lib/shared/message-helpers';
 import type { RootStatus } from './use-root-account';
 
@@ -62,7 +61,7 @@ export function useRooms({
     setRoomsError(null);
     try {
       // Use SDK reader to get table seeds (BorshAccountsCoder doesn't decode them correctly)
-      const rootData = await iqlabs.reader.getTablelistFromRoot(readConnection, ROOT_ID);
+      const rootData = await iqlabs.reader.getTablelistFromRoot(readConnection, ROOT_ID_BYTES);
       const seedsRaw = rootData.tableSeeds ?? [];
 
       // SDK returns table hints as hex-encoded UTF-8 strings.
@@ -164,7 +163,7 @@ export function useRooms({
     setRoomsError(null);
 
     try {
-      let gateConfig: { mint: Web3PublicKey; amount: BN; gate_type: number } | null = null;
+      let gateConfig: { mint: Web3PublicKey; amount: number; gateType: number } | undefined;
       if (newRoomGateEnabled) {
         const mintStr = newRoomGateMint.trim();
         if (!mintStr) {
@@ -176,40 +175,24 @@ export function useRooms({
         }
         gateConfig = {
           mint: new Web3PublicKey(mintStr),
-          amount: new BN(amountStr),
-          gate_type: newRoomGateType,
+          amount: Number(amountStr),
+          gateType: newRoomGateType,
         };
       }
       const trimmedName = newRoomName.trim();
-      const tableSeed = iqlabs.utils.toSeedBytes(trimmedName);
-      const table = iqlabs.contract.getTablePda(rootPubkey, tableSeed);
-      const instructionTable = iqlabs.contract.getInstructionTablePda(
-        rootPubkey,
-        tableSeed
+      await iqlabs.writer.createTable(
+        connection,
+        signer as unknown as Parameters<typeof iqlabs.writer.createTable>[1],
+        ROOT_ID_BYTES,
+        trimmedName,
+        trimmedName,
+        [...MESSAGE_COLUMNS],
+        'id',
+        [],
+        gateConfig,
+        undefined,
+        trimmedName,
       );
-      const ix = iqlabs.contract.createTableInstruction(
-        builder,
-        {
-          db_root: rootPubkey,
-          receiver: new Web3PublicKey(iqlabs.constants.DEFAULT_WRITE_FEE_RECEIVER),
-          signer: signer.publicKey,
-          table,
-          instruction_table: instructionTable,
-          system_program: SystemProgram.programId,
-        },
-        {
-          db_root_id: dbRootId,
-          table_seed: Buffer.from(tableSeed),
-          table_hint: Buffer.from(trimmedName, 'utf8'),
-          table_name: Buffer.from(trimmedName, 'utf8'),
-          column_names: MESSAGE_COLUMNS.map((name) => Buffer.from(name, 'utf8')),
-          id_col: Buffer.from('id', 'utf8'),
-          ext_keys: [],
-          gate_opt: gateConfig,
-          writers_opt: null,
-        }
-      );
-      await sendTx(connection, signer, ix);
 
       setNewRoomName('');
       setNewRoomGateEnabled(false);
@@ -232,9 +215,6 @@ export function useRooms({
     newRoomGateType,
     connection,
     loadRooms,
-    rootPubkey,
-    builder,
-    dbRootId,
   ]);
 
   return {

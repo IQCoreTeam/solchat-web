@@ -83,9 +83,7 @@ export function MessageList({
             )}
             {error && <div>{error}</div>}
             {!isLoading && messages.length === 0 && !error && (
-                <div>
-                    {viewerAddress ? 'No messages yet. Be the first to say hello!' : 'Connect wallet first to see messages'}
-                </div>
+                <div>No messages yet. Be the first to say hello!</div>
             )}
             <div className="space-y-4">
                 {messages.map((message) => {
