@@ -12,6 +12,7 @@ import { readTableRows as gatewayReadTableMessageRows } from '@/lib/gateway/read
 import type { MessageRow } from '@/lib/shared/message-helpers';
 import { getCacheManager } from './cache-manager';
 import type { Connection } from '@solana/web3.js';
+import type { Idl } from '@coral-xyz/anchor';
 
 export interface ReaderParams {
   connection: Connection;
@@ -50,7 +51,7 @@ async function readRowsByDmSeed(
 export async function readRowsByTableCached(
   params: ReaderParams & { tableName: string }
 ): Promise<MessageRow[]> {
-  const { tableName, ...readerParams } = params;
+  const { tableName } = params;
   const roomId = `room:${tableName}`;
 
   console.log(`[CachedReader] Loading room: ${tableName}`);
@@ -94,7 +95,6 @@ export async function readRowsByDmSeedCached(
 ): Promise<MessageRow[]> {
   const { dmSeed } = params;
   const dmSeedHex = Buffer.from(dmSeed).toString('hex');
-  const roomId = `dm:${dmSeedHex}`;
 
   console.log(`[CachedReader] Loading DM: ${dmSeedHex.slice(0, 8)}...`);
 

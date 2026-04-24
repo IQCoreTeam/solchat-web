@@ -113,7 +113,8 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
     setRequestError(null);
     setRequestStatus('sending');
     try {
-      await requestDmConnection(connection, signer, ROOT_ID_BYTES, wallet.publicKey.toBase58(), walletAddress.trim());
+      const result = await requestDmConnection(connection, signer, ROOT_ID_BYTES, wallet.publicKey.toBase58(), walletAddress.trim());
+      console.log('[ProfileModal] Friend request result:', result);
       setRequestStatus('success');
       refreshDmState();
     } catch (err) {

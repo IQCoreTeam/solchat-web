@@ -18,8 +18,7 @@ import { notifyGateway } from '@/lib/gateway/reader';
 import { makeRoomTimestampKey, setLastMessageTimestamp, getLastMessageTimestamp } from '@/lib/cache/message-timestamp-cache';
 import { RpcConfigPrompt } from '@/components/ui/rpc-config-prompt';
 import { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
-import { makeChannelKey, channelKeyToSeed, roomIdToChannelKey } from '@/lib/shared/channel-utils';
-import { useWebSocketChannel } from '@/lib/shared/use-websocket-channel';
+import { makeChannelKey, channelKeyToSeed } from '@/lib/shared/channel-utils';
 import { useScrollTracker } from '@/lib/shared/use-scroll-tracker';
 import { createRoomFetcher } from '@/lib/chat/message-fetcher';
 import { useRootAccount } from '@/lib/chat/use-root-account';
@@ -38,8 +37,6 @@ type ToastState = {
     tone: ToastTone;
 };
 
-const DEBUG_WS = true;
-const channelKeyToRoomId = (channelKey: string) => makeRoomTimestampKey(channelKeyToSeed(channelKey));
 
 export function ChatClient() {
     /* --------------------------------------------------------------------------
@@ -98,7 +95,6 @@ export function ChatClient() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [disconnectingPrivy, setDisconnectingPrivy] = useState(false);
     const [roomNotificationsEnabled, setRoomNotificationsEnabled] = useState(true);
-    const [roomAlerts, setRoomAlerts] = useState<Record<string, boolean>>({});
     const [toast, setToast] = useState<ToastState | null>(null);
     const [uiIsAtBottom, setUiIsAtBottom] = useState(true);
 
@@ -113,6 +109,7 @@ export function ChatClient() {
     const lastSeenTimestampRef = useRef<Record<string, number>>({});
     const latestMessageTimestampRef = useRef<number>(0);
     const markerClearTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const markRoomSignatureSeenRef = useRef<(signature: string) => void>(() => {});
 
     const signer = useMemo<SignerInput | null>(() => {
         if (!wallet.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) {
@@ -145,7 +142,6 @@ export function ChatClient() {
 
     const {
         rooms,
-        setRooms,
         roomsLoading,
         roomsError,
         newRoomName,
@@ -169,8 +165,6 @@ export function ChatClient() {
         rootPubkey,
         sortRoomsByTimestamp,
         signer,
-        builder,
-        dbRootId,
     });
 
     const selectedRoom = useMemo(() => {
@@ -178,10 +172,7 @@ export function ChatClient() {
     }, [rooms, selectedSeed]);
     const selectedChannelKey = useMemo(() => (selectedSeed ? makeChannelKey(selectedSeed) : null), [selectedSeed]);
     const latestRoomsRef = useRef<RoomMeta[]>(rooms);
-    const latestSelectedRoomRef = useRef<RoomMeta | null>(selectedRoom);
-    // Sync refs inline where needed instead of useEffect
     latestRoomsRef.current = rooms;
-    latestSelectedRoomRef.current = selectedRoom;
 
     // Derived values (no useState needed)
     const walletAddress = wallet.publicKey?.toBase58() ?? '';
@@ -219,8 +210,7 @@ export function ChatClient() {
         const seedHex = channelKeyToSeed(channel);
         const timestampKey = makeRoomTimestampKey(seedHex);
         setLastMessageTimestamp(timestampKey, latestTimestamp);
-        setRoomAlerts((prev) => ({ ...prev, [channel]: false, [seedHex]: false }));
-    }, [selectedChannelKey, setRoomAlerts]);
+    }, [selectedChannelKey]);
 
     const fetcher = useCallback(
         (channelKey: string, fetchConfig?: FetchConfig) =>
@@ -261,11 +251,10 @@ export function ChatClient() {
             fetcher,
             connection: readConnection,
             endpointSource,
-            onRowsApplied: ({ channelKey, seedHex, rows }) => {
+            onRowsApplied: ({ seedHex, rows }) => {
                 const latestTimestamp = rows.reduce((max, msg) => Math.max(max, msg.timestamp ?? 0), 0);
                 if (latestTimestamp) {
                     setLastMessageTimestamp(makeRoomTimestampKey(seedHex), latestTimestamp);
-                    setRoomAlerts((prev) => ({ ...prev, [channelKey]: false, [seedHex]: false }));
                 }
             },
             decodeWindow: endpointSource === 'default' ? 20 : 40,
@@ -297,6 +286,7 @@ export function ChatClient() {
                 ),
             onAfterSuccess: (payload, signature) => {
                 if (!selectedRoom) return;
+                if (signature) markRoomSignatureSeenRef.current(signature);
                 // Optimistically mark this message as confirmed locally so we don't stay in "processing"
                 applyLocalRows(makeChannelKey(selectedRoom.seedHex), [
                     {
@@ -310,11 +300,9 @@ export function ChatClient() {
                     },
                 ], 'append');
                 removePendingMessage(payload.id);
-                // Don't invalidate - signature cache has no TTL now
-                // invalidateSignatureCache(selectedRoom.tableAddress);
-                const timestamp = payload.timestamp ?? 0;
-                notifyRoomMessageSent(selectedRoom.seedHex, timestamp, signature);
-                notifyGateway(selectedRoom.tableAddress, signature, signer?.publicKey?.toBase58());
+                if (signature) {
+                    notifyGateway(selectedRoom.tableAddress, signature, signer?.publicKey?.toBase58());
+                }
                 // Scroll after DOM updates on next frame
                 requestAnimationFrame(() => scrollToBottom('smooth'));
             },
@@ -365,161 +353,6 @@ export function ChatClient() {
     }, [isUserInitializing, userInitError, isUserInitialized]);
 
     useEffect(() => {
-        const alerts: Record<string, boolean> = {};
-        rooms.forEach((room) => {
-            const channelKey = makeChannelKey(room.seedHex);
-            const timestampKey = makeRoomTimestampKey(room.seedHex);
-            const cached = getLastMessageTimestamp(timestampKey) ?? 0;
-            const hasNew = Boolean(room.lastTimestamp && room.lastTimestamp > cached);
-            alerts[channelKey] = hasNew;
-            alerts[room.seedHex] = hasNew;
-        });
-        setRoomAlerts(alerts);
-    }, [rooms]);
-
-    useEffect(() => {
-        for (const room of rooms) {
-            if (selectedSeed && room.seedHex === selectedSeed) continue;
-            const timestampKey = makeRoomTimestampKey(room.seedHex);
-            const cached = getLastMessageTimestamp(timestampKey) ?? 0;
-            if (room.lastTimestamp && room.lastTimestamp > cached) {
-                const label = room.name || room.seedHex.slice(0, 6);
-                showToast(`New message available in ${label}`);
-                break;
-            }
-        }
-    }, [rooms, showToast, selectedSeed]);
-
-    // slowRpcMode is now a derived value, no effect needed
-
-    /* --------------------------------------------------------------------------
-     * WebSocket Connection
-     * -------------------------------------------------------------------------- */
-    const handleRoomSocketPayload = useCallback(async (data: unknown) => {
-        const payload = data as { type?: string; roomId?: string; lastTimestamp?: number; timestamp?: number; signature?: string };
-        const roomId = payload?.roomId;
-        if (!roomId || !roomId.startsWith('room:')) {
-            return;
-        }
-        const channelKey = roomIdToChannelKey(roomId);
-        const seedHex = channelKeyToSeed(channelKey);
-        const signature = payload.signature;
-        const incomingTimestamp = typeof payload.lastTimestamp === 'number'
-            ? payload.lastTimestamp
-            : typeof payload.timestamp === 'number'
-                ? payload.timestamp
-                : Number(payload.lastTimestamp || payload.timestamp || 0);
-
-        if (DEBUG_WS) {
-            console.log('[WS] roomUpdated payload', {
-                roomId,
-                channelKey,
-                seedHex,
-                signature,
-                incomingTimestamp,
-            });
-        }
-
-        // Don't invalidate signature cache - it has no TTL now, and we use targeted decode with signature
-        // const roomMeta = latestRoomsRef.current.find((room) => room.seedHex === seedHex);
-        // if (roomMeta?.tableAddress) {
-        //     invalidateSignatureCache(roomMeta.tableAddress);
-        // }
-
-        // Update room timestamps
-        setRooms((prev) => {
-            let changed = false;
-            const updated = prev.map((room) => {
-                if (room.seedHex !== seedHex) {
-                    return room;
-                }
-                if ((room.lastTimestamp || 0) >= incomingTimestamp) {
-                    return room;
-                }
-                changed = true;
-                return { ...room, lastTimestamp: incomingTimestamp };
-            });
-            if (!changed) return prev;
-            return sortRoomsByTimestamp(updated);
-        });
-
-        const currentRoom = latestSelectedRoomRef.current;
-        const isCurrentRoom = currentRoom?.seedHex === seedHex;
-
-        // Signature-targeted refresh path (efficient)
-        if (signature) {
-            try {
-                await targetedDecode(channelKey, signature);
-                if (DEBUG_WS) {
-                    console.log('[WS] signature-targeted decode success', {
-                        channelKey,
-                        signature: signature.slice(0, 8),
-                        isCurrentRoom,
-                    });
-                }
-                // For non-current rooms, set alert
-                if (!isCurrentRoom) {
-                    setRoomAlerts((prev) => ({ ...prev, [channelKey]: true, [seedHex]: true }));
-                }
-                return; // Successfully handled with signature
-            } catch (error) {
-                console.error('[ChatClient] Targeted decode failed, falling back to full refresh', signature.slice(0, 8), error);
-                // Fall through to full refresh as fallback
-            }
-        }
-
-        // Fallback: full refresh (only when signature is missing or failed)
-        if (isCurrentRoom) {
-            try {
-                await triggerLiveLatest(channelKey, { skipLoadingState: true });
-                if (DEBUG_WS) {
-                    console.log('[WS] full refresh completed (no signature or decode failed)');
-                }
-            } catch (error) {
-                console.error('[ChatClient] Failed to refresh room after notification', error);
-            }
-        } else {
-            setRoomAlerts((prev) => ({ ...prev, [channelKey]: true, [seedHex]: true }));
-        }
-    }, [triggerLiveLatest, sortRoomsByTimestamp, targetedDecode, selectedChannelKey]);
-
-    const roomWs = useWebSocketChannel({
-        onMessage: handleRoomSocketPayload,
-        logPrefix: 'ChatClient',
-    });
-
-    const roomSocketRef = roomWs.socketRef;
-    const roomSubscribedIdsRef = roomWs.subscribedIdsRef;
-    const roomWsConnected = roomWs.isConnected;
-
-    useEffect(() => {
-        if (!roomWsConnected || !roomSocketRef.current) return;
-        if (roomSocketRef.current.readyState !== WebSocket.OPEN) {
-            console.warn('[ChatClient] WS not ready for subscribe, state =', roomSocketRef.current.readyState);
-            return;
-        }
-        const socket = roomSocketRef.current;
-        const desired = new Set(rooms.map((room) => makeChannelKey(room.seedHex)));
-        const current = roomSubscribedIdsRef.current;
-
-        for (const id of desired) {
-            if (!current.has(id)) {
-                socket.send(JSON.stringify({ type: 'subscribe', roomId: channelKeyToRoomId(id) }));
-                current.add(id);
-            }
-        }
-
-        for (const id of Array.from(current)) {
-            if (!desired.has(id)) {
-                socket.send(JSON.stringify({ type: 'unsubscribe', roomId: channelKeyToRoomId(id) }));
-                current.delete(id);
-            }
-        }
-
-        roomSubscribedIdsRef.current = desired;
-  }, [rooms, roomWsConnected]);
-
-    useEffect(() => {
         if (!selectedChannelKey) return;
         void triggerLiveLatest(selectedChannelKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -556,17 +389,16 @@ export function ChatClient() {
         }
     }, [selectedChannelKey, targetedDecode]);
 
-    useAccountSubscription({
+    const { markSignatureSeen: markRoomSignatureSeen } = useAccountSubscription({
         connection: readConnection,
         account: selectedRoom ? new PublicKey(selectedRoom.tableAddress) : null,
         onNewSignatures: handleNewSignatures,
         commitment: 'confirmed',
-        enabled:
-            !roomWsConnected &&
-            (typeof document === 'undefined' || document.visibilityState === 'visible'),
+        enabled: typeof document === 'undefined' || document.visibilityState === 'visible',
         fetchLimit: 10,
         logPrefix: 'ChatClient',
     });
+    markRoomSignatureSeenRef.current = markRoomSignatureSeen;
 
     /* --------------------------------------------------------------------------
      * Effects: UI Sync
@@ -673,28 +505,6 @@ export function ChatClient() {
     /* --------------------------------------------------------------------------
      * Event Handlers
      * -------------------------------------------------------------------------- */
-    const notifyRoomMessageSent = useCallback((seedHex: string, ts: number, signature?: string) => {
-        const socket = roomSocketRef.current;
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
-            console.warn('[ChatClient] Room notify skipped, state =', socket?.readyState ?? 'no socket');
-            return;
-        }
-        const channelKey = makeChannelKey(seedHex);
-        try {
-            socket.send(
-                JSON.stringify({
-                    type: 'messageSent',
-                    roomId: channelKeyToRoomId(channelKey),
-                    timestamp: ts,
-                    signature,
-                })
-            );
-            console.log('[ChatClient] Room notify sent for', seedHex.slice(0, 8), 'ts', ts);
-        } catch (error) {
-            console.warn('[ChatClient] Failed to emit room notification', error);
-        }
-    }, []);
-
     // Handle disconnect
     const handleDisconnectPrivy = useCallback(async () => {
         setDisconnectingPrivy(true);
@@ -729,7 +539,6 @@ export function ChatClient() {
             />
             <ChatHeader
                 walletAddress={wallet.publicKey?.toBase58() || null}
-                isUserInitialized={isUserInitialized}
                 needsInit={needsFunding || !!userInitError}
                 userInitError={userInitError}
                 rootStatus={rootStatus}
@@ -764,7 +573,6 @@ export function ChatClient() {
                     onSelectRoom={setSelectedSeed}
                     roomsLoading={roomsLoading}
                     roomsError={roomsError}
-                    roomAlerts={roomAlerts}
                     hasWallet={hasWallet}
                     canWrite={canWrite}
                     isUserInitialized={isUserInitialized}

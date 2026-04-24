@@ -8,8 +8,7 @@
 
 import { useEffect, useRef } from 'react';
 import { PublicKey, type Connection } from '@solana/web3.js';
-import { updateAccountCache } from '@/lib/rpc/cache';
-import { getSignaturesForTable } from '@/lib/gateway/reader';
+import { updateAccountCache, getCachedSignatures } from '@/lib/rpc/cache';
 
 export interface UseAccountSubscriptionParams {
   /**
@@ -77,6 +76,10 @@ export function useAccountSubscription({
   const lastFetchRef = useRef<number>(0);
   const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  const markSignatureSeen = (signature: string) => {
+    seenSignaturesRef.current.add(signature);
+  };
+
   // Update handler ref when it changes
   useEffect(() => {
     handlerRef.current = onNewSignatures;
@@ -91,10 +94,14 @@ export function useAccountSubscription({
     let subscriptionId: number | null = null;
     let isActive = true;
 
+    const fetchLatestSignatures = async (limit: number): Promise<string[]> => {
+      const infos = await getCachedSignatures(connection, account, limit);
+      return infos.map((info) => info.signature).filter(Boolean);
+    };
+
     const subscribe = async () => {
       try {
-        // Initial fetch to populate seen signatures
-        const initial = await getSignaturesForTable(account.toBase58(), fetchLimit);
+        const initial = await fetchLatestSignatures(fetchLimit);
         for (const sig of initial) {
           seenSignaturesRef.current.add(sig);
         }
@@ -131,8 +138,7 @@ export function useAccountSubscription({
               console.log(`[${logPrefix}] Account changed, fetching new signatures...`);
 
               try {
-                // Fetch recent signatures
-                const signatures = await getSignaturesForTable(account.toBase58(), fetchLimit);
+                const signatures = await fetchLatestSignatures(fetchLimit);
 
                 // Filter out already-seen signatures
                 const fresh = signatures.filter((sig) => !seenSignaturesRef.current.has(sig));
@@ -185,4 +191,6 @@ export function useAccountSubscription({
       seenSignaturesRef.current.clear();
     };
   }, [connection, accountKey, commitment, enabled, fetchLimit, logPrefix]);
+
+  return { markSignatureSeen };
 }

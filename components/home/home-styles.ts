@@ -2,7 +2,7 @@ import styled from 'styled-components';
 import solchatTheme from '../styles/solchatTheme';
 
 export const DesktopBackground = styled.div`
-    background: ${({ theme }) => solchatTheme.desktopBackground};
+    background: ${() => solchatTheme.desktopBackground};
     flex: 1;
     display: flex;
     flex-direction: column;

@@ -7,7 +7,7 @@
 
 import { useState, useMemo } from 'react';
 import dayjs from 'dayjs';
-import { shorten, formatTimestamp, formatFullTimestamp } from '@/lib/utils/message-utils';
+import { shorten } from '@/lib/utils/message-utils';
 import { AttachmentPreview } from '@/components/ui/attachment-preview';
 import { useUserProfile } from '@/components/users/use-user-profile';
 import { ProfileModal } from '@/components/users/profile-modal';
@@ -73,7 +73,6 @@ export function MessageBubble({
     // Messages with signatures are always confirmed, regardless of status field
     // This handles old messages in blockchain that have status: 'pending'
     const isPending = !signature && status === 'pending';
-    const formattedTime = showFullTimestamp ? formatFullTimestamp(timestamp) : formatTimestamp(timestamp);
     const localizedTime = useMemo(() => {
         if (!timestamp) return '';
         const dateTime = dayjs(timestamp);

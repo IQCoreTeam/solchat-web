@@ -59,7 +59,7 @@ export function useDmRelationship(
 
   useEffect(() => {
     if (!connection || !viewerAddress || !otherAddress) {
-      setState((prev) => ({
+      setState(() => ({
         ...initialState,
         dmSeed: viewerAddress && otherAddress ? iqlabs.utils.deriveDmSeed(viewerAddress, otherAddress) : null,
         dmTableAddress: null,

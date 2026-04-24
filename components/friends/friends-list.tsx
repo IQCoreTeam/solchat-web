@@ -20,26 +20,23 @@ import { IQ_IDL } from 'iqlabs-sdk/contract';
 import type { SignerInput } from 'iqlabs-sdk/utils';
 import { sendTx } from '@/lib/iqlabs/send-tx';
 import { sendAndConfirmTx } from '@/lib/utils/send-and-confirm';
-import { shorten as shortenAddress } from '@/lib/utils/message-utils';
 import { requestDmConnection } from '@/lib/friends/request-connection';
 import { DM_STATUS } from '@/lib/friends/types';
 import type { Friend } from '@/lib/friends/types';
 import { useFriendAlerts } from '@/lib/friends/use-friend-alerts';
 import { GlobalStyles } from './theme';
 import { ROOT_ID_BYTES } from '@/lib/iqlabs/constants';
-import { getUserProfile, notifyGateway } from '@/lib/gateway/reader';
+import { notifyGateway } from '@/lib/gateway/reader';
 import { usePendingMessages } from '@/lib/shared/use-pending-messages';
 import { useMessageChannel } from '@/lib/shared/use-message-channel';
-import { useOnAccountChange } from '@/lib/shared/useOnAccountChange';
+import { useAccountSubscription } from '@/lib/shared/use-account-subscription';
 import { makeDmTimestampKey, setLastMessageTimestamp } from '@/lib/cache/message-timestamp-cache';
 import { RpcConfigPrompt } from '@/components/ui/rpc-config-prompt';
 import { runWithRpcRateLimit } from '@/lib/utils/rpc-request-queue';
-import { invalidateSignatureCache } from '@/lib/rpc/cache';
 import { useUserInit } from '@/lib/iqlabs/use-user-init';
-import { makeDmChannelKey, dmChannelKeyToSeed, dmRoomIdToChannelKey } from '@/lib/shared/channel-utils';
+import { makeDmChannelKey, dmChannelKeyToSeed } from '@/lib/shared/channel-utils';
 import { extractErrorLogs } from '@/lib/utils/error-utils';
 import { createDmFetcher } from '@/lib/friends/dm-fetcher';
-import { useWebSocketChannel } from '@/lib/shared/use-websocket-channel';
 import { useScrollTracker } from '@/lib/shared/use-scroll-tracker';
 import { useDmKeys } from '@/lib/crypto/use-dm-keys';
 import { encryptDmPayload } from '@/lib/crypto/dm-encryption';
@@ -76,13 +73,8 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     });
     const dmKeys = useDmKeys();
 
-    // Derive encryption keys when wallet is ready
-    const encKeyPublishedRef = useRef(false);
     useEffect(() => {
-        if (!wallet.connected) {
-            encKeyPublishedRef.current = false;
-            return;
-        }
+        if (!wallet.connected) return;
         dmKeys.deriveKeys();
     }, [wallet.connected, dmKeys.deriveKeys]);
 
@@ -96,6 +88,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     // DM state
     const [chatFriend, setChatFriend] = useState<Friend | null>(null);
     const [chatOpen, setChatOpen] = useState(false);
+    const markDmSignatureSeenRef = useRef<(signature: string) => void>(() => {});
     const chatPendingState = usePendingMessages();
     const {
         pendingMessages: chatPendingMessages,
@@ -146,66 +139,18 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     }, [wallet]);
     const hasWallet = Boolean(wallet?.publicKey);
 
-    // Encryption status: 'deriving' | 'publishing' | 'ready' | 'error' | 'off'
-    const [encStatus, setEncStatus] = useState<'deriving' | 'publishing' | 'ready' | 'error' | 'off'>('off');
-    const [encError, setEncError] = useState<string | null>(null);
+    const [encStatus, setEncStatus] = useState<'deriving' | 'ready' | 'off'>('off');
+    const encError: string | null = null;
 
-    // Auto-publish encryption pubkey to on-chain profile if not already there
     useEffect(() => {
-        if (!dmKeys.ready || !dmKeys.pubHex || !signer || !userAddress || encKeyPublishedRef.current) {
-            if (wallet.connected && !dmKeys.ready) setEncStatus('deriving');
-            return;
+        if (!wallet.connected) {
+            setEncStatus('off');
+        } else if (dmKeys.ready) {
+            setEncStatus('ready');
+        } else {
+            setEncStatus('deriving');
         }
-        // Prevent concurrent attempts
-        encKeyPublishedRef.current = true;
-
-        (async () => {
-            try {
-                const existing = await getUserProfile(userAddress);
-
-                if (existing?.encryptionPubKey === dmKeys.pubHex) {
-                    console.log('[dmKeys] Encryption key already published');
-                    setEncStatus('ready');
-                    return;
-                }
-
-                setEncStatus('publishing');
-                const profileData = {
-                    name: existing?.name || '',
-                    bio: existing?.bio || '',
-                    profilePicture: existing?.profilePicture || '',
-                    encryptionPubKey: dmKeys.pubHex,
-                };
-                const txId = await iqlabs.writer.codeIn(
-                    { connection, signer: signer as any },
-                    [JSON.stringify(profileData)],
-                    'profile-metadata',
-                    0,
-                );
-                if (!txId) {
-                    setEncStatus('error');
-                    setEncError('Failed to store encryption key on-chain');
-                    return;
-                }
-
-                await iqlabs.writer.updateUserMetadata(
-                    connection,
-                    signer as any,
-                    dbRootId,
-                    txId,
-                );
-                console.log('[dmKeys] Encryption key auto-published to on-chain profile');
-                setEncStatus('ready');
-            } catch (err) {
-                // Reset ref so it can retry on next render
-                encKeyPublishedRef.current = false;
-                console.warn('[dmKeys] Failed to auto-publish encryption key:', err);
-                const msg = err instanceof Error ? err.message : 'Unknown error';
-                setEncStatus('error');
-                setEncError(msg);
-            }
-        })();
-    }, [dmKeys.ready, dmKeys.pubHex, signer, userAddress, connection, readConnection, programId, dbRootId]);
+    }, [wallet.connected, dmKeys.ready]);
 
     /* --------------------------------------------------------------------------
      * Derived Values
@@ -251,10 +196,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     const {
         friendTimestamps,
         setFriendTimestamps,
-        dmAlerts,
-        setDmAlerts,
         toastMessage,
-        showToast,
     } = useFriendAlerts({
         friends,
         chatOpen,
@@ -359,12 +301,11 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             connection: readConnection,
             endpointSource,
             roomRateLimit: DM_RATE_LIMIT,
-            onRowsApplied: ({ channelKey, seedHex, rows }) => {
+            onRowsApplied: ({ seedHex, rows }) => {
                 const latestTimestamp = rows.reduce((max, msg) => Math.max(max, msg.timestamp ?? 0), 0);
                 if (latestTimestamp) {
                     setLastMessageTimestamp(makeDmTimestampKey(seedHex), latestTimestamp);
                     setFriendTimestamps((prev) => ({ ...prev, [seedHex]: latestTimestamp }));
-                    setDmAlerts((prev) => ({ ...prev, [channelKey]: false, [seedHex]: false }));
                 }
             },
             runWithRpcRateLimit,
@@ -414,14 +355,12 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                     const dmKey = chatFriend.dmSeedHex;
                     setLastMessageTimestamp(makeDmTimestampKey(dmKey), timestamp);
                     setFriendTimestamps((prev) => ({ ...prev, [dmKey]: timestamp }));
-                    setDmAlerts((prev) => ({ ...prev, [dmKey]: false }));
                 }
             },
             onAfterSuccess: (payload, signature) => {
                 if (chatFriend?.dmSeedHex) {
-                    const timestamp = payload.timestamp ?? 0;
-                    notifyDmMessageSent(chatFriend.dmSeedHex, timestamp, signature);
-                    if (chatFriend.tableAddress) notifyGateway(chatFriend.tableAddress, signature, userAddress);
+                    if (signature) markDmSignatureSeenRef.current(signature);
+                    if (chatFriend.tableAddress && signature) notifyGateway(chatFriend.tableAddress, signature, userAddress ?? undefined);
                     const channelKey = makeDmChannelKey(chatFriend.dmSeedHex);
                     applyLocalRows(channelKey, [
                         {
@@ -436,7 +375,10 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             },
             onAfterError: (err, payload) => {
                 removeChatPendingMessage(payload.id);
-                const message = err instanceof Error ? err.message : 'Failed to send DM';
+                let message = err instanceof Error ? err.message : 'Failed to send DM';
+                if (message.includes('connection table not found')) {
+                    message = 'Friend request not yet approved by the other user, or the connection does not exist on-chain yet.';
+                }
                 setChatActionError(message);
             },
         },
@@ -492,103 +434,32 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         [triggerLiveLatest]
     );
 
-    const handleDmSocketPayload = useCallback(async (data: unknown) => {
-        const payload = data as { type?: string; roomId?: string; lastTimestamp?: number; timestamp?: number; signature?: string };
-        const roomId = payload?.roomId;
-        if (!roomId || !roomId.startsWith('dm:')) {
-            return;
-        }
-        const channelKey = dmRoomIdToChannelKey(roomId);
-        const dmSeedHex = dmChannelKeyToSeed(channelKey);
-        const incomingTimestamp = typeof payload.lastTimestamp === 'number'
-            ? payload.lastTimestamp
-            : typeof payload.timestamp === 'number'
-                ? payload.timestamp
-                : Number(payload.lastTimestamp || payload.timestamp || 0);
-
-        const targetFriend = friendMapBySeedHex[dmSeedHex];
-        if (targetFriend) {
-            try {
-                if (targetFriend.tableAddress) {
-                    invalidateSignatureCache(targetFriend.tableAddress);
-                }
-            } catch (error) {
-                console.error('[FriendsList] Failed to invalidate DM cache', error);
-            }
-        }
-
-        setFriendTimestamps((prev) => {
-            const current = prev[dmSeedHex] ?? 0;
-            if (incomingTimestamp <= current) {
-                return prev;
-            }
-            return { ...prev, [dmSeedHex]: incomingTimestamp };
-        });
-
-        if (chatFriend?.dmSeedHex === dmSeedHex && chatOpen) {
-            try {
-                if (payload?.signature) {
-                    await targetedDecode(channelKey, payload.signature);
-                } else {
-                    await triggerLiveLatest(channelKey, { skipLoadingState: true });
-                }
-            } catch (error) {
-                console.error('[FriendsList] Failed to refresh DM after notification', error);
-            }
-        } else {
-            setDmAlerts((prev) => ({ ...prev, [dmSeedHex]: true, [channelKey]: true }));
-            const targetFriend = friendMapBySeedHex[dmSeedHex];
-            if (targetFriend) {
-                const label = shortenAddress(targetFriend.address, 6);
-                showToast(`New message from ${label}`);
-            }
-        }
-    }, [chatFriend, chatOpen, friendMapBySeedHex, showToast, targetedDecode, triggerLiveLatest]);
-
-    const dmWs = useWebSocketChannel({
-        onMessage: handleDmSocketPayload,
-        logPrefix: 'FriendsList DM',
-    });
-
-    const dmSocketRef = dmWs.socketRef;
-    const dmSubscribedIdsRef = dmWs.subscribedIdsRef;
-    const dmWsConnected = dmWs.isConnected;
-
     const handleOpenChat = useCallback(async (friend: Friend) => {
         setChatFriend(friend);
         setChatActionError(null);
         setChatMessageInput('');
         setChatOpen(true);
+        // Prefetch recipient's encryption pubkey in the background so the first
+        // message send doesn't have to wait for the (potentially slow) on-chain lookup.
+        void dmKeys.getRecipientPubKey(friend.address);
         await loadChatHistory(friend);
         dmInitialScrollRef.current = true;
         setTimeout(() => {
             scrollChatToBottom();
         }, 0);
-    }, [loadChatHistory, scrollChatToBottom]);
+    }, [loadChatHistory, scrollChatToBottom, dmKeys]);
 
-    const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-    const handleDmLogs = useCallback(() => {
+    const handleDmNewSignatures = useCallback(async (signatures: string[]) => {
         if (!chatFriend?.dmSeedHex) return;
-
-        if (refreshTimeoutRef.current) {
-            clearTimeout(refreshTimeoutRef.current);
-        }
-
-        refreshTimeoutRef.current = setTimeout(() => {
-            const channelKey = makeDmChannelKey(chatFriend.dmSeedHex);
-            void triggerLiveLatest(channelKey, { skipLoadingState: true });
-        }, 500);
-    }, [chatFriend, triggerLiveLatest]);
-
-    // Cleanup timeout on unmount
-    useEffect(() => {
-        return () => {
-            if (refreshTimeoutRef.current) {
-                clearTimeout(refreshTimeoutRef.current);
+        const channelKey = makeDmChannelKey(chatFriend.dmSeedHex);
+        for (const signature of signatures) {
+            try {
+                await targetedDecode(channelKey, signature);
+            } catch (error) {
+                console.error('[FriendsList] Failed to decode DM signature', signature.slice(0, 8), error);
             }
-        };
-    }, []);
+        }
+    }, [chatFriend?.dmSeedHex, targetedDecode]);
 
     /* --------------------------------------------------------------------------
      * Effects
@@ -622,58 +493,26 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         pruneChatPendingMessages(dmMessages);
     }, [dmMessages, chatPendingMessages.length, pruneChatPendingMessages]);
 
-    // Account change subscription for chat friend table
-    const getChatFriendTableAccount = () => {
-        if (!chatFriend) return null;
+    const chatFriendTableAccount = useMemo(() => {
+        if (!chatFriend?.tableAddress) return null;
         try {
             return new PublicKey(chatFriend.tableAddress);
         } catch (error) {
             console.warn('[FriendsList] Invalid chat table address:', error);
             return null;
         }
-    };
+    }, [chatFriend?.tableAddress]);
 
-    useOnAccountChange({
+    const { markSignatureSeen: markDmSignatureSeen } = useAccountSubscription({
         connection: readConnection,
-        account: getChatFriendTableAccount(),
-        handler: () => {
-            void handleDmLogs();
-        },
-        commitment: 'processed',
-        enabled: !dmWsConnected,
+        account: chatFriendTableAccount,
+        onNewSignatures: handleDmNewSignatures,
+        commitment: 'confirmed',
+        enabled: typeof document === 'undefined' || document.visibilityState === 'visible',
+        fetchLimit: 10,
+        logPrefix: 'FriendsList DM',
     });
-
-    useEffect(() => {
-        if (!dmWsConnected || !dmSocketRef.current) return;
-        if (dmSocketRef.current.readyState !== WebSocket.OPEN) {
-            console.warn('[FriendsList] DM WS not ready, state =', dmSocketRef.current.readyState);
-            return;
-        }
-        const socket = dmSocketRef.current;
-        const desired = new Set(
-            friends
-                .map((friend) => friend.dmSeedHex)
-                .filter((seed): seed is string => Boolean(seed))
-                .map((seed) => makeDmTimestampKey(seed))
-        );
-        const current = dmSubscribedIdsRef.current;
-
-        for (const id of desired) {
-            if (!current.has(id)) {
-                socket.send(JSON.stringify({ type: 'subscribe', roomId: id }));
-                current.add(id);
-            }
-        }
-
-        for (const id of Array.from(current)) {
-            if (!desired.has(id)) {
-                socket.send(JSON.stringify({ type: 'unsubscribe', roomId: id }));
-                current.delete(id);
-            }
-        }
-
-        dmSubscribedIdsRef.current = desired;
-    }, [friends, dmWsConnected]);
+    markDmSignatureSeenRef.current = markDmSignatureSeen;
 
     /* --------------------------------------------------------------------------
      * Event Handlers
@@ -834,27 +673,6 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         }
     };
 
-    const notifyDmMessageSent = useCallback((dmSeedHex: string, ts: number, signature?: string) => {
-        const socket = dmSocketRef.current;
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
-            console.warn('[FriendsList] DM notify skipped, state =', socket?.readyState ?? 'no socket');
-            return;
-        }
-        try {
-            socket.send(
-                JSON.stringify({
-                    type: 'messageSent',
-                    roomId: makeDmTimestampKey(dmSeedHex),
-                    timestamp: ts,
-                    signature,
-                })
-            );
-            console.log('[FriendsList] DM notify sent for', dmSeedHex.slice(0, 8), 'ts', ts, 'sig', signature?.slice(0, 8));
-        } catch (error) {
-            console.warn('[FriendsList] Failed to emit DM notification', error);
-        }
-    }, []);
-
     const closeChatModal = () => {
         setChatOpen(false);
         setChatFriend(null);
@@ -907,7 +725,6 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                     userAddress={userAddress}
                     loading={loading}
                     filteredFriends={filteredFriends}
-                    dmAlerts={dmAlerts}
                     onApprove={handleApproveFriend}
                     onBlock={showBlockConfirm}
                     onUnblock={handleUnblockFriend}

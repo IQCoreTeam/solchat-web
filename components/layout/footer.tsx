@@ -1,8 +1,5 @@
 'use client';
 
-import {Frame} from "react95";
-
-
 export function Footer() {
   return (
     <div  style={{display:'flex',justifyContent: 'center'}}>

@@ -12,7 +12,6 @@ import { ROOT_ID_BYTES } from '@/lib/iqlabs/constants';
 import { requestDmConnection } from '@/lib/friends/request-connection';
 import type { UserProfile } from './types';
 import { extractUserMetadata } from './profile-helpers';
-import { getOrDeriveKeypair } from '@/lib/crypto/dm-encryption';
 
 export function useUserProfileManager() {
   const { connection, readConnection } = useAppConnection();
@@ -155,22 +154,10 @@ export function useUserProfileManager() {
         const userPk = new PublicKey(userAddress);
         const userPda = iqlabs.contract.getUserPda(userPk);
 
-        // Derive encryption pubkey if wallet supports signMessage
-        let encryptionPubKey: string | undefined;
-        if (wallet.signMessage) {
-          try {
-            const kp = await getOrDeriveKeypair(wallet.signMessage);
-            encryptionPubKey = kp.pubHex;
-          } catch (err) {
-            console.warn('[UserProfile] Could not derive encryption key:', err);
-          }
-        }
-
         const fullMetadata = JSON.stringify({
           name: profile.name,
           bio: profile.bio,
           profilePicture: profile.profilePicture,
-          ...(encryptionPubKey ? { encryptionPubKey } : {}),
         });
 
         console.log('[UserProfile] Storing metadata with iqlabs.writer.codeIn...');
