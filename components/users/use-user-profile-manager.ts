@@ -8,7 +8,7 @@ import { readTableRows as gatewayReadTableRows, getUserProfile } from '@/lib/gat
 import { IQ_IDL } from 'iqlabs-sdk/contract';
 import type { SignerInput } from 'iqlabs-sdk/utils';
 import { sendAndConfirmTx } from '@/lib/utils/send-and-confirm';
-import { ROOT_ID } from '@/lib/iqlabs/constants';
+import { ROOT_ID_BYTES } from '@/lib/iqlabs/constants';
 import { requestDmConnection } from '@/lib/friends/request-connection';
 import type { UserProfile } from './types';
 import { extractUserMetadata } from './profile-helpers';
@@ -25,7 +25,7 @@ export function useUserProfileManager() {
   const [error, setError] = useState<string | null>(null);
 
   const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
-  const dbRootId = useMemo(() => iqlabs.utils.toSeedBytes(ROOT_ID), []);
+  const dbRootId = useMemo(() => ROOT_ID_BYTES, []);
   const dbRoot = useMemo(() => iqlabs.contract.getDbRootPda(dbRootId, programId), [dbRootId, programId]);
   const builder = useMemo(() => iqlabs.contract.createInstructionBuilder(IQ_IDL, programId), [programId]);
 
@@ -292,7 +292,7 @@ export function useUserProfileManager() {
       if (existing) throw new Error('Connection already exists :3');
 
       try {
-        await requestDmConnection(connection, signer, ROOT_ID, userAddress, targetPubkey.trim());
+        await requestDmConnection(connection, signer, ROOT_ID_BYTES, userAddress, targetPubkey.trim());
       } catch (err) {
         console.error('[UserProfileManager] requestDm error', err);
         throw err;

@@ -1,4 +1,8 @@
+import { Buffer } from 'buffer';
+
 export const ROOT_ID = process.env.NEXT_PUBLIC_ROOT_ID || 'solchat-root';
+
+export const ROOT_ID_BYTES: Buffer = Buffer.from(ROOT_ID, 'utf8');
 
 export const MESSAGE_COLUMNS = ['id', 'text', 'file', 'sender', 'timestamp'] as const;
 

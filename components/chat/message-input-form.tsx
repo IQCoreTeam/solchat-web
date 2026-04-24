@@ -52,13 +52,13 @@ export function MessageInputForm({
                         type="text"
                         value={messageInput}
                         onChange={(event) => setMessageInput(event.target.value)}
-                        placeholder="Type your message"
+                        placeholder={hasWallet ? 'Type your message' : 'Connect wallet to send a message'}
                         className="flex-1 rounded px-4 py-2 text-sm outline-none focus:ring-2"
-                        disabled={!canWrite}
                     />
                     <button
                         type="submit"
                         disabled={!canSubmit}
+                        title={!hasWallet ? 'Connect wallet to send message' : !isUserInitialized ? 'Waiting for on-chain account…' : undefined}
                         className="rounded px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed whitespace-nowrap"
                         onMouseEnter={(e) => {
                             if (canSubmit) {
@@ -126,9 +126,6 @@ export function MessageInputForm({
                 )}
                 {attachmentError && <p className="text-xs">{attachmentError}</p>}
             </div>
-            {!hasWallet && (
-                <p className="mt-2 text-xs">Connect your wallet to send messages.</p>
-            )}
             {hasWallet && !isUserInitialized && !userInitError && (
                 <p className="mt-2 text-xs">
                     Waiting for your on-chain account initialization…

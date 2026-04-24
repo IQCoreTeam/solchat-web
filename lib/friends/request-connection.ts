@@ -10,12 +10,12 @@ import type { SignerInput } from 'iqlabs-sdk/utils';
 export async function requestDmConnection(
   connection: Connection,
   signer: SignerInput,
-  dbRootId: string,
+  dbRootId: Uint8Array,
   requesterPub: string,
   receiverPub: string,
 ): Promise<{ signature: string; connectionSeed: Uint8Array; connectionTable: PublicKey }> {
   const connectionSeed = iqlabs.utils.deriveDmSeed(requesterPub, receiverPub);
-  const dbRoot = iqlabs.contract.getDbRootPda(iqlabs.utils.toSeedBytes(dbRootId));
+  const dbRoot = iqlabs.contract.getDbRootPda(dbRootId);
   const connectionTable = iqlabs.contract.getConnectionTablePda(dbRoot, connectionSeed);
 
   const signature = await iqlabs.writer.requestConnection(

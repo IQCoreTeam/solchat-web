@@ -20,7 +20,7 @@ import { IQ_IDL } from 'iqlabs-sdk/contract';
 import type { SignerInput } from 'iqlabs-sdk/utils';
 import { sendTx } from '@/lib/iqlabs/send-tx';
 import { DM_STATUS } from '@/lib/friends/types';
-import { ROOT_ID } from '@/lib/iqlabs/constants';
+import { ROOT_ID_BYTES } from '@/lib/iqlabs/constants';
 import { useDmRelationship } from './use-dm-relationship';
 import { requestDmConnection } from '@/lib/friends/request-connection';
 
@@ -48,7 +48,7 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
     };
   }, [wallet]);
   const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
-  const dbRootId = useMemo(() => iqlabs.utils.toSeedBytes(ROOT_ID), []);
+  const dbRootId = useMemo(() => ROOT_ID_BYTES, []);
   const dbRoot = useMemo(
     () => iqlabs.contract.getDbRootPda(dbRootId),
     [dbRootId]
@@ -113,7 +113,7 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
     setRequestError(null);
     setRequestStatus('sending');
     try {
-      await requestDmConnection(connection, signer, ROOT_ID, wallet.publicKey.toBase58(), walletAddress.trim());
+      await requestDmConnection(connection, signer, ROOT_ID_BYTES, wallet.publicKey.toBase58(), walletAddress.trim());
       setRequestStatus('success');
       refreshDmState();
     } catch (err) {

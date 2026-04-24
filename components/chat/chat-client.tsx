@@ -13,7 +13,7 @@ import { usePendingMessages } from '@/lib/shared/use-pending-messages';
 import { useMessageChannel } from '@/lib/shared/use-message-channel';
 import type { FetchConfig } from '@/lib/shared/useMessageIndexLoader';
 import { useAccountSubscription } from '@/lib/shared/use-account-subscription';
-import { ROOT_ID } from '@/lib/iqlabs/constants';
+import { ROOT_ID_BYTES } from '@/lib/iqlabs/constants';
 import { notifyGateway } from '@/lib/gateway/reader';
 import { makeRoomTimestampKey, setLastMessageTimestamp, getLastMessageTimestamp } from '@/lib/cache/message-timestamp-cache';
 import { RpcConfigPrompt } from '@/components/ui/rpc-config-prompt';
@@ -60,7 +60,7 @@ export function ChatClient() {
     const { logout } = usePrivy();
 
     const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
-    const dbRootId = useMemo(() => iqlabs.utils.toSeedBytes(ROOT_ID), []);
+    const dbRootId = useMemo(() => ROOT_ID_BYTES, []);
     const coder = useMemo(() => new BorshAccountsCoder(IQ_IDL), []);
     const builder = useMemo(
         () => iqlabs.contract.createInstructionBuilder(IQ_IDL, programId),
@@ -225,11 +225,10 @@ export function ChatClient() {
     const fetcher = useCallback(
         (channelKey: string, fetchConfig?: FetchConfig) =>
             createRoomFetcher({
-                walletAddress,
                 endpointSource,
                 rooms: latestRoomsRef.current,
             })(channelKey, fetchConfig),
-        [walletAddress, endpointSource]
+        [endpointSource]
     );
 
     const resolveChannelMeta = useCallback((channelKey: string) => {
@@ -520,12 +519,11 @@ export function ChatClient() {
         roomSubscribedIdsRef.current = desired;
   }, [rooms, roomWsConnected]);
 
-    // Load messages when channel or wallet changes
     useEffect(() => {
-        if (!walletAddress || !selectedChannelKey) return;
+        if (!selectedChannelKey) return;
         void triggerLiveLatest(selectedChannelKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [walletAddress, selectedChannelKey]);
+    }, [selectedChannelKey]);
 
     useEffect(() => {
         if (!pendingMessages.length) return;
