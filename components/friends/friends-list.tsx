@@ -336,18 +336,27 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             writeMessage: async (payload) => {
                 const recipientAddress = chatFriend!.address;
                 const recipientPubKey = await dmKeys.getRecipientPubKey(recipientAddress);
-                let data: string;
-                if (recipientPubKey && dmKeys.pubHex) {
-                    data = await encryptDmPayload(dmKeys.pubHex, recipientPubKey, payload);
-                } else {
-                    data = JSON.stringify(payload);
-                }
+                const plainText = typeof payload.text === 'string' ? payload.text : '';
+                // Match the CLI row layout: row metadata (id, sender, timestamp)
+                // stays in clear on the row and only the message body is encrypted
+                // into `text`. Decryption yields plain text, not wrapped JSON.
+                const body = recipientPubKey && dmKeys.pubHex
+                    ? await encryptDmPayload(dmKeys.pubHex, recipientPubKey, plainText)
+                    : plainText;
+                const row = {
+                    id: payload.id,
+                    text: body,
+                    sender: payload.sender,
+                    timestamp: payload.timestamp,
+                    ...(payload.file ? { file: payload.file } : {}),
+                    ...(recipientPubKey && dmKeys.pubHex ? { enc: 1 } : {}),
+                };
                 return iqlabs.writer.writeConnectionRow(
                     connection,
                     signer! as Signer,
                     dbRootId,
                     chatFriend!.dmSeed,
-                    data
+                    JSON.stringify(row)
                 );
             },
             onBeforeSend: (_payload, timestamp) => {

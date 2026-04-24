@@ -15,7 +15,7 @@ import {
   clearCachedKeypair,
   hasKeypair,
 } from './dm-encryption';
-import { lookupDhKey } from './dh-key';
+import { lookupEncryptionKey } from './encryption-key';
 
 export function useDmKeys() {
   const wallet = useAppWallet();
@@ -55,7 +55,7 @@ export function useDmKeys() {
 
   const getRecipientPubKey = useCallback(
     async (walletAddress: string): Promise<string | null> => {
-      return lookupDhKey(connection, walletAddress);
+      return lookupEncryptionKey(connection, walletAddress);
     },
     [connection]
   );

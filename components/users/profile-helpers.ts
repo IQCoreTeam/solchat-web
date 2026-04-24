@@ -23,7 +23,7 @@ export function extractUserMetadata(info?: AccountInfo<Buffer> | null): string {
 
 export async function parseMetadata(
   metadataStr: string
-): Promise<{ name: string; bio: string; profilePicture: string } | null> {
+): Promise<{ name: string; bio: string; profilePicture: string; encryptionPubKey?: string } | null> {
   if (!metadataStr || metadataStr.length <= 2) return null;
 
   try {

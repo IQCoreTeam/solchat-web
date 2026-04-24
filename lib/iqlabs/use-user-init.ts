@@ -7,8 +7,7 @@ import { IQ_IDL } from 'iqlabs-sdk/contract';
 import type { SignerInput } from 'iqlabs-sdk/utils';
 import { sendAndConfirmTx } from '@/lib/utils/send-and-confirm';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
-import { getOrDeriveKeypair } from '@/lib/crypto/dm-encryption';
-import { ensureMyDhKey } from '@/lib/crypto/dh-key';
+import { ensureEncryptionKey } from '@/lib/crypto/encryption-key';
 
 const MIN_FUNDING_LAMPORTS = 0.005 * LAMPORTS_PER_SOL;
 
@@ -96,13 +95,12 @@ export function useUserInit() {
 
       if (signMessage) {
         try {
-          const kp = await getOrDeriveKeypair(signMessage);
-          const result = await ensureMyDhKey(connection, signer, kp.pubHex);
+          const result = await ensureEncryptionKey(connection, signer, signMessage);
           if (result.created) {
-            console.log('[useUserInit] Registered encryption pubkey on-chain:', result.signature);
+            console.log('[useUserInit] Published encryption pubkey in profile metadata:', result.signature);
           }
         } catch (err) {
-          console.warn('[useUserInit] DH key registration failed (non-fatal):', err);
+          console.warn('[useUserInit] Encryption key publish failed (non-fatal):', err);
         }
       }
     } catch (err) {

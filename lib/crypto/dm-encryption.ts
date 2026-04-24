@@ -81,9 +81,9 @@ export function hasKeypair(): boolean {
 export async function encryptDmPayload(
   senderPubHex: string,
   recipientPubHex: string,
-  payload: Record<string, unknown>
+  plainText: string,
 ): Promise<string> {
-  const plaintext = encoder.encode(JSON.stringify(payload));
+  const plaintext = encoder.encode(plainText);
   const result = await multiEncrypt([senderPubHex, recipientPubHex], plaintext);
 
   return JSON.stringify({
