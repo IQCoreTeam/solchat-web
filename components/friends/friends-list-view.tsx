@@ -15,7 +15,6 @@ type FriendsListViewProps = {
   userAddress: string | null;
   loading: boolean;
   filteredFriends: Friend[];
-  dmAlerts: Record<string, boolean>;
   onApprove: (friend: Friend) => void;
   onBlock: (friend: Friend) => void;
   onUnblock: (friend: Friend) => void;
@@ -31,7 +30,6 @@ export function FriendsListView({
   userAddress,
   loading,
   filteredFriends,
-  dmAlerts,
   onApprove,
   onBlock,
   onUnblock,
@@ -135,7 +133,6 @@ export function FriendsListView({
                     onBlock={onBlock}
                     onUnblock={onUnblock}
                     onOpenChat={onOpenChat}
-                    hasUnread={Boolean(friend.dmSeedHex && dmAlerts[friend.dmSeedHex])}
                   />
                 ))}
               </div>

@@ -17,14 +17,35 @@ import {
 import type { MultiEncryptResult } from 'iqlabs-sdk/crypto';
 
 export type EncryptedDmPayload = {
-  enc: 'dh-multi';
-  r: MultiEncryptResult['recipients'];
-  iv: string;
-  ct: string;
+  m: 'dm';
+  r: Array<[string, string, string, string]>;
+  i: string;
+  c: string;
 };
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+
+type Recipient = MultiEncryptResult['recipients'][number];
+
+function recipientsToTuples(recipients: Recipient[]): Array<[string, string, string, string]> {
+  return recipients.map((r) => [r.recipientPub, r.ephemeralPub, r.wrappedKey, r.wrapIv]);
+}
+
+function tuplesToRecipients(tuples: unknown): Recipient[] | null {
+  if (!Array.isArray(tuples)) return null;
+  const out: Recipient[] = [];
+  for (const entry of tuples) {
+    if (Array.isArray(entry) && entry.length === 4 && entry.every((v) => typeof v === 'string')) {
+      out.push({ recipientPub: entry[0], ephemeralPub: entry[1], wrappedKey: entry[2], wrapIv: entry[3] });
+    } else if (entry && typeof entry === 'object' && 'recipientPub' in entry) {
+      out.push(entry as Recipient);
+    } else {
+      return null;
+    }
+  }
+  return out;
+}
 
 // In-memory cache for derived keypair (per session)
 let cachedKeypair: { privKey: Uint8Array; pubKey: Uint8Array; pubHex: string } | null = null;
@@ -66,10 +87,10 @@ export async function encryptDmPayload(
   const result = await multiEncrypt([senderPubHex, recipientPubHex], plaintext);
 
   return JSON.stringify({
-    enc: 'dh-multi',
-    r: result.recipients,
-    iv: result.iv,
-    ct: result.ciphertext,
+    m: 'dm',
+    r: recipientsToTuples(result.recipients),
+    i: result.iv,
+    c: result.ciphertext,
   });
 }
 
@@ -80,23 +101,48 @@ export async function decryptDmPayload(
 ): Promise<Record<string, unknown> | null> {
   try {
     const parsed = JSON.parse(data);
-    if (parsed?.enc !== 'dh-multi') return null;
-    const { r, iv, ct } = parsed;
-    if (!r || !iv || !ct) return null;
-    const plainBytes = await multiDecrypt(privKey, pubHex, { recipients: r, iv, ciphertext: ct });
-    return JSON.parse(decoder.decode(plainBytes));
-  } catch {
+    if (parsed?.m === 'dm') {
+      const recipients = tuplesToRecipients(parsed.r);
+      if (!recipients || !parsed.i || !parsed.c) {
+        console.warn('[decryptDmPayload] malformed envelope', { hasR: !!recipients, hasI: !!parsed.i, hasC: !!parsed.c });
+        return null;
+      }
+      const match = recipients.find((r) => r.recipientPub.toLowerCase() === pubHex.toLowerCase());
+      if (!match) {
+        console.warn('[decryptDmPayload] my pubHex not in recipients', { myPubHex: pubHex, recipientPubs: recipients.map((r) => r.recipientPub) });
+        return null;
+      }
+      const plainBytes = await multiDecrypt(privKey, pubHex, { recipients, iv: parsed.i, ciphertext: parsed.c });
+      const plainText = decoder.decode(plainBytes);
+      try {
+        return JSON.parse(plainText);
+      } catch {
+        // CLI encrypts plain strings directly; wrap as a message row.
+        return { text: plainText };
+      }
+    }
+    if (parsed?.enc === 'dh-multi') {
+      const { r, iv, ct } = parsed;
+      if (!r || !iv || !ct) return null;
+      const plainBytes = await multiDecrypt(privKey, pubHex, { recipients: r, iv, ciphertext: ct });
+      const plainText = decoder.decode(plainBytes);
+      try {
+        return JSON.parse(plainText);
+      } catch {
+        return { text: plainText };
+      }
+    }
+    return null;
+  } catch (err) {
+    console.warn('[decryptDmPayload] exception', err);
     return null;
   }
 }
 
-/**
- * Check if a data string looks like an encrypted DM payload.
- */
 export function isEncryptedDm(data: string): boolean {
   try {
     const parsed = JSON.parse(data);
-    return parsed?.enc === 'dh-multi';
+    return parsed?.m === 'dm' || parsed?.enc === 'dh-multi';
   } catch {
     return false;
   }

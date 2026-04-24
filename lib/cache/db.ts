@@ -424,7 +424,7 @@ class CacheDB {
     try {
       const db = await this.ensureInit();
 
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve) => {
         const transaction = db.transaction(STORE_SIGNATURES, 'readwrite');
         const store = transaction.objectStore(STORE_SIGNATURES);
 

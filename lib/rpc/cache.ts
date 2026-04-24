@@ -1,7 +1,6 @@
 'use client'
 
 import { Connection, PublicKey, ConfirmedSignatureInfo, VersionedTransactionResponse } from '@solana/web3.js'
-import { getSignaturesForTable } from '@/lib/gateway/reader'
 
 // ============================================================================
 // RPC Caching Layer - Centralized caching for Solana RPC calls
@@ -58,19 +57,9 @@ export async function getCachedSignatures(
     return inFlight
   }
 
-  // Try gateway first (supports Helius for transaction history)
-  const promise = (async () => {
-    try {
-      const sigs = await getSignaturesForTable(address.toBase58(), limit, before)
-      // Convert string[] to ConfirmedSignatureInfo[] format
-      return sigs.map(sig => ({ signature: sig } as ConfirmedSignatureInfo))
-    } catch {
-      // Fallback to direct RPC
-      return runWithRpcRateLimit(async () => {
-        return connection.getSignaturesForAddress(address, { limit, before }, 'confirmed')
-      }, { endpoint: connection.rpcEndpoint })
-    }
-  })()
+  const promise = runWithRpcRateLimit(async () => {
+    return connection.getSignaturesForAddress(address, { limit, before }, 'confirmed')
+  }, { endpoint: connection.rpcEndpoint })
 
   inFlightSignatures.set(cacheKey, promise)
 
@@ -105,29 +94,21 @@ export async function getCachedSignaturesPaginated(
     return inFlight
   }
 
-  // Try gateway first, fallback to direct RPC pagination
-  const promise = (async () => {
-    try {
-      const sigs = await getSignaturesForTable(address.toBase58(), limit)
-      return sigs.map(sig => ({ signature: sig } as ConfirmedSignatureInfo))
-    } catch {
-      return runWithRpcRateLimit(async () => {
-        const out: ConfirmedSignatureInfo[] = []
-        let before: string | undefined = undefined
-        while (out.length < limit) {
-          const chunk = await connection.getSignaturesForAddress(
-            address,
-            { limit: Math.min(1000, limit - out.length), before },
-            'confirmed'
-          )
-          if (chunk.length === 0) break
-          out.push(...chunk)
-          before = chunk[chunk.length - 1].signature
-        }
-        return out
-      }, { endpoint: connection.rpcEndpoint })
+  const promise = runWithRpcRateLimit(async () => {
+    const out: ConfirmedSignatureInfo[] = []
+    let before: string | undefined = undefined
+    while (out.length < limit) {
+      const chunk = await connection.getSignaturesForAddress(
+        address,
+        { limit: Math.min(1000, limit - out.length), before },
+        'confirmed'
+      )
+      if (chunk.length === 0) break
+      out.push(...chunk)
+      before = chunk[chunk.length - 1].signature
     }
-  })()
+    return out
+  }, { endpoint: connection.rpcEndpoint })
 
   inFlightSignatures.set(cacheKey, promise)
 

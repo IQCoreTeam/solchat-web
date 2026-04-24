@@ -39,7 +39,6 @@ interface RoomSidebarProps {
     onSelectRoom: (seedHex: string) => void;
     roomsLoading: boolean;
     roomsError: string | null;
-    roomAlerts: Record<string, boolean>;
 
     // Auth state
     hasWallet: boolean;
@@ -71,7 +70,6 @@ export function RoomSidebar({
                                 onSelectRoom,
                                 roomsLoading,
     roomsError,
-    roomAlerts,
     hasWallet,
     canWrite,
     isUserInitialized,
@@ -210,9 +208,6 @@ export function RoomSidebar({
                         >
                             <div className="flex items-center justify-between gap-2">
                                 <span className="font-semibold truncate">{room.name}</span>
-                                {roomAlerts[room.seedHex] && (
-                                    <span className="inline-block h-2 w-2 rounded-full bg-red-500" aria-label="Unread messages" />
-                                )}
                             </div>
                             <div className="text-xs text-white/60 flex items-center justify-between gap-2">
                                 <span className="truncate">{shorten(room.tableAddress)}</span>

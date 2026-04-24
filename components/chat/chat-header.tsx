@@ -20,7 +20,6 @@ interface RoomMeta {
 interface ChatHeaderProps {
     // Wallet & Auth
     walletAddress: string | null;
-    isUserInitialized: boolean;
     needsInit: boolean;
     userInitError: Error | null;
     rootStatus: 'checking' | 'missing' | 'creating' | 'ready' | 'error';
@@ -44,7 +43,6 @@ interface ChatHeaderProps {
 
 export function ChatHeader({
                                walletAddress,
-                               isUserInitialized,
                                needsInit,
                                userInitError,
                                rootStatus,

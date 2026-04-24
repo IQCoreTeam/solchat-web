@@ -5,8 +5,6 @@
 
 'use client';
 
-import { CSSProperties } from 'react';
-
 type SpinnerVariant = 'spinner' | 'progress-bar';
 
 interface LoadingSpinnerProps {

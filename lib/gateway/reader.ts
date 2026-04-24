@@ -42,7 +42,8 @@ export async function readTableRows(tablePda: string, limit = 50): Promise<any[]
   try {
     const res = await gwFetch(`/table/${tablePda}/rows?limit=${limit}`);
     const data = await res.json();
-    return Array.isArray(data) ? data : data.rows || [];
+    const rows = Array.isArray(data) ? data : data.rows || [];
+    if (rows.length > 0) return rows;
   } catch { /* all gateways failed */ }
   return iqlabs.reader.readTableRows(tablePda, { limit });
 }
@@ -54,7 +55,7 @@ export async function getSignaturesForTable(tablePda: string, limit = 200, befor
     const res = await gwFetch(`/table/${tablePda}/index?${params}`);
     const data = await res.json();
     const sigs = data.signatures || data;
-    if (Array.isArray(sigs)) return sigs;
+    if (Array.isArray(sigs) && sigs.length > 0) return sigs;
   } catch { /* all gateways failed */ }
   return iqlabs.reader.collectSignatures(tablePda, limit);
 }

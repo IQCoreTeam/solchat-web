@@ -3,7 +3,6 @@
  */
 
 import { Buffer } from 'buffer';
-import iqlabs from 'iqlabs-sdk';
 import { deriveAvatarHue } from '@/lib/utils/message-utils';
 
 const DECODER = new TextDecoder();

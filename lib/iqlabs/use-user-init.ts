@@ -7,13 +7,15 @@ import { IQ_IDL } from 'iqlabs-sdk/contract';
 import type { SignerInput } from 'iqlabs-sdk/utils';
 import { sendAndConfirmTx } from '@/lib/utils/send-and-confirm';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
+import { getOrDeriveKeypair } from '@/lib/crypto/dm-encryption';
+import { ensureMyDhKey } from '@/lib/crypto/dh-key';
 
 const MIN_FUNDING_LAMPORTS = 0.005 * LAMPORTS_PER_SOL;
 
 export function useUserInit() {
   const { connection, readConnection } = useAppConnection();
   const appWallet = useAppWallet();
-  const { publicKey, connected, signTransaction, signAllTransactions } = appWallet;
+  const { publicKey, connected, signTransaction, signAllTransactions, signMessage } = appWallet;
   const [isInitialized, setIsInitialized] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -91,6 +93,18 @@ export function useUserInit() {
       }
 
       setIsInitialized(true);
+
+      if (signMessage) {
+        try {
+          const kp = await getOrDeriveKeypair(signMessage);
+          const result = await ensureMyDhKey(connection, signer, kp.pubHex);
+          if (result.created) {
+            console.log('[useUserInit] Registered encryption pubkey on-chain:', result.signature);
+          }
+        } catch (err) {
+          console.warn('[useUserInit] DH key registration failed (non-fatal):', err);
+        }
+      }
     } catch (err) {
       if (
         err instanceof Error &&
@@ -104,7 +118,7 @@ export function useUserInit() {
     } finally {
       setIsInitializing(false);
     }
-  }, [builder, connected, connection, readConnection]);
+  }, [builder, connected, connection, readConnection, signMessage]);
 
   useEffect(() => {
     if (!publicKey || !connected || !signTransaction || !signAllTransactions) {

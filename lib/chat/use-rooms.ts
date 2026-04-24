@@ -29,8 +29,6 @@ type UseRoomsOptions = {
   rootPubkey: PublicKey;
   sortRoomsByTimestamp: (list: RoomMeta[]) => RoomMeta[];
   signer: SignerInput | null;
-  builder: ReturnType<typeof iqlabs.contract.createInstructionBuilder>;
-  dbRootId: Buffer;
 };
 
 export function useRooms({
@@ -42,8 +40,6 @@ export function useRooms({
   rootPubkey,
   sortRoomsByTimestamp,
   signer,
-  builder,
-  dbRootId,
 }: UseRoomsOptions) {
   const [rooms, setRooms] = useState<RoomMeta[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(false);

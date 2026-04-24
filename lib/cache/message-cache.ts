@@ -415,12 +415,6 @@ export async function getCacheStats(): Promise<{
     const db = getCacheDB();
     const stats = await db.getStats();
 
-    // Get all cached messages to analyze
-    // This is inefficient for large caches, but useful for debugging
-    const allMessages: CachedMessage[] = [];
-    // We'd need to iterate through all rooms to get this
-    // For now, return basic stats
-
     return {
       totalMessages: stats.messages,
       totalRooms: 0, // Would need to track this separately
