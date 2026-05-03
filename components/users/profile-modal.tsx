@@ -9,11 +9,11 @@ import { useMemo, useState } from 'react';
 import { Buffer } from 'buffer';
 
 import { useRouter } from 'next/navigation';
-import { usePrivy } from '@privy-io/react-auth';
 import { useUserProfile } from './use-user-profile';
 import { shorten } from '@/lib/utils/message-utils';
 import { DefaultProfileAvatar } from '@/components/ui/default-profile-avatar';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
+import { WalletConnectModal } from '@/components/ui/wallet-connect-modal';
 import iqlabs from 'iqlabs-sdk';
 import { IQ_IDL } from 'iqlabs-sdk/contract';
 
@@ -35,7 +35,7 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
   const [imageError, setImageError] = useState(false);
   const [copied, setCopied] = useState(false);
   const wallet = useAppWallet();
-  const { ready: privyReady, authenticated, login } = usePrivy();
+  const [connectOpen, setConnectOpen] = useState(false);
   const { connection, readConnection } = useAppConnection();
   const signer = useMemo<SignerInput | null>(() => {
     if (!wallet.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) {
@@ -285,13 +285,10 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
                   Connect your wallet to send a friend request or open a DM.
                 </p>
                 <button
-                  onClick={() => {
-                    if (privyReady && !authenticated) login();
-                  }}
-                  disabled={!privyReady}
-                  className="w-full rounded border border-green-500 px-4 py-2 text-sm font-bold text-green-300 hover:bg-green-500/10 transition disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => setConnectOpen(true)}
+                  className="w-full rounded border border-green-500 px-4 py-2 text-sm font-bold text-green-300 hover:bg-green-500/10 transition"
                 >
-                  {privyReady ? 'CONNECT WALLET' : 'LOADING...'}
+                  CONNECT WALLET
                 </button>
               </div>
             )}
@@ -408,6 +405,7 @@ export function ProfileModal({ walletAddress, onClose }: ProfileModalProps) {
           </div>
         )}
       </div>
+      <WalletConnectModal open={connectOpen} onClose={() => setConnectOpen(false)} />
     </div>
   );
 }
