@@ -1,16 +1,20 @@
 'use client';
 
 /**
- * Unified wallet hook that always uses Privy embedded wallet for all app functionality.
- * External wallets (Phantom, Solflare) are ONLY used for Privy authentication.
+ * Unified wallet hook. Returns the same AppWallet interface regardless of which
+ * underlying provider is active:
+ *  - 'privy'  → Privy embedded Solana wallet (no per-tx popup, email/SMS login)
+ *  - 'wallet' → Solana wallet-adapter (Phantom/Solflare/Torus/Ledger, signs each tx)
  */
 
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { Connection, PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
 import { usePrivy } from '@privy-io/react-auth';
 import { useWallets } from '@privy-io/react-auth/solana';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { RPC_URL, HELIUS_RPC_URL } from '@/lib/constants';
 import { setRpcUrl } from 'iqlabs-sdk';
+import { useWalletMode } from './wallet-mode';
 
 export interface AppWallet {
   publicKey: PublicKey | null;
@@ -23,31 +27,42 @@ export interface AppWallet {
   sendTransaction: (tx: Transaction, connection: Connection) => Promise<string>;
 }
 
-/**
- * Main wallet hook - always returns Privy embedded wallet
- * External wallets are only for Privy login/signup
- */
-export function useAppWallet(): AppWallet {
+const EMPTY_WALLET: AppWallet = {
+  publicKey: null,
+  connected: false,
+  connecting: false,
+  disconnecting: false,
+  signTransaction: async () => {
+    throw new Error('No wallet connected');
+  },
+  signAllTransactions: async () => {
+    throw new Error('No wallet connected');
+  },
+  signMessage: async () => {
+    throw new Error('No wallet connected');
+  },
+  sendTransaction: async () => {
+    throw new Error('No wallet connected');
+  },
+};
+
+function usePrivyAppWallet(): AppWallet {
   const { ready: privyReady, authenticated, user } = usePrivy();
   const { wallets } = useWallets();
 
-  // Get Privy embedded wallet from linked accounts
   const embeddedWallet = useMemo(() => {
     if (!user || !user.linkedAccounts) return null;
-
     const solanaWallet = user.linkedAccounts.find(
       (account: any) =>
         account.type === 'wallet' &&
         account.walletClientType === 'privy' &&
         account.chainType === 'solana'
     ) as any;
-
     return solanaWallet || null;
   }, [user]);
 
-  // Get the embedded wallet from useWallets (for signing capabilities)
-  // IMPORTANT: Never fall back to wallets[0] — that could be an external wallet
-  // (Phantom, Solflare) used only for Privy authentication, not for app operations.
+  // IMPORTANT: never fall back to wallets[0] — that could be an external wallet
+  // attached for funding, not the embedded signing wallet.
   const connectedWallet = useMemo(() => {
     if (!wallets || wallets.length === 0 || !embeddedWallet?.address) return null;
     return wallets.find((w) => w.address === embeddedWallet.address) || null;
@@ -63,28 +78,19 @@ export function useAppWallet(): AppWallet {
       if (!connectedWallet || !publicKey) {
         throw new Error('Please log in with Privy to continue');
       }
-
       if (!connectedWallet.signTransaction) {
         throw new Error('Wallet does not support transaction signing');
       }
-
-      // Use the cluster from environment variable
       const cluster = process.env.NEXT_PUBLIC_SOLANA_CLUSTER || 'mainnet-beta';
       const chain = `solana:${cluster}` as const;
-
-      // Serialize the transaction to get the message
       const serialized = tx.serialize({
         requireAllSignatures: false,
         verifySignatures: false,
       });
-
-      // Sign through Privy (UI modal disabled globally via showWalletUIs: false)
       const result = await connectedWallet.signTransaction({
         chain,
         transaction: new Uint8Array(serialized),
       });
-
-      // Deserialize the signed transaction and return it
       const signedTx = Transaction.from(result.signedTransaction);
       return signedTx as T;
     };
@@ -92,53 +98,34 @@ export function useAppWallet(): AppWallet {
 
   const signAllTransactions = useMemo(() => {
     return async <T extends Transaction | VersionedTransaction>(txs: T[]): Promise<T[]> => {
-      if (!connectedWallet) {
-        throw new Error('Please log in with Privy to continue');
-      }
-
       return Promise.all(txs.map((tx) => signTransaction(tx)));
     };
-  }, [connectedWallet, signTransaction]);
+  }, [signTransaction]);
 
   const signMessage = useMemo(() => {
     return async (message: Uint8Array): Promise<Uint8Array> => {
       if (!connectedWallet) {
         throw new Error('Please log in with Privy to continue');
       }
-
       if (!connectedWallet.signMessage) {
         throw new Error('Wallet does not support message signing');
       }
-
-      const result = await connectedWallet.signMessage({
-        message: message,
-      });
-
+      const result = await connectedWallet.signMessage({ message });
       return new Uint8Array(result.signature);
     };
   }, [connectedWallet]);
 
   const sendTransaction = useMemo(() => {
     return async (tx: Transaction, connection: Connection): Promise<string> => {
-      if (!connectedWallet || !publicKey) {
-        throw new Error('Please log in with Privy to continue');
-      }
-
-      // Sign the transaction (without popup)
       const signed = await signTransaction(tx);
-
-      // Send the signed transaction
       const signature = await connection.sendRawTransaction(signed.serialize(), {
         skipPreflight: false,
         preflightCommitment: 'confirmed',
       });
-
-      // Confirm the transaction
       await connection.confirmTransaction(signature, 'confirmed');
-
       return signature;
     };
-  }, [connectedWallet, publicKey, signTransaction]);
+  }, [signTransaction]);
 
   return {
     publicKey,
@@ -150,6 +137,60 @@ export function useAppWallet(): AppWallet {
     signMessage,
     sendTransaction,
   };
+}
+
+function useExternalAppWallet(): AppWallet {
+  const w = useWallet();
+
+  const signTransaction = useMemo(() => {
+    return async <T extends Transaction | VersionedTransaction>(tx: T): Promise<T> => {
+      if (!w.signTransaction) throw new Error('Wallet does not support transaction signing');
+      return w.signTransaction(tx);
+    };
+  }, [w.signTransaction]);
+
+  const signAllTransactions = useMemo(() => {
+    return async <T extends Transaction | VersionedTransaction>(txs: T[]): Promise<T[]> => {
+      if (!w.signAllTransactions) throw new Error('Wallet does not support batch signing');
+      return w.signAllTransactions(txs);
+    };
+  }, [w.signAllTransactions]);
+
+  const signMessage = useMemo(() => {
+    return async (message: Uint8Array): Promise<Uint8Array> => {
+      if (!w.signMessage) throw new Error('Wallet does not support message signing');
+      return w.signMessage(message);
+    };
+  }, [w.signMessage]);
+
+  const sendTransaction = useMemo(() => {
+    return async (tx: Transaction, connection: Connection): Promise<string> => {
+      const signature = await w.sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+      return signature;
+    };
+  }, [w.sendTransaction]);
+
+  return {
+    publicKey: w.publicKey,
+    connected: w.connected,
+    connecting: w.connecting,
+    disconnecting: w.disconnecting,
+    signTransaction,
+    signAllTransactions,
+    signMessage,
+    sendTransaction,
+  };
+}
+
+export function useAppWallet(): AppWallet {
+  const { mode } = useWalletMode();
+  const privyWallet = usePrivyAppWallet();
+  const externalWallet = useExternalAppWallet();
+
+  if (mode === 'wallet') return externalWallet;
+  if (mode === 'privy') return privyWallet;
+  return EMPTY_WALLET;
 }
 
 /**
@@ -171,11 +212,11 @@ function extractWalletRpcEndpoint(wallet: any): string | null {
 }
 
 export function useAppConnection() {
+  const { mode } = useWalletMode();
   const { wallets } = useWallets();
   const [customRpc, setCustomRpc] = useState<string | null>(null);
   const [providerRpc, setProviderRpc] = useState<string | null>(null);
 
-  // Load persisted custom RPC once on mount
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -188,16 +229,15 @@ export function useAppConnection() {
     }
   }, []);
 
-  // Track RPC exposed by the connected wallet (if any)
   useEffect(() => {
+    if (mode !== 'privy') {
+      setProviderRpc(null);
+      return;
+    }
     const primary = wallets && wallets.length > 0 ? wallets[0] : null;
     const candidate = extractWalletRpcEndpoint(primary);
-    if (candidate) {
-      setProviderRpc(candidate);
-    } else {
-      setProviderRpc(null);
-    }
-  }, [wallets]);
+    setProviderRpc(candidate);
+  }, [mode, wallets]);
 
   const setCustomRpcEndpoint = useCallback((endpoint: string | null) => {
     setCustomRpc(endpoint);
@@ -238,7 +278,6 @@ export function useAppConnection() {
   );
 
   useEffect(() => {
-    // Use Helius for SDK internal reads (supports tx history), fall back to app RPC
     setRpcUrl(HELIUS_RPC_URL || endpoint);
   }, [endpoint]);
 

@@ -11,11 +11,13 @@ import {
 } from '@solana/wallet-adapter-wallets';
 import { RPC_URL } from '@/lib/constants';
 import { getMobileBrowserInfo } from '@/lib/wallet/mobile-detection';
+import { useWalletMode } from '@/lib/wallet/wallet-mode';
 
 // Import wallet adapter CSS
 import '@solana/wallet-adapter-react-ui/styles.css';
 
 export function SolanaWalletProvider({ children }: { children: React.ReactNode }) {
+  const { mode } = useWalletMode();
   // Configure supported wallets with mobile detection
   const wallets = useMemo(() => {
     if (typeof window === 'undefined') return [];
@@ -48,7 +50,7 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
   // This prevents WalletContext errors during hydration
   return (
     <ConnectionProvider endpoint={RPC_URL}>
-      <WalletProvider wallets={wallets} autoConnect>
+      <WalletProvider wallets={wallets} autoConnect={mode === 'wallet'}>
         <WalletModalProvider>{children}</WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>
