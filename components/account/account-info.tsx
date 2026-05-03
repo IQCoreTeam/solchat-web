@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { Window, WindowHeader, WindowContent, Cutout, Button, Frame } from 'react95';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
+import { useWalletMode } from '@/lib/wallet/wallet-mode';
 import { useExportWallet } from '@privy-io/react-auth/solana';
 import { shorten } from '@/lib/utils/message-utils';
 
@@ -28,41 +29,46 @@ function CopyButton({ text }: { text: string }) {
 
 export function AccountInfo() {
   const { connection, readConnection } = useAppConnection();
-  const wallet = useWallet();
-  const privyWallet = useAppWallet();
-  const privyAddress = privyWallet.publicKey?.toBase58();
+  const { mode } = useWalletMode();
+  const appWallet = useAppWallet();
+  const fundingWallet = useWallet();
   const { exportWallet } = useExportWallet();
+
+  const isPrivyMode = mode === 'privy';
+
+  const mainAddress = appWallet.publicKey?.toBase58();
+  const fundingAddress = fundingWallet.publicKey?.toBase58();
 
   const [sendAmount, setSendAmount] = useState('');
   const [sendingSOL, setSendingSOL] = useState(false);
   const [message, setMessage] = useState('');
   const [lastTxId, setLastTxId] = useState('');
 
-  const { data: balance, refetch: refetchBalance } = useQuery({
-    queryKey: ['balance', wallet.publicKey?.toBase58()],
+  const { data: mainBalance, refetch: refetchMainBalance } = useQuery({
+    queryKey: ['main-balance', mainAddress],
     queryFn: async () => {
-      if (!wallet.publicKey) return 0;
-      return (await readConnection.getBalance(wallet.publicKey)) / LAMPORTS_PER_SOL;
+      if (!appWallet.publicKey) return 0;
+      return (await readConnection.getBalance(appWallet.publicKey)) / LAMPORTS_PER_SOL;
     },
-    enabled: !!wallet.publicKey,
+    enabled: !!appWallet.publicKey,
     refetchInterval: 10000,
   });
 
-  const { data: privyBalance, refetch: refetchPrivyBalance } = useQuery({
-    queryKey: ['privy-balance', privyAddress],
+  const { data: fundingBalance, refetch: refetchFundingBalance } = useQuery({
+    queryKey: ['funding-balance', fundingAddress],
     queryFn: async () => {
-      if (!privyWallet.publicKey) return 0;
-      return (await readConnection.getBalance(privyWallet.publicKey)) / LAMPORTS_PER_SOL;
+      if (!fundingWallet.publicKey) return 0;
+      return (await readConnection.getBalance(fundingWallet.publicKey)) / LAMPORTS_PER_SOL;
     },
-    enabled: !!privyWallet.publicKey,
+    enabled: isPrivyMode && !!fundingWallet.publicKey,
     refetchInterval: 10000,
   });
 
   const { data: tokens } = useQuery({
-    queryKey: ['tokens', wallet.publicKey?.toBase58()],
+    queryKey: ['tokens', mainAddress],
     queryFn: async () => {
-      if (!wallet.publicKey) return [];
-      const accounts = await readConnection.getParsedTokenAccountsByOwner(wallet.publicKey, {
+      if (!appWallet.publicKey) return [];
+      const accounts = await readConnection.getParsedTokenAccountsByOwner(appWallet.publicKey, {
         programId: new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),
       });
       return accounts.value.map((acc) => ({
@@ -71,11 +77,11 @@ export function AccountInfo() {
         decimals: acc.account.data.parsed.info.tokenAmount.decimals,
       }));
     },
-    enabled: !!wallet.publicKey,
+    enabled: !!appWallet.publicKey,
   });
 
   const handleFundPrivy = async () => {
-    if (!wallet.publicKey || !wallet.signTransaction || !privyAddress || !sendAmount) {
+    if (!fundingWallet.publicKey || !fundingWallet.signTransaction || !mainAddress || !sendAmount) {
       setMessage('Please fill in amount');
       return;
     }
@@ -85,20 +91,20 @@ export function AccountInfo() {
       setMessage('Funding Privy wallet...');
       const tx = new Transaction().add(
         SystemProgram.transfer({
-          fromPubkey: wallet.publicKey,
-          toPubkey: new PublicKey(privyAddress),
+          fromPubkey: fundingWallet.publicKey,
+          toPubkey: new PublicKey(mainAddress),
           lamports: parseFloat(sendAmount) * LAMPORTS_PER_SOL,
         })
       );
-      tx.feePayer = wallet.publicKey;
+      tx.feePayer = fundingWallet.publicKey;
       tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-      const signed = await wallet.signTransaction(tx);
+      const signed = await fundingWallet.signTransaction(tx);
       const txid = await connection.sendRawTransaction(signed.serialize());
       setLastTxId(txid);
       setMessage(`Success! TX: ${txid.slice(0, 8)}...${txid.slice(-8)}`);
       setSendAmount('');
-      refetchBalance();
-      refetchPrivyBalance();
+      refetchMainBalance();
+      refetchFundingBalance();
     } catch (error) {
       setMessage(`Error: ${error}`);
     } finally {
@@ -106,7 +112,7 @@ export function AccountInfo() {
     }
   };
 
-  if (!wallet.connected) {
+  if (!appWallet.connected) {
     return (
       <div className="px-4 py-8 sm:px-6 lg:px-8 max-w-4xl mx-auto">
         <Window className="w-full">
@@ -118,7 +124,7 @@ export function AccountInfo() {
             <Frame style={{ padding: '1rem' }}>
               <ol className="space-y-2 text-xs">
                 <li>1. Click &quot;Connect Wallet&quot; in the top-right corner</li>
-                <li>2. Authenticate with Privy to set up your wallet</li>
+                <li>2. Pick Privy (no signing popups) or a Solana wallet (Phantom, Solflare…)</li>
                 <li>3. Return here to manage your account</li>
               </ol>
             </Frame>
@@ -128,88 +134,98 @@ export function AccountInfo() {
     );
   }
 
-  const publicAddress = wallet.publicKey?.toBase58();
+  const mainCardTitle = isPrivyMode ? '[PRIVY WALLET]' : '[WALLET]';
+  const mainCardSubtitle = isPrivyMode ? 'Embedded Wallet' : 'Connected Wallet';
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8 max-w-4xl mx-auto space-y-6">
-      <Window className="w-full shadow-md">
-        <WindowHeader>
-          <span>[PUBLIC WALLET]</span>
-        </WindowHeader>
-        <WindowContent className="space-y-4">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.4em]">Wallet</p>
-            <h3 className="text-2xl mt-1">{shorten(publicAddress ?? '', 6)}</h3>
-          </div>
-          <div className="flex items-center gap-2">
-            <Cutout className="p-4 text-xs break-all border flex-1">{publicAddress}</Cutout>
-            {publicAddress && <CopyButton text={publicAddress} />}
-          </div>
-          <Cutout className="border p-4">
-            <p className="text-xs mb-1">SOL balance</p>
-            <p className="text-2xl font-bold">
-              {balance !== undefined ? balance.toFixed(4) : '…'}
-            </p>
-          </Cutout>
-        </WindowContent>
-      </Window>
+      {isPrivyMode && fundingWallet.connected && (
+        <Window className="w-full shadow-md">
+          <WindowHeader>
+            <span>[FUNDING WALLET]</span>
+          </WindowHeader>
+          <WindowContent className="space-y-4">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.4em]">External Wallet</p>
+              <h3 className="text-2xl mt-1">{shorten(fundingAddress ?? '', 6)}</h3>
+            </div>
+            <div className="flex items-center gap-2">
+              <Cutout className="p-4 text-xs break-all border flex-1">{fundingAddress}</Cutout>
+              {fundingAddress && <CopyButton text={fundingAddress} />}
+            </div>
+            <Cutout className="border p-4">
+              <p className="text-xs mb-1">SOL balance</p>
+              <p className="text-2xl font-bold">
+                {fundingBalance !== undefined ? fundingBalance.toFixed(4) : '…'}
+              </p>
+            </Cutout>
+          </WindowContent>
+        </Window>
+      )}
 
       <Window className="w-full shadow-md">
         <WindowHeader>
-          <span>[PRIVY WALLET]</span>
+          <span>{mainCardTitle}</span>
         </WindowHeader>
         <WindowContent className="space-y-4">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.4em]">Embedded Wallet</p>
-            <h3 className="text-2xl mt-1">{privyAddress ? shorten(privyAddress, 6) : 'Not available'}</h3>
+            <p className="text-[11px] uppercase tracking-[0.4em]">{mainCardSubtitle}</p>
+            <h3 className="text-2xl mt-1">{mainAddress ? shorten(mainAddress, 6) : 'Not available'}</h3>
           </div>
-          {privyAddress && (
+          {mainAddress && (
             <div className="flex items-center gap-2">
-              <Cutout className="p-4 text-xs break-all border flex-1">{privyAddress}</Cutout>
-              <CopyButton text={privyAddress} />
+              <Cutout className="p-4 text-xs break-all border flex-1">{mainAddress}</Cutout>
+              <CopyButton text={mainAddress} />
             </div>
           )}
           <Cutout className="border p-4">
             <p className="text-xs mb-1">SOL balance</p>
             <p className="text-2xl font-bold">
-              {privyBalance !== undefined ? privyBalance.toFixed(4) : '…'}
+              {mainBalance !== undefined ? mainBalance.toFixed(4) : '…'}
             </p>
           </Cutout>
-          <Button fullWidth onClick={() => exportWallet()}>
-            Export Private Key
-          </Button>
+          {isPrivyMode && (
+            <Button fullWidth onClick={() => exportWallet()}>
+              Export Private Key
+            </Button>
+          )}
         </WindowContent>
       </Window>
 
-      <Window className="w-full shadow-md">
-        <WindowHeader>
-          <span>[FUND PRIVY WALLET]</span>
-        </WindowHeader>
-        <WindowContent className="space-y-4">
-          <div>
-            <label className="text-sm block mb-2">Recipient (Privy wallet)</label>
-            <Cutout className="p-3 text-xs break-all border">{privyAddress || 'Privy wallet not available'}</Cutout>
-          </div>
-          <div>
-            <label className="text-sm block mb-2">Amount (SOL)</label>
-            <input
-              type="number"
-              step="0.01"
-              value={sendAmount}
-              onChange={(e) => setSendAmount(e.target.value)}
-              className="w-full rounded-md border p-3 focus:ring-2 outline-none"
-              placeholder="0.00"
-            />
-          </div>
-          <Button
-            fullWidth
-            onClick={handleFundPrivy}
-            disabled={sendingSOL || !privyAddress || !sendAmount}
-          >
-            {sendingSOL ? 'Funding…' : 'Fund Privy Wallet'}
-          </Button>
-        </WindowContent>
-      </Window>
+      {isPrivyMode && (
+        <Window className="w-full shadow-md">
+          <WindowHeader>
+            <span>[FUND PRIVY WALLET]</span>
+          </WindowHeader>
+          <WindowContent className="space-y-4">
+            <div>
+              <label className="text-sm block mb-2">Recipient (Privy wallet)</label>
+              <Cutout className="p-3 text-xs break-all border">{mainAddress || 'Privy wallet not available'}</Cutout>
+            </div>
+            <div>
+              <label className="text-sm block mb-2">Amount (SOL)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={sendAmount}
+                onChange={(e) => setSendAmount(e.target.value)}
+                className="w-full rounded-md border p-3 focus:ring-2 outline-none"
+                placeholder="0.00"
+              />
+            </div>
+            {!fundingWallet.connected && (
+              <p className="text-xs">Connect a funding wallet from the wallet dropdown to send SOL into your Privy wallet.</p>
+            )}
+            <Button
+              fullWidth
+              onClick={handleFundPrivy}
+              disabled={sendingSOL || !mainAddress || !sendAmount || !fundingWallet.connected}
+            >
+              {sendingSOL ? 'Funding…' : 'Fund Privy Wallet'}
+            </Button>
+          </WindowContent>
+        </Window>
+      )}
 
       {tokens && tokens.length > 0 && (
         <Window className="w-full shadow-md">
