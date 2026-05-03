@@ -8,7 +8,9 @@ import { IQ_IDL } from 'iqlabs-sdk/contract';
 import type { SignerInput } from 'iqlabs-sdk/utils';
 import { useUserInit } from '@/lib/iqlabs/use-user-init';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { usePrivy } from '@privy-io/react-auth';
+import { useWalletMode } from '@/lib/wallet/wallet-mode';
 import { usePendingMessages } from '@/lib/shared/use-pending-messages';
 import { useMessageChannel } from '@/lib/shared/use-message-channel';
 import type { FetchConfig } from '@/lib/shared/useMessageIndexLoader';
@@ -54,7 +56,9 @@ export function ChatClient() {
         walletAddress: initWalletAddress,
     } = useUserInit();
     const [fundingModalDismissed, setFundingModalDismissed] = useState(false);
-    const { logout } = usePrivy();
+    const { logout, authenticated } = usePrivy();
+    const externalWallet = useWallet();
+    const { mode, setMode } = useWalletMode();
 
     const programId = useMemo(() => iqlabs.contract.PROGRAM_ID, []);
     const dbRootId = useMemo(() => ROOT_ID_BYTES, []);
@@ -509,13 +513,15 @@ export function ChatClient() {
     const handleDisconnectPrivy = useCallback(async () => {
         setDisconnectingPrivy(true);
         try {
-            await logout();
+            if (mode === 'privy' && authenticated) await logout();
+            if (mode === 'wallet' && externalWallet.connected) await externalWallet.disconnect();
+            setMode(null);
         } catch (err) {
             console.error('[ChatClient] Disconnect error:', err);
         } finally {
             setDisconnectingPrivy(false);
         }
-    }, [logout]);
+    }, [mode, authenticated, externalWallet, logout, setMode]);
 
     // Handle copy address
     const handleCopyAddress = useCallback((address: string, messageId: string) => {
