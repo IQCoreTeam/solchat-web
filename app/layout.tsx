@@ -13,6 +13,10 @@ const unifont = localFont({
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://solchat.iqlabs.dev";
 
+// Privy/wallet hooks read browser-only state, so prerender at build time fails
+// without runtime env. Force every route to render on demand.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
