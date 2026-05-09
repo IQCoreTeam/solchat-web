@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { BorshAccountsCoder } from '@coral-xyz/anchor';
-import { sha256 } from '@noble/hashes/sha2';
+import { sha256 } from '@noble/hashes/sha2.js';
 import iqlabs from 'iqlabs-sdk';
 import { HELIUS_RPC_URL, RPC_URL } from '@/lib/constants';
 import type { Friend, FriendStatus } from './types';

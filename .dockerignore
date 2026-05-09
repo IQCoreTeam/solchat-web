@@ -1,0 +1,34 @@
+node_modules
+.next
+.git
+*.log
+
+# Environment files (secrets) - never bake into image
+.env
+.env.*
+!.env.example
+
+# Wallet keypairs - NEVER
+keypair.json
+keypair-*.json
+*.keypair
+*.key
+secrets.json
+
+# Tooling artifacts
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.tsbuildinfo
+
+# Docs not needed at runtime
+README.md
+*.md
+docs
+
+# Local-only k8s manifests (replaced by docker-compose post-migration)
+k8s.yaml
+k8s-*.yaml
+*-ingress.yaml
+ingress.yaml
