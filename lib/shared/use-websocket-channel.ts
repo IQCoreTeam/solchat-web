@@ -86,7 +86,11 @@ export function useWebSocketChannel(params: UseWebSocketChannelParams): UseWebSo
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const url = urlParam || process.env.NEXT_PUBLIC_NOTI_WS_URL || 'ws://localhost:8080';
+    const url = urlParam || process.env.NEXT_PUBLIC_NOTI_WS_URL;
+    if (!url) {
+      console.log(`[${logPrefix}] WS disabled (NEXT_PUBLIC_NOTI_WS_URL not set)`);
+      return;
+    }
     let active = true;
 
     const clearPing = () => {
