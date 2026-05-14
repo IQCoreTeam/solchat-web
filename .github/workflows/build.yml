@@ -41,12 +41,8 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             NEXT_PUBLIC_PRIVY_APP_ID=${{ secrets.NEXT_PUBLIC_PRIVY_APP_ID }}
-            NEXT_PUBLIC_CLOAK_PROGRAM_ID=${{ secrets.NEXT_PUBLIC_CLOAK_PROGRAM_ID }}
-            NEXT_PUBLIC_CLOAK_RELAYER_URL=${{ secrets.NEXT_PUBLIC_CLOAK_RELAYER_URL }}
             NEXT_PUBLIC_HELIUS_RPC_URL=${{ secrets.NEXT_PUBLIC_HELIUS_RPC_URL }}
-            NEXT_PUBLIC_IQ_BACKEND_HOST=${{ secrets.NEXT_PUBLIC_IQ_BACKEND_HOST }}
             NEXT_PUBLIC_NOTI_WS_URL=${{ secrets.NEXT_PUBLIC_NOTI_WS_URL }}
-            NEXT_PUBLIC_PROGRAM_ID=${{ secrets.NEXT_PUBLIC_PROGRAM_ID }}
             NEXT_PUBLIC_RPC_URL=${{ secrets.NEXT_PUBLIC_RPC_URL }}
             NEXT_PUBLIC_SITE_URL=${{ secrets.NEXT_PUBLIC_SITE_URL }}
             NEXT_PUBLIC_SOLANA_CLUSTER=${{ secrets.NEXT_PUBLIC_SOLANA_CLUSTER }}
