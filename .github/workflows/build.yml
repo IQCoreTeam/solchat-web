@@ -47,3 +47,29 @@ jobs:
             NEXT_PUBLIC_SITE_URL=${{ secrets.NEXT_PUBLIC_SITE_URL }}
             NEXT_PUBLIC_SOLANA_CLUSTER=${{ secrets.NEXT_PUBLIC_SOLANA_CLUSTER }}
             NEXT_PUBLIC_SOLANA_NETWORK=${{ secrets.NEXT_PUBLIC_SOLANA_NETWORK }}
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      # The server's authorized_keys is command-restricted to `deploy.sh chat`,
+      # so even if DEPLOY_SSH_KEY leaks it can only redeploy this one service.
+      # Host key pinned to SSH_HOST_KEY (full pubkey line) to prevent MITM.
+      - name: Deploy to iqlabs server
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_HOST_KEY: ${{ secrets.SSH_HOST_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          umask 077
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s %s\n' "$DEPLOY_HOST" "$SSH_HOST_KEY" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o StrictHostKeyChecking=yes \
+              -o BatchMode=yes \
+              -o ConnectTimeout=10 \
+              iqlabs@"$DEPLOY_HOST" 'ignored: forced command runs deploy.sh chat'
+          shred -u ~/.ssh/deploy_key 2>/dev/null || rm -f ~/.ssh/deploy_key
