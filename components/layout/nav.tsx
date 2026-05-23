@@ -99,7 +99,7 @@ function GatewaySettings({ open }: { open: boolean }) {
       <input
         id="gw-input"
         defaultValue={saved}
-        placeholder="https://gateway.solanainternet.com"
+        placeholder="https://gateway.iqlabs.dev"
         className="flex-1 min-w-0 bg-black border border-green-800 text-green-400 px-2 py-1 text-xs font-mono outline-none focus:border-green-400"
       />
       <button

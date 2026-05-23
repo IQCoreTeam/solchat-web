@@ -6,7 +6,7 @@
 
 import iqlabs from 'iqlabs-sdk';
 
-const PRIMARY_GATEWAY = 'https://gateway.solanainternet.com';
+const PRIMARY_GATEWAY = 'https://gateway.iqlabs.dev';
 const AKASH_DIRECT = 'https://fem4pe7sthdm5f9fkhc1fnmpos.ingress.akashprovid.com';
 const BACKUP_GATEWAY = 'https://gateway.iqlabs.dev';
 const GATEWAYS = [PRIMARY_GATEWAY, AKASH_DIRECT, BACKUP_GATEWAY];
