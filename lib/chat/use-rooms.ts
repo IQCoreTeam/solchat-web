@@ -178,7 +178,7 @@ export function useRooms({
       const trimmedName = newRoomName.trim();
       await iqlabs.writer.createTable(
         connection,
-        signer as unknown as Parameters<typeof iqlabs.writer.createTable>[1],
+        signer,
         ROOT_ID_BYTES,
         trimmedName,
         trimmedName,
