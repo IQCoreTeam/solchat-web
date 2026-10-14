@@ -31,10 +31,17 @@ export function useRootAccount({
   const [rootStatus, setRootStatus] = useState<RootStatus>('checking');
   const [rootAccount, setRootAccount] = useState<AccountInfo<Buffer> | null>(null);
   const [rootError, setRootError] = useState<string | null>(null);
+  const [readAttempt, setReadAttempt] = useState(0);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
+      // Let Strict Mode's setup/cleanup pass cancel before starting a duplicate RPC read.
+      await Promise.resolve();
+      if (!mounted) return;
+      setRootStatus('checking');
+      setRootError(null);
+      setRootAccount(null);
       try {
         const acc = await readConnection.getAccountInfo(rootPubkey);
         if (!mounted) return;
@@ -54,7 +61,9 @@ export function useRootAccount({
     return () => {
       mounted = false;
     };
-  }, [readConnection, rootPubkey, isUserInitialized, isUserInitializing]);
+  }, [readConnection, rootPubkey, isUserInitialized, isUserInitializing, readAttempt]);
+
+  const retryRoot = useCallback(() => setReadAttempt((attempt) => attempt + 1), []);
 
   const handleCreateRoot = useCallback(async () => {
     if (!signer) return;
@@ -84,6 +93,7 @@ export function useRootAccount({
     rootStatus,
     rootAccount,
     rootError,
+    retryRoot,
     handleCreateRoot,
   };
 }

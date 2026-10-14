@@ -83,7 +83,7 @@ export async function ensureEncryptionKey(
 
   // Only derive the X25519 keypair (wallet signature prompt) when we actually
   // need to publish one. Same derivation path as before — never change this.
-  const kp = await getOrDeriveKeypair(signMessage);
+  const kp = await getOrDeriveKeypair(myAddress, signMessage);
 
   const mergedProfile: ProfileJson = { ...existingProfile, encryptionPubKey: kp.pubHex };
   const txId = await iqlabs.writer.codeIn(

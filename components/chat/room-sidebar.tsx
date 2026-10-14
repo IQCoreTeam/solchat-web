@@ -7,16 +7,8 @@
 
 import { FormEvent } from 'react';
 import { shorten } from '@/lib/utils/message-utils';
-
-interface RoomMeta {
-    seedHex: string;
-    seedBytes: Uint8Array;
-    name: string;
-    tableAddress: string;
-    instructionAddress: string;
-    columns: string[];
-    lastTimestamp: number;
-}
+import type { RootStatus } from '@/lib/chat/use-root-account';
+import type { RoomMeta } from '@/lib/chat/use-rooms';
 
 interface RoomSidebarProps {
     // Room creation
@@ -31,12 +23,17 @@ interface RoomSidebarProps {
     newRoomGateType: 0 | 1;
     setNewRoomGateType: (gateType: 0 | 1) => void;
     creatingRoom: boolean;
+    createRoomError: string | null;
     onCreateRoom: (e: FormEvent) => void;
 
     // Room list
     rooms: RoomMeta[];
     selectedSeed: string | null;
     onSelectRoom: (seedHex: string) => void;
+    rootStatus: RootStatus;
+    rootError: string | null;
+    roomsLoaded: boolean;
+    onRetryRooms: () => void;
     roomsLoading: boolean;
     roomsError: string | null;
 
@@ -64,10 +61,15 @@ export function RoomSidebar({
                                 newRoomGateType,
                                 setNewRoomGateType,
                                 creatingRoom,
+                                createRoomError,
                                 onCreateRoom,
                                 rooms,
                                 selectedSeed,
                                 onSelectRoom,
+                                rootStatus,
+                                rootError,
+                                roomsLoaded,
+                                onRetryRooms,
                                 roomsLoading,
     roomsError,
     hasWallet,
@@ -185,7 +187,7 @@ export function RoomSidebar({
                             Failed to initialize your account. Please retry.
                         </p>
                     )}
-                    {roomsError && <p className="text-xs text-red-400">{roomsError}</p>}
+                    {createRoomError && <p role="alert" className="text-xs text-red-400">Couldn’t create room. {createRoomError}</p>}
                 </form>
             </div>
 
@@ -194,7 +196,30 @@ export function RoomSidebar({
                 <div className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-white/60">
                     Rooms
                 </div>
-                {!roomsLoading && rooms.length === 0 && (
+                {rootError && (
+                    <div role="alert" className="px-2 py-2 text-sm text-red-400">
+                        Couldn’t load rooms. Check your RPC connection and retry.
+                    </div>
+                )}
+                {rootError && (
+                    <button type="button" onClick={() => window.dispatchEvent(new Event('solchat:rpc-error'))}
+                        className="mx-2 my-2 min-h-11 rounded border border-green-600 px-3 py-2 text-sm text-green-400">
+                        Change RPC
+                    </button>
+                )}
+                {(rootError || roomsError) && (
+                    <button type="button" onClick={onRetryRooms} disabled={rootStatus === 'checking' || roomsLoading}
+                        className="mx-2 my-2 min-h-11 rounded border border-green-600 px-3 py-2 text-sm text-green-400 disabled:opacity-50">
+                        Retry loading rooms
+                    </button>
+                )}
+                {(rootStatus === 'checking' || roomsLoading || (rootStatus === 'ready' && !roomsLoaded)) && (
+                    <div role="status" className="px-2 py-2 text-sm text-white/60">Loading rooms…</div>
+                )}
+                {rootStatus === 'missing' && (
+                    <div className="px-2 py-2 text-sm text-white/60">Chat is not set up yet.</div>
+                )}
+                {rootStatus === 'ready' && roomsLoaded && !rootError && !roomsError && !roomsLoading && rooms.length === 0 && (
                     <div className="px-2 py-2 text-sm text-white/60">No chat room exists.</div>
                 )}
                 <div className="space-y-1">

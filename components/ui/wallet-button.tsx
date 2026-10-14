@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { usePrivy } from '@privy-io/react-auth';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
+import { WalletConnectionStatus } from './wallet-connection-status';
 import { Window, WindowHeader, WindowContent } from 'react95';
 import styled from 'styled-components';
 import { useAppWallet } from '@/lib/wallet/use-app-wallet';
@@ -209,9 +210,10 @@ export function WalletButton() {
   if (!appWallet.connected) {
     return (
       <>
-        <StyledButton onClick={() => setConnectModalOpen(true)}>
-          [CONNECT WALLET]
+        <StyledButton disabled={mode === 'wallet' && externalWallet.connecting} onClick={() => setConnectModalOpen(true)}>
+          {mode === 'wallet' && externalWallet.connecting ? '[CONNECTING…]' : '[CONNECT WALLET]'}
         </StyledButton>
+        {mode === 'wallet' && <WalletConnectionStatus />}
         <WalletConnectModal open={connectModalOpen} onClose={() => setConnectModalOpen(false)} />
       </>
     );

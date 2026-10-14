@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "bun test tests && bun test ./tests/wallet-connection.case.jsx && bun test ./tests/app-connection.case.jsx"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
@@ -66,6 +67,7 @@
     "@types/ws": "^8.18.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "jsdom": "^26.1.0",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"

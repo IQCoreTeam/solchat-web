@@ -17,20 +17,36 @@ export async function sendTx(
     connection: Connection,
     signer: SignerInput,
     instructions: TransactionInstruction | TransactionInstruction[],
-    skipConfirmation = false,
 ): Promise<string> {
     const wallet = toSignable(signer);
     const tx = new Transaction();
     if (Array.isArray(instructions)) tx.add(...instructions);
     else tx.add(instructions);
-    tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+    tx.recentBlockhash = blockhash;
     tx.feePayer = wallet.publicKey;
     const signed = await wallet.signTransaction(tx);
-    const sig = await connection.sendRawTransaction(signed.serialize());
-    if (!skipConfirmation) {
-        await connection.confirmTransaction(sig, 'confirmed');
+    const signature = await connection.sendRawTransaction(signed.serialize(), {
+        skipPreflight: false, preflightCommitment: 'confirmed',
+    });
+    let error;
+    try {
+        const confirmation = await connection.confirmTransaction(
+            { signature, blockhash, lastValidBlockHeight }, 'confirmed',
+        );
+        error = confirmation.value.err;
+    } catch (expiry) {
+        if (!(expiry instanceof Error) || expiry.name !== 'TransactionExpiredBlockheightExceededError') throw expiry;
+        // Wallets can augment the transaction. A finalized receipt outranks
+        // expiration of the blockhash used before the wallet signed it.
+        const receipt = (await connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
+        if (!receipt || !['confirmed', 'finalized'].includes(receipt.confirmationStatus ?? '')) throw expiry;
+        error = receipt.err;
     }
-    return sig;
+    if (error) {
+        throw new Error(`Transaction failed on-chain: ${JSON.stringify(error)}`);
+    }
+    return signature;
 }
 
 export async function ensureUserInitialized(

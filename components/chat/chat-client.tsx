@@ -133,7 +133,7 @@ export function ChatClient() {
         return [...list].sort((a, b) => (b.lastTimestamp || 0) - (a.lastTimestamp || 0));
     }, []);
 
-    const { rootStatus, rootAccount, handleCreateRoot } = useRootAccount({
+    const { rootStatus, rootAccount, rootError, retryRoot, handleCreateRoot } = useRootAccount({
         connection,
         readConnection,
         rootPubkey,
@@ -147,7 +147,10 @@ export function ChatClient() {
     const {
         rooms,
         roomsLoading,
+        roomsLoaded,
+        loadRooms,
         roomsError,
+        createRoomError,
         newRoomName,
         setNewRoomName,
         newRoomGateEnabled,
@@ -181,7 +184,7 @@ export function ChatClient() {
     // Derived values (no useState needed)
     const walletAddress = wallet.publicKey?.toBase58() ?? '';
     const hasWallet = Boolean(wallet.publicKey);
-    const canWrite = Boolean(signer && isUserInitialized);
+    const canWrite = Boolean(signer && isUserInitialized && rootStatus === 'ready');
     const slowRpcMode = endpointSource === 'default';
     const newMarkerId = selectedChannelKey ? (newMarkerByChannelRef.current[selectedChannelKey] ?? null) : null;
     const hasNewMessages = Boolean(newMarkerId);
@@ -577,8 +580,13 @@ export function ChatClient() {
                     rooms={rooms}
                     selectedSeed={selectedSeed}
                     onSelectRoom={setSelectedSeed}
+                    rootStatus={rootStatus}
+                    rootError={rootError}
+                    roomsLoaded={roomsLoaded}
+                    onRetryRooms={rootStatus === 'error' ? retryRoot : loadRooms}
                     roomsLoading={roomsLoading}
                     roomsError={roomsError}
+                    createRoomError={createRoomError}
                     hasWallet={hasWallet}
                     canWrite={canWrite}
                     isUserInitialized={isUserInitialized}
@@ -646,6 +654,9 @@ export function ChatClient() {
                         </>
                     ) : (
                         <div className="flex flex-1 items-center justify-center text-white/50">
+                            {(rootError || roomsError) && (
+                                <p>Couldn’t load rooms. Open the room list to retry or change your RPC.</p>
+                            )}
                             {rootStatus === 'missing' && (
                                         <div className="text-center">
                                             <p className="mb-4">Root account not found</p>
@@ -658,7 +669,7 @@ export function ChatClient() {
                                     </button>
                                 </div>
                             )}
-                            {rootStatus === 'ready' && rooms.length === 0 && (
+                            {rootStatus === 'ready' && roomsLoaded && !roomsError && rooms.length === 0 && (
                                 <p>No rooms yet. Create one to get started!</p>
                             )}
                             {rootStatus === 'ready' && rooms.length > 0 && (

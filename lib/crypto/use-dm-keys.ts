@@ -9,61 +9,50 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
+import { useAppWallet } from '@/lib/wallet/use-app-wallet';
 import {
   getOrDeriveKeypair,
   clearCachedKeypair,
-  hasKeypair,
 } from './dm-encryption';
-import { lookupEncryptionKey } from './encryption-key';
 
 export function useDmKeys() {
   const wallet = useAppWallet();
-  const { connection } = useAppConnection();
   const [ready, setReady] = useState(false);
   const [pubHex, setPubHex] = useState<string | null>(null);
   const derivingRef = useRef(false);
 
-  const deriveKeys = useCallback(async () => {
-    if (!wallet.connected || !wallet.signMessage || derivingRef.current) return;
-    if (hasKeypair()) {
-      const kp = await getOrDeriveKeypair(wallet.signMessage);
-      setPubHex(kp.pubHex);
-      setReady(true);
-      return;
-    }
+  const walletAddress = wallet.publicKey?.toBase58() ?? null;
+  const derivationGeneration = useRef(0);
 
+  const deriveKeys = useCallback(async () => {
+    if (!wallet.connected || !walletAddress || !wallet.signMessage || derivingRef.current) return;
+    const generation = derivationGeneration.current;
     derivingRef.current = true;
     try {
-      const kp = await getOrDeriveKeypair(wallet.signMessage);
+      const kp = await getOrDeriveKeypair(walletAddress, wallet.signMessage);
+      if (generation !== derivationGeneration.current) return;
       setPubHex(kp.pubHex);
       setReady(true);
     } catch (err) {
-      console.error('[useDmKeys] Failed to derive keypair:', err);
+      if (generation === derivationGeneration.current) {
+        console.error('[useDmKeys] Failed to derive keypair:', err);
+      }
     } finally {
-      derivingRef.current = false;
+      if (generation === derivationGeneration.current) derivingRef.current = false;
     }
-  }, [wallet.connected, wallet.signMessage]);
+  }, [wallet.connected, walletAddress, wallet.signMessage]);
 
   useEffect(() => {
-    if (!wallet.connected) {
-      clearCachedKeypair();
-      setReady(false);
-      setPubHex(null);
-    }
-  }, [wallet.connected]);
-
-  const getRecipientPubKey = useCallback(
-    async (walletAddress: string): Promise<string | null> => {
-      return lookupEncryptionKey(connection, walletAddress);
-    },
-    [connection]
-  );
+    derivationGeneration.current += 1;
+    derivingRef.current = false;
+    setReady(false);
+    setPubHex(null);
+    if (!wallet.connected) clearCachedKeypair();
+  }, [wallet.connected, walletAddress]);
 
   return {
     ready,
     pubHex,
     deriveKeys,
-    getRecipientPubKey,
   };
 }
