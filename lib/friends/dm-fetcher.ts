@@ -16,6 +16,7 @@ type DmFetcherOptions = {
 
 async function decryptIfNeeded(
   raw: Record<string, unknown>,
+  walletAddress: string,
   signMessage?: (msg: Uint8Array) => Promise<Uint8Array>,
 ): Promise<Record<string, unknown>> {
   const text = typeof raw.text === 'string' ? raw.text : null;
@@ -25,7 +26,7 @@ async function decryptIfNeeded(
     return { ...raw, text: '[encrypted — key not available]' };
   }
   try {
-    const kp = await getOrDeriveKeypair(signMessage);
+    const kp = await getOrDeriveKeypair(walletAddress, signMessage);
     const decrypted = await decryptDmPayload(kp.privKey, kp.pubHex, text);
     if (decrypted && typeof decrypted === 'object') {
       return { ...raw, ...decrypted };
@@ -60,7 +61,7 @@ export function createDmFetcher({
         signatures: fetchConfig.signatures,
       });
     } else {
-      // Bulk initial/refresh load via gateway /rows (SDK fallback on empty).
+      // Bulk initial/refresh load via gateway /rows (SDK fallback when unavailable).
       rawRows = await readTableRows(friend.tableAddress, maxTx);
     }
 
@@ -71,7 +72,7 @@ export function createDmFetcher({
         (raw as any).txSignature ??
         (raw as any).signature;
       const withSig = signature ? { ...raw, __txSignature: signature } : raw;
-      const decoded = await decryptIfNeeded(withSig as Record<string, unknown>, signMessage);
+      const decoded = await decryptIfNeeded(withSig as Record<string, unknown>, userAddress, signMessage);
       const message = rowToMessage(decoded);
       if (message.text || message.file) messages.push(message);
     }

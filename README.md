@@ -219,3 +219,40 @@ MIT License
 
 **Built with ❤️ on Solana**
 # solchat-web
+
+## Read-path regression checks
+
+With Bun installed, run `pnpm test` for gateway empty/error responses, room-list
+error/loading states, offline DM encryption and wallet-key cache isolation, and
+the notification relay protocol on an isolated loopback listener. Run `pnpm exec tsc
+--noEmit` separately: this project currently skips TypeScript errors during its
+Next production build. These tests do not perform wallet or on-chain writes.
+
+`NEXT_PUBLIC_GATEWAY_URL` configures the default cached HTTP reader. Account
+reads still use Solana RPC. A user-selected RPC takes precedence for app reads,
+SDK fallbacks and friends reads; optional `NEXT_PUBLIC_HELIUS_RPC_URL` supplies
+only the default read endpoint. One shared connection provider keeps all readers,
+signing simulation and SDK fallbacks on the selected endpoint. Do not put private credentials in public env
+variables. A failed root read now offers retry and the existing RPC editor.
+
+## Transaction validation
+
+The app keeps normal RPC submission preflight enabled. Single-transaction
+signing first simulates the original message on the app's write RPC with
+`sigVerify: false`; a failed simulation or unavailable RPC stops before asking
+the wallet to sign. This adds one simulation request per single signing attempt,
+with no background polling or automatic retry. Batch signing is unchanged:
+dependent transactions cannot be independently simulated before earlier writes.
+
+The local instruction sender confirms with the blockhash's validity window and
+rejects instruction errors. If block-height confirmation expires, it checks the
+signature once and accepts only a confirmed/finalized receipt without an error;
+it never resends the transaction. It no longer uses a delayed read from a second RPC
+to decide whether a confirmed write succeeded. Simulation logs remain attached
+to the error's `cause` for debugging. Creation errors and room-read errors are
+separate, so a rejected create does not invalidate a loaded room list.
+
+This does not disable wallet approvals, suppress Phantom warnings, or add a
+Lighthouse dependency. Phantom manages its own runtime assertions. A wallet's
+simulation network must also match the app's target chain; local-validator
+acceptance is not public-devnet or mainnet wallet acceptance.

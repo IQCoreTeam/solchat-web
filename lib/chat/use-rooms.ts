@@ -43,7 +43,10 @@ export function useRooms({
 }: UseRoomsOptions) {
   const [rooms, setRooms] = useState<RoomMeta[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(false);
+  const [roomsLoaded, setRoomsLoaded] = useState(false);
   const [roomsError, setRoomsError] = useState<string | null>(null);
+  const [createRoomError, setCreateRoomError] = useState<string | null>(null);
+  const loadGeneration = useRef(0);
   const [newRoomName, setNewRoomName] = useState('');
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [newRoomGateEnabled, setNewRoomGateEnabled] = useState(false);
@@ -53,18 +56,20 @@ export function useRooms({
 
   const loadRooms = useCallback(async () => {
     if (rootStatus !== 'ready' || !rootAccount) return;
+    const generation = ++loadGeneration.current;
     setRoomsLoading(true);
     setRoomsError(null);
     try {
       // Use SDK reader to get table seeds (BorshAccountsCoder doesn't decode them correctly)
       const rootData = await iqlabs.reader.getTablelistFromRoot(readConnection, ROOT_ID_BYTES);
+      if (generation !== loadGeneration.current) return;
       const seedsRaw = rootData.tableSeeds ?? [];
 
       // SDK returns table hints as hex-encoded UTF-8 strings.
       // toSeedBytes(string) hashes the string to 32 bytes for PDA derivation.
       // We must pass the decoded UTF-8 string, not the raw bytes.
       const entries = seedsRaw
-        .map((entry: any) => {
+        .map((entry: unknown) => {
           const hintStr = typeof entry === 'string'
             ? Buffer.from(entry, 'hex').toString('utf8')
             : Buffer.from(normalizeBytes(entry)).toString('utf8');
@@ -96,6 +101,7 @@ export function useRooms({
       // Batch fetch all table accounts
       const tablePdas = seedsWithPdas.map((s) => s.tablePda);
       const tableAccounts = await readConnection.getMultipleAccountsInfo(tablePdas);
+      if (generation !== loadGeneration.current) return;
 
       const roomList: RoomMeta[] = [];
       for (let i = 0; i < seedsWithPdas.length; i++) {
@@ -131,17 +137,25 @@ export function useRooms({
       }
       setRooms(sortRoomsByTimestamp(roomList));
     } catch (err) {
+      if (generation !== loadGeneration.current) return;
       console.error('[ChatClient] Load rooms error:', err);
       setRoomsError(err instanceof Error ? err.message : 'Failed to load rooms');
     } finally {
-      setRoomsLoading(false);
+      if (generation === loadGeneration.current) {
+        setRoomsLoaded(true);
+        setRoomsLoading(false);
+      }
     }
   }, [rootStatus, rootAccount, coder, readConnection, rootPubkey, sortRoomsByTimestamp]);
 
   const lastRootAccountRef = useRef<AccountInfo<Buffer> | null>(null);
   useEffect(() => {
     if (rootStatus !== 'ready' || !rootAccount) {
+      loadGeneration.current += 1;
       lastRootAccountRef.current = null;
+      setRoomsLoaded(false);
+      setRoomsLoading(false);
+      setRooms([]);
       return;
     }
     if (lastRootAccountRef.current === rootAccount) {
@@ -153,10 +167,10 @@ export function useRooms({
 
   const handleCreateRoom = useCallback(async (e: FormEvent) => {
     e.preventDefault();
-    if (!signer || !newRoomName.trim()) return;
+    if (rootStatus !== 'ready' || !signer || !newRoomName.trim()) return;
 
     setCreatingRoom(true);
-    setRoomsError(null);
+    setCreateRoomError(null);
 
     try {
       let gateConfig: { mint: Web3PublicKey; amount: number; gateType: number } | undefined;
@@ -198,11 +212,12 @@ export function useRooms({
       await loadRooms();
     } catch (err) {
       console.error('[ChatClient] Create room error:', err);
-      setRoomsError(err instanceof Error ? err.message : 'Failed to create room');
+      setCreateRoomError(err instanceof Error ? err.message : 'Failed to create room');
     } finally {
       setCreatingRoom(false);
     }
   }, [
+    rootStatus,
     signer,
     newRoomName,
     newRoomGateEnabled,
@@ -217,7 +232,10 @@ export function useRooms({
     rooms,
     setRooms,
     roomsLoading,
+    roomsLoaded,
+    loadRooms,
     roomsError,
+    createRoomError,
     newRoomName,
     setNewRoomName,
     newRoomGateEnabled,

@@ -47,31 +47,47 @@ function tuplesToRecipients(tuples: unknown): Recipient[] | null {
   return out;
 }
 
-// In-memory cache for derived keypair (per session)
-let cachedKeypair: { privKey: Uint8Array; pubKey: Uint8Array; pubHex: string } | null = null;
+// Keep only the active wallet's derived key, never another connected account's.
+type DmKeypair = Awaited<ReturnType<typeof deriveX25519Keypair>> & { pubHex: string };
+let cachedKeypair: DmKeypair | null = null;
+let cachedWalletAddress: string | null = null;
+let pendingKeypair: Promise<DmKeypair> | null = null;
+let cacheGeneration = 0;
 
-/**
- * Derive and cache the user's X25519 keypair from their wallet.
- * Only prompts for signature once per session.
- */
 export async function getOrDeriveKeypair(
-  signMessage: (msg: Uint8Array) => Promise<Uint8Array>
-): Promise<{ privKey: Uint8Array; pubKey: Uint8Array; pubHex: string }> {
+  walletAddress: string,
+  signMessage: (msg: Uint8Array) => Promise<Uint8Array>,
+): Promise<DmKeypair> {
+  if (cachedWalletAddress !== walletAddress) {
+    clearCachedKeypair();
+    cachedWalletAddress = walletAddress;
+  }
   if (cachedKeypair) return cachedKeypair;
+  if (pendingKeypair) return pendingKeypair;
 
-  const { privKey, pubKey } = await deriveX25519Keypair(signMessage);
-  cachedKeypair = { privKey, pubKey, pubHex: bytesToHex(pubKey) };
-  return cachedKeypair;
+  const generation = cacheGeneration;
+  const pending = (async () => {
+    const pair = await deriveX25519Keypair(signMessage);
+    const result = { ...pair, pubHex: bytesToHex(pair.pubKey) };
+    // A signature prompt can finish after the wallet changed or disconnected.
+    if (generation === cacheGeneration && cachedWalletAddress === walletAddress) {
+      cachedKeypair = result;
+    }
+    return result;
+  })();
+  pendingKeypair = pending;
+  try {
+    return await pending;
+  } finally {
+    if (pendingKeypair === pending) pendingKeypair = null;
+  }
 }
 
-/** Clear cached keypair (on disconnect/logout). */
 export function clearCachedKeypair() {
+  cacheGeneration += 1;
   cachedKeypair = null;
-}
-
-/** Check if keypair is already derived (no signature needed). */
-export function hasKeypair(): boolean {
-  return cachedKeypair !== null;
+  cachedWalletAddress = null;
+  pendingKeypair = null;
 }
 
 /**

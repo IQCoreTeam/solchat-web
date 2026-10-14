@@ -1,20 +1,16 @@
 /**
  * Gateway-backed reader — tries multiple gateways with fallback chain,
  * then falls back to SDK/RPC as last resort.
- * Same gateway list + pattern as iq-chan (BlockChan).
  */
 
 import iqlabs from 'iqlabs-sdk';
 
-const PRIMARY_GATEWAY = 'https://gateway.iqlabs.dev';
-const AKASH_DIRECT = 'https://fem4pe7sthdm5f9fkhc1fnmpos.ingress.akashprovid.com';
-const BACKUP_GATEWAY = 'https://gateway.iqlabs.dev';
-const GATEWAYS = [PRIMARY_GATEWAY, AKASH_DIRECT, BACKUP_GATEWAY];
+const GATEWAYS = [process.env.NEXT_PUBLIC_GATEWAY_URL || 'https://gateway.iqlabs.dev'];
 
 function getGateways(): string[] {
   if (typeof window !== 'undefined') {
     const custom = localStorage.getItem('solchat_gateway');
-    if (custom) return [custom, ...GATEWAYS];
+    if (custom) return [...new Set([custom, ...GATEWAYS])];
   }
   return GATEWAYS;
 }
@@ -22,7 +18,7 @@ function getGateways(): string[] {
 async function gwFetch(path: string): Promise<Response> {
   for (const gw of getGateways()) {
     try {
-      const res = await fetch(`${gw}${path}`);
+      const res = await fetch(`${gw}${path}`, { signal: AbortSignal.timeout(8_000) });
       if (res.ok) return res;
     } catch { continue; }
   }
@@ -42,8 +38,9 @@ export async function readTableRows(tablePda: string, limit = 50): Promise<any[]
   try {
     const res = await gwFetch(`/table/${tablePda}/rows?limit=${limit}`);
     const data = await res.json();
-    const rows = Array.isArray(data) ? data : data.rows || [];
-    if (rows.length > 0) return rows;
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.rows)) return data.rows;
+    throw new Error('Invalid gateway rows response');
   } catch { /* all gateways failed */ }
   return iqlabs.reader.readTableRows(tablePda, { limit });
 }
@@ -54,8 +51,9 @@ export async function getSignaturesForTable(tablePda: string, limit = 200, befor
     if (before) params.set('before', before);
     const res = await gwFetch(`/table/${tablePda}/index?${params}`);
     const data = await res.json();
-    const sigs = data.signatures || data;
-    if (Array.isArray(sigs) && sigs.length > 0) return sigs;
+    const sigs = Array.isArray(data) ? data : data?.signatures;
+    if (Array.isArray(sigs)) return sigs;
+    throw new Error('Invalid gateway signatures response');
   } catch { /* all gateways failed */ }
   return iqlabs.reader.collectSignatures(tablePda, limit);
 }
@@ -88,7 +86,8 @@ export async function getUserConnections(pubkey: string): Promise<any[]> {
   try {
     const res = await gwFetch(`/user/${pubkey}/connections`);
     const data = await res.json();
-    return Array.isArray(data) ? data : [];
+    if (Array.isArray(data)) return data;
+    throw new Error('Invalid gateway connections response');
   } catch { /* all gateways failed */ }
   return iqlabs.reader.fetchUserConnections(pubkey, { speed: 'medium' });
 }

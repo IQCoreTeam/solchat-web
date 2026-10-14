@@ -18,8 +18,8 @@ import { BlockConfirmModal } from './block-confirm-modal';
 import iqlabs from 'iqlabs-sdk';
 import { IQ_IDL } from 'iqlabs-sdk/contract';
 import type { SignerInput } from 'iqlabs-sdk/utils';
+import { lookupEncryptionKey } from '@/lib/crypto/encryption-key';
 import { sendTx } from '@/lib/iqlabs/send-tx';
-import { sendAndConfirmTx } from '@/lib/utils/send-and-confirm';
 import { requestDmConnection } from '@/lib/friends/request-connection';
 import { DM_STATUS } from '@/lib/friends/types';
 import type { Friend } from '@/lib/friends/types';
@@ -46,7 +46,13 @@ type FriendsListProps = {
     dmQueryAddress?: string;
 };
 
-export function FriendsList({ dmQueryAddress }: FriendsListProps) {
+export function FriendsList(props: FriendsListProps) {
+    const wallet = useAppWallet();
+    // A wallet change must discard decrypted messages, drafts and subscriptions.
+    return <WalletFriendsList key={wallet.publicKey?.toBase58() ?? 'disconnected'} {...props} />;
+}
+
+function WalletFriendsList({ dmQueryAddress }: FriendsListProps) {
     /* --------------------------------------------------------------------------
      * Context & External Hooks
      * -------------------------------------------------------------------------- */
@@ -70,6 +76,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
     );
     const { friends, loading, error: friendsError, refetch } = useFriends({
         userAddress: userAddress || '',
+        readConnection,
     });
     const dmKeys = useDmKeys();
 
@@ -335,7 +342,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
             },
             writeMessage: async (payload) => {
                 const recipientAddress = chatFriend!.address;
-                const recipientPubKey = await dmKeys.getRecipientPubKey(recipientAddress);
+                const recipientPubKey = await lookupEncryptionKey(readConnection, recipientAddress);
                 const plainText = typeof payload.text === 'string' ? payload.text : '';
                 // Match the CLI row layout: row metadata (id, sender, timestamp)
                 // stays in clear on the row and only the message body is encrypted
@@ -450,13 +457,13 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
         setChatOpen(true);
         // Prefetch recipient's encryption pubkey in the background so the first
         // message send doesn't have to wait for the (potentially slow) on-chain lookup.
-        void dmKeys.getRecipientPubKey(friend.address);
+        void lookupEncryptionKey(readConnection, friend.address);
         await loadChatHistory(friend);
         dmInitialScrollRef.current = true;
         setTimeout(() => {
             scrollChatToBottom();
         }, 0);
-    }, [loadChatHistory, scrollChatToBottom, dmKeys]);
+    }, [loadChatHistory, scrollChatToBottom, readConnection]);
 
     const handleDmNewSignatures = useCallback(async (signatures: string[]) => {
         if (!chatFriend?.dmSeedHex) return;
@@ -601,7 +608,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                     new_status: DM_STATUS.APPROVED,
                 }
             );
-            await sendAndConfirmTx(connection, readConnection, signer, ix);
+            await sendTx(connection, signer, ix);
             await refetch();
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to approve friend';
@@ -639,7 +646,7 @@ export function FriendsList({ dmQueryAddress }: FriendsListProps) {
                     new_status: DM_STATUS.BLOCKED,
                 }
             );
-            await sendAndConfirmTx(connection, readConnection, signer, ix);
+            await sendTx(connection, signer, ix);
             await refetch();
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to block friend';

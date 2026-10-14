@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LAMPORTS_PER_SOL, SystemProgram } from '@solana/web3.js';
 import iqlabs from 'iqlabs-sdk';
+import { sendTx } from './send-tx';
 import { IQ_IDL } from 'iqlabs-sdk/contract';
 import type { SignerInput } from 'iqlabs-sdk/utils';
-import { sendAndConfirmTx } from '@/lib/utils/send-and-confirm';
 import { useAppConnection, useAppWallet } from '@/lib/wallet/use-app-wallet';
 import { ensureEncryptionKey } from '@/lib/crypto/encryption-key';
 
@@ -87,7 +87,7 @@ export function useUserInit() {
           user_inventory: userInventory,
           system_program: SystemProgram.programId,
         });
-        await sendAndConfirmTx(connection, readConnection, signer, ix);
+        await sendTx(connection, signer, ix);
         console.log('[useUserInit] User initialized successfully');
       }
 

@@ -10,15 +10,15 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { PublicKey, type Connection } from '@solana/web3.js';
 import { BorshAccountsCoder } from '@coral-xyz/anchor';
 import { sha256 } from '@noble/hashes/sha2.js';
 import iqlabs from 'iqlabs-sdk';
-import { HELIUS_RPC_URL, RPC_URL } from '@/lib/constants';
 import type { Friend, FriendStatus } from './types';
 
 export interface UseFriendsParams {
   userAddress: string | undefined;
+  readConnection: Connection;
 }
 
 export interface UseFriendsReturn {
@@ -43,16 +43,11 @@ const bufEq = (a: Uint8Array, b: Uint8Array): boolean => {
 };
 
 export function useFriends(params: UseFriendsParams): UseFriendsReturn {
-  const { userAddress } = params;
+  const { userAddress, readConnection } = params;
 
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const readConnection = useMemo(
-    () => new Connection(HELIUS_RPC_URL || RPC_URL, 'confirmed'),
-    []
-  );
 
   const programId = useMemo(
     () => new PublicKey(iqlabs.contract.DEFAULT_ANCHOR_PROGRAM_ID),
